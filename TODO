@@ -1,0 +1,13 @@
+Read documentation
+------------------
+  * Read mdns draft.
+  * Learn about ipv4 multicast (unp).
+  * Read dns-sd draft.
+  * Take a look at libc resolv code.
+  * Read more about DNS in general.
+  * Read more about dynamic DNS.
+  
+Setup
+-----------------
+  * Get a linux box running avahi to test against.
+  * Make coding environment, github ? and so on...
