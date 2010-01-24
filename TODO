@@ -6,8 +6,30 @@ Read documentation
   * Take a look at libc resolv code.
   * Read more about DNS in general.
   * Read more about dynamic DNS.
+  * Learn how to use libevent.
+  * Read ripd code.
   
 Setup
 -----------------
   * Get a linux box running avahi to test against.
   * Make coding environment, github ? and so on...
+  
+Code
+-----------------
+  * Import henning's log source.
+  * Code getopt.
+    
+Notas
+-----------------
+  Um processo mdnsd pode estar rodando apenas, é um daemon.
+  Toda máquina de estados referente ao mdns deve rodar no processo, há
+  dois pontos de entrada:
+
+  1 - Pacotes recebidos via unicast/multicast referentes ao MDNS, é
+  tratado e adicionado no cache e etc...
+
+  2 - Pacotes recebidos pelo socket de controle mdns_ctl, deve usar o
+  framework de imsg e event para tratar os eventos, todos comandos sao
+  eventos do imsg.
+  
+  

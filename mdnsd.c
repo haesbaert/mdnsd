@@ -14,3 +14,78 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <sys/types.h>
+
+#include <err.h>
+#include <pwd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "mdnsd.h"
+#include "log.h"
+
+__dead void		 usage(void);
+
+__dead void
+usage(void)
+{
+	extern char *__progname;
+
+	fprintf(stderr, "usage: %s [-dv]\n",
+	    __progname);
+	exit(1);
+}
+
+int
+main(int argc, char *argv[])
+{
+	int ch;
+	int debug = 0;	
+	struct mdnsd_conf mconf;
+	
+	bzero(&mconf, sizeof(mconf));
+	
+	log_init(1);	/* log to stderr until daemonized */
+
+	while ((ch = getopt(argc, argv, "dv")) != -1) {
+		switch (ch) {
+		case 'd':
+			debug = 1;
+			break;
+		case 'v':
+			if (mconf.opts & MDNSD_OPT_VERBOSE)
+				mconf.opts |= MDNSD_OPT_VERBOSE2;
+			mconf.opts |= MDNSD_OPT_VERBOSE;
+			break;
+		default:
+			usage();
+			/* NOTREACHED */
+		}
+	}
+	
+	argc -= optind;
+	argv += optind;
+	if (argc != 0)
+		usage();
+	
+	/* check for root privileges */
+	if (geteuid())
+		errx(1, "need root privileges");
+
+	/* check for mdnsd user */
+	if (getpwnam(MDNSD_USER) == NULL)
+		errx(1, "unknown user %s", MDNSD_USER);
+	
+	log_init(debug);
+	
+	if (!debug)
+		daemon(1, 0);
+	
+	/* no double running protection ? will fail in bind, ask henning */
+	
+	log_info("startup");
+
+	return 0;
+}
