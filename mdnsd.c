@@ -24,16 +24,19 @@
 #include <unistd.h>
 
 #include "mdnsd.h"
+#include "mdnse.h"
 #include "log.h"
 
-__dead void		 usage(void);
+
+
+__dead void	usage(void);
 
 __dead void
 usage(void)
 {
 	extern char *__progname;
 
-	fprintf(stderr, "usage: %s [-dv]\n",
+	fprintf(stderr, "usage: %s [-d]\n",
 	    __progname);
 	exit(1);
 }
@@ -41,23 +44,19 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	int ch;
-	int debug = 0;	
-	struct mdnsd_conf mconf;
-	
+	int			 ch;
+	int			 debug = 0;	
+	struct mdnsd_conf	 mconf;
+	struct passwd		*pw;
+
 	bzero(&mconf, sizeof(mconf));
 	
 	log_init(1);	/* log to stderr until daemonized */
 
-	while ((ch = getopt(argc, argv, "dv")) != -1) {
+	while ((ch = getopt(argc, argv, "d")) != -1) {
 		switch (ch) {
 		case 'd':
 			debug = 1;
-			break;
-		case 'v':
-			if (mconf.opts & MDNSD_OPT_VERBOSE)
-				mconf.opts |= MDNSD_OPT_VERBOSE2;
-			mconf.opts |= MDNSD_OPT_VERBOSE;
 			break;
 		default:
 			usage();
@@ -75,8 +74,8 @@ main(int argc, char *argv[])
 		errx(1, "need root privileges");
 
 	/* check for mdnsd user */
-	if (getpwnam(MDNSD_USER) == NULL)
-		errx(1, "unknown user %s", MDNSD_USER);
+	if ((pw = getpwnam(MDNSD_USER)) == NULL)
+		fatal("getpwnam");
 	
 	log_init(debug);
 	
@@ -86,6 +85,29 @@ main(int argc, char *argv[])
 	/* no double running protection ? will fail in bind, ask henning */
 	
 	log_info("startup");
+	
+	/* init control before chroot */
+/* 	if (control_init() == -1) */
+/* 		fatalx("control socket setup failed"); */
 
+	/* chroot */
+	if (chroot(pw->pw_dir) == -1)
+		fatal("chroot");
+	if (chdir("/") == -1)
+		fatal("chdir(\"/\")");
+
+	/* show who we are */
+	setproctitle("mdns daemon");
+	    
+	/* drop priviledges */
+	if (setgroups(1, &pw->pw_gid) ||
+	    setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) ||
+	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
+		fatal("can't drop privileges");
+
+	/* init mdns engine */
+	mdnse(&mconf);
+
+	/* NOTREACHED */
 	return 0;
 }

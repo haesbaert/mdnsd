@@ -1,5 +1,5 @@
 PROG=	mdnsd
-SRCS=	log.c mdnsd.c
+SRCS=	log.c mdnsd.c mdnse.c
 
 #MAN=	mdnsd.8
 

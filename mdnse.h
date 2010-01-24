@@ -14,21 +14,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _MDNSD_H_
-#define	_MDNSD_H_
+#ifndef _MDNSE_H_
+#define _MDNSE_H_
+#include "mdnsd.h"
 
-#include <sys/param.h>
+__dead void mdnse(struct mdnsd_conf *);
 
-#define	MDNSD_SOCKET "/var/run/mdnsd.sock"
-#define	MDNSD_USER   "_mdnsd"
-
-struct mdnsd_conf {
-	/* hostname to be used, will apend .local. if not already, 
-	 * that's 256 characters INCluding the null byte */
-	u_int8_t	hostname[MAXHOSTNAMELEN];
-	
-	/* mdns multicast/unicast socket */
-	int		mdns_socket;
-};
-
-#endif /* _MDNSD_H_ */
+#endif	/* _MDNSE_H_ */
