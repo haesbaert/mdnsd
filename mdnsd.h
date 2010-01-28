@@ -18,17 +18,63 @@
 #define	_MDNSD_H_
 
 #include <sys/param.h>
+#include <sys/socket.h>
+#include <net/if.h>
 
 #define	MDNSD_SOCKET "/var/run/mdnsd.sock"
 #define	MDNSD_USER   "_mdnsd"
+#define RT_BUF_SIZE		16384
+#define MAX_RTSOCK_BUF		128 * 1024
+
+/* main children structure, one per instance */
+struct mif {
+	LIST_ENTRY(mif)	 entry;
+	
+	int		 enabled;
+	int		 mdns_socket;
+	int		 ppipe;
+	struct kif	*k;
+
+	/* stuff from kiface */
+	char		ifname[IF_NAMESIZE];
+	u_int		mtu;
+	u_int16_t	flags;
+	u_int8_t	linkstate;
+	u_int8_t	linktype;
+	u_int8_t	media_type;
+	u_short		ifindex;
+	
+};
+
+struct kif {
+	char		 ifname[IF_NAMESIZE];
+	u_int64_t	 baudrate;
+	int		 flags;
+	int		 mtu;
+	u_short		 ifindex;
+	u_int8_t	 media_type;
+	u_int8_t	 link_state;
+	u_int8_t	 nh_reachable;	/* for nexthop verification */
+};
 
 struct mdnsd_conf {
 	/* hostname to be used, will apend .local. if not already, 
 	 * that's 256 characters INCluding the null byte */
 	u_int8_t	hostname[MAXHOSTNAMELEN];
 	
-	/* mdns multicast/unicast socket */
-	int		mdns_socket;
+	LIST_HEAD(, mif)	 mif_list;
+
+	
 };
+
+/* mif.c */
+struct mif *	mif_new(struct kif *);
+
+/* kiface.c */
+int		 kif_init(void);
+struct kif	*kif_findname(char *);
+
+/* kev.c */
+void	kev_init(void);
 
 #endif /* _MDNSD_H_ */

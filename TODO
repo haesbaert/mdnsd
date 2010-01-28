@@ -18,18 +18,34 @@ Code
 -----------------
   * Import henning's log source.
   * Code getopt.
+  * Import kif source remove route stuff ?.    
+  * fetch all interfaces  
+  
+  
+RIPD
+----------------
+  Interfaces:
+  1) A primeira tabela é inicia por kif_init que chama fetchifs, tudo
+  ainda no processo pai, ele inicia a RB_TREE kit (kernel interfaces),
+  tudo via sysctl, ainda não tem AF_ROUTE SOCK_RAW. obs: o dado
+  guardado é kif (kif_node).
+  
+  2) Parseia o arquivo de configuração e procura pelas interfaces
+  configuradas, quando ele acha INTERFACE if procura por if em
+  kif_findname, que procura naquela RB_TREE kit, quando achou ele
+  chama conf_get_if(kif), que retorna uma struct iface que é a
+  abstração de interface do ripd, essa interface é inserida em
+  ripd_conf->iface_list, nessa estrutura já tem um monte de coisa
+  relacionada ao protocolo.
+  
+  3) kr_init, inicia toda para do kernel route
+  (socket(AF_ROUTE,SOCK_RAW,0)), basicamente tudo em kr_state, tambem
+  inicia a RB_TREE krt (kernel route), fetchtable popula a krt, via
+  sysctl, ele deleta rotas com rtm_priority RTP_RIP ?pq?.
+  Depois ele força a adição de uma rota pro MULTICAST addr do rip
+  ?pq?. Fecha registrando um evento no fd do raw socket, onde o
+  handler é kr_dispatch_msg.
+  
+  
+  
     
-Notas
------------------
-  Um processo mdnsd pode estar rodando apenas, é um daemon.
-  Toda máquina de estados referente ao mdns deve rodar no processo, há
-  dois pontos de entrada:
-
-  1 - Pacotes recebidos via unicast/multicast referentes ao MDNS, é
-  tratado e adicionado no cache e etc...
-
-  2 - Pacotes recebidos pelo socket de controle mdns_ctl, deve usar o
-  framework de imsg e event para tratar os eventos, todos comandos sao
-  eventos do imsg.
-  
-  

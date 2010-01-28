@@ -14,10 +14,26 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _MDNSE_H_
-#define _MDNSE_H_
+#include <stdlib.h>
+#include <string.h>
+
 #include "mdnsd.h"
+#include "log.h"
 
-__dead void mdnse(struct mdnsd_conf *);
-
-#endif	/* _MDNSE_H_ */
+struct mif *
+mif_new(struct kif *k)
+{
+	struct mif	*mif;
+	
+	if ((mif = calloc(1, sizeof(struct mif))) == NULL)
+		fatal("calloc");
+	
+	strlcpy(mif->ifname, k->ifname, sizeof(mif->ifname));
+	mif->ifindex	= k->ifindex;
+	mif->flags	= k->flags;
+	mif->linkstate	= k->link_state;
+	mif->media_type = k->media_type;
+	mif->mtu	= k->mtu;
+	
+	return mif;
+}
