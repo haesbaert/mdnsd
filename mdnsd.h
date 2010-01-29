@@ -21,10 +21,10 @@
 #include <sys/socket.h>
 #include <net/if.h>
 
-#define	MDNSD_SOCKET "/var/run/mdnsd.sock"
-#define	MDNSD_USER   "_mdnsd"
-#define RT_BUF_SIZE		16384
-#define MAX_RTSOCK_BUF		128 * 1024
+#define	MDNSD_SOCKET	"/var/run/mdnsd.sock"
+#define	MDNSD_USER	"_mdnsd"
+#define RT_BUF_SIZE	16384
+#define MAX_RTSOCK_BUF	128 * 1024
 
 /* main children structure, one per instance */
 struct mif {
@@ -73,8 +73,6 @@ struct mif *	mif_new(struct kif *);
 /* kiface.c */
 int		 kif_init(void);
 struct kif	*kif_findname(char *);
-
-/* kev.c */
-void	kev_init(void);
+void		 kev_init(void);
 
 #endif /* _MDNSD_H_ */
