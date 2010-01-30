@@ -1,9 +1,9 @@
 PROG=	mdnsd
-SRCS=	log.c mdnsd.c mif.c kiface.c
+SRCS=	log.c mdnsd.c mif.c kiface.c mife.c
 
 #MAN=	mdnsd.8
 
-CFLAGS+= -Wall -I${.CURDIR}
+CFLAGS+= -g -Wall -I${.CURDIR}
 CFLAGS+= -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS+= -Wmissing-declarations
 CFLAGS+= -Wshadow -Wpointer-arith -Wcast-qual

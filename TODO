@@ -19,7 +19,8 @@ Code
   * Import henning's log source.
   * Code getopt.
   * Import kif source remove route stuff ?.    
-  * fetch all interfaces  
+  * fetch all interfaces.
+  * Check interface types, make sure they are multicastable.
   
   
 RIPD

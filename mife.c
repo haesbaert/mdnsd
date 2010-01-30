@@ -1,7 +1,5 @@
-/*	$OpenBSD: log.h,v 1.5 2009/11/02 20:20:54 claudio Exp $ */
-
 /*
- * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
+ * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,22 +14,34 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _LOG_H_
-#define	_LOG_H_
-
-#include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "mdnsd.h"
+#include "log.h"
 
-void	log_init(int);
-void	log_verbose(int);
-void	vlog(int, const char *, va_list);
-void	log_warn(const char *, ...);
-void	log_warnx(const char *, ...);
-void	log_info(const char *, ...);
-void	log_debug(const char *, ...);
-void	fatal(const char *) __dead;
-void	fatalx(const char *) __dead;
-void    log_debug_mif(const char *, struct mif *);
+extern struct mdnsd_conf *mconf;
 
-#endif /* _LOG_H_ */
+/* mdns interface engine main */
+pid_t
+mife_start(struct mif *mif)
+{
+	pid_t pid;
+	
+	switch (pid = fork()) {
+	case -1:
+		fatal("cannot fork");
+	case 0:
+		break;
+	default:
+		return pid;
+	}
+	
+	log_debug("starting mife %s pid %u", mif->ifname, (u_int) getpid());
+
+	/* init mdns mcast socket */
+	sleep(5);
+	
+	exit(0);
+}

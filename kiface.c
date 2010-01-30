@@ -52,13 +52,12 @@ int	kif_compare(struct kif_node *, struct kif_node *);
 int	kif_insert(struct kif_node *);
 int	fetchifs(int);
 void	kev_dispatch_msg(int, short, void *);
+void	kev_ifinfo(struct if_data *, struct mif *);
 
 struct {
 	int fd;
 	struct event ev;
 } kev_state;
-
-
 
 
 RB_HEAD(kif_tree, kif_node) kit;
@@ -108,6 +107,12 @@ kif_compare(struct kif_node *a, struct kif_node *b)
 
 #define	ROUNDUP(a, size)						\
 	(((a) & ((size) - 1)) ? (1 + ((a) | ((size) - 1))) : (a))
+
+void
+kif_cleanup(void)
+{
+	/* TODO */
+}
 
 void
 get_rtaddrs(int addrs, struct sockaddr *sa, struct sockaddr **rti_info)
@@ -167,7 +172,7 @@ fetchifs(int ifindex)
 		sa = (struct sockaddr *)(next + sizeof(ifm));
 		get_rtaddrs(ifm.ifm_addrs, sa, rti_info);
 
-		if ((kif = calloc(1, sizeof(struct kif_node))) == NULL) {
+ 		if ((kif = calloc(1, sizeof(struct kif_node))) == NULL) {
 			log_warn("fetchifs");
 			free(buf);
 			return (-1);
@@ -179,10 +184,10 @@ fetchifs(int ifindex)
 		kif->k.media_type = ifm.ifm_data.ifi_type;
 		kif->k.baudrate = ifm.ifm_data.ifi_baudrate;
 		kif->k.mtu = ifm.ifm_data.ifi_mtu;
-		kif->k.nh_reachable = (kif->k.flags & IFF_UP) &&
-		    (LINK_STATE_IS_UP(ifm.ifm_data.ifi_link_state) ||
-			(ifm.ifm_data.ifi_link_state == LINK_STATE_UNKNOWN &&
-			ifm.ifm_data.ifi_type != IFT_CARP));
+/* 		kif->k.nh_reachable = (kif->k.flags & IFF_UP) && */
+/* 		    (LINK_STATE_IS_UP(ifm.ifm_data.ifi_link_state) || */
+/* 			(ifm.ifm_data.ifi_link_state == LINK_STATE_UNKNOWN && */
+/* 			ifm.ifm_data.ifi_type != IFT_CARP)); */
 		if ((sa = rti_info[RTAX_IFP]) != NULL)
 			if (sa->sa_family == AF_LINK) {
 				sdl = (struct sockaddr_dl *)sa;
@@ -242,12 +247,14 @@ kev_dispatch_msg(int fd, short event, void *bula)
 	char			*next, *lim;
 	ssize_t			 n;
 	struct rt_msghdr	*rtm;
+	struct if_msghdr	 ifm;
+	struct mif *mif;
 
 	if ((n = read(kev_state.fd, &buf, sizeof(buf))) == -1)
 		fatal("kev_dispatch_rtmsg: read error");
 
 	if (n == 0)
-		fatalx("event socket closed");
+		fatalx("kernel event socket closed");
 
 	lim = buf + n;
 	for (next = buf; next < lim; next += rtm->rtm_msglen) {
@@ -255,16 +262,27 @@ kev_dispatch_msg(int fd, short event, void *bula)
 		if (rtm->rtm_version != RTM_VERSION)
 			continue;
 
+		mif = mif_find_index(ifm.ifm_index);
+		if (mif == NULL) /* this interface isn't configured */
+			continue;
+		
 		switch (rtm->rtm_type) {
 		case RTM_IFINFO:
-			log_warnx("RTM_IFINFO");
-/* 			memcpy(&ifm, next, sizeof(ifm)); */
-/* 			if_change(ifm.ifm_index, ifm.ifm_flags, */
-/* 			    &ifm.ifm_data); */
+			log_debug("RTM_IFINFO");
+			kev_ifinfo(&ifm.ifm_data, mif);
 			break;
 		case RTM_IFANNOUNCE:
-			log_warnx("RTM_IFANNOUNCE");
+			log_debug("RTM_IFANNOUNCE");
 /* 			if_announce(next); */
+			break;
+		case RTM_NEWADDR:
+			/* TODO */
+			log_debug("RTM_NEWADDR");
+			break;
+		case RTM_DELADDR:
+			/* TODO */
+			log_debug("RTM_DELADDR");
+			break;
 			break;
 		default:
 			/* ignore for now */
@@ -272,3 +290,28 @@ kev_dispatch_msg(int fd, short event, void *bula)
 		}
 	}
 }
+
+void
+kev_ifinfo(struct if_data *ifd, struct mif *mif)
+{
+	
+	/* update mif */
+	/* FIX ME, fill all mif struct */
+/* 	mif->flags = ifd->ifi_flags; */
+	mif->mtu = ifd->ifi_mtu;
+	mif->linktype = ifd->ifi_type; /* correct ? */
+	mif->linkstate = ifd->ifi_link_state;
+	
+	if (LINK_STATE_IS_UP(mif->linkstate))
+		mif_fsm(mif, MIF_EVT_UP);
+	else
+		mif_fsm(mif, MIF_EVT_DOWN);
+}
+
+void
+kev_cleanup(void)
+{
+	/* TODO */
+}
+
+

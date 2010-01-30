@@ -25,11 +25,20 @@
 #include <unistd.h>
 
 #include "log.h"
+#include "mdnsd.h"
 
 int	debug;
 int	verbose;
 
 void	 logit(int, const char *, ...);
+
+#ifndef S
+#define S(a) #a
+#endif
+
+#define LOG_DEBUG_STRUCT(x, field, how)		\
+	log_debug("%s = " S(how), S(field), x->field)
+
 
 void
 log_init(int n_debug)
@@ -156,5 +165,19 @@ fatalx(const char *emsg)
 {
 	errno = 0;
 	fatal(emsg);
+}
+
+void
+log_debug_mif(const char *msg, struct mif *mif)
+{
+	if (msg)
+		log_debug(msg);
+	
+	LOG_DEBUG_STRUCT(mif, ifname, %s);
+	LOG_DEBUG_STRUCT(mif, ifindex, %d);
+	LOG_DEBUG_STRUCT(mif, flags, 0x%x);
+	LOG_DEBUG_STRUCT(mif, linkstate, %d);
+	LOG_DEBUG_STRUCT(mif, linktype, %d);
+	LOG_DEBUG_STRUCT(mif, media_type, %d);
 }
 

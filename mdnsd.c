@@ -15,6 +15,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/wait.h>
 
 #include <err.h>
 #include <event.h>
@@ -22,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include "mdnsd.h"
@@ -29,7 +31,14 @@
 
 __dead void	usage(void);
 
-void	mdnsd_conf_init(int, char *[], struct mdnsd_conf *);
+void	main_sig_handler(int, short, void *);
+void	mdnsd_conf_init(int, char *[]);
+void	mdnsd_shutdown(void);
+void	mdnsd_cleanup(void);
+void	init_mifs(void);
+int     reap_child(void);
+
+struct mdnsd_conf	*mconf = NULL;
 
 __dead void
 usage(void)
@@ -42,7 +51,7 @@ usage(void)
 }
 
 void
-mdnsd_conf_init(int argc, char *argv[], struct mdnsd_conf *mconf)
+mdnsd_conf_init(int argc, char *argv[])
 {
 	int		 found = 0;
 	int		 i;
@@ -73,15 +82,113 @@ mdnsd_conf_init(int argc, char *argv[], struct mdnsd_conf *mconf)
 	}
 }
 
+void
+init_mifs(void)
+{
+	struct mif	*mif;
+	
+	LIST_FOREACH(mif, &mconf->mif_list, entry) {
+		if (LINK_STATE_IS_UP(mif->linkstate))
+			mif_fsm(mif, MIF_EVT_UP);
+	}
+}
+
+void
+mdnsd_cleanup(void)
+{
+	struct mif *mif;
+	
+	LIST_FOREACH(mif, &mconf->mif_list, entry) {
+		free(mif);
+	}
+	kev_cleanup();
+	/* control_cleanup */
+	/* kiface_cleanup(); */
+	/* TODO FINISH ME */
+	free(mconf);
+}
+
+/* ARGSUSED */
+void
+main_sig_handler(int sig, short event, void *arg)
+{
+	/*
+	 * signal handler rules don't apply, libevent decouples for us
+	 */
+
+	switch (sig) {
+	case SIGINT:
+	case SIGTERM:
+		log_debug("got SIGTERM/SIGINT");
+		
+		/* TODO shutdown and wait for all children */
+		mdnsd_shutdown();
+		break;		/* NOTREACHED */
+	case SIGCHLD:
+		log_debug("got SIGCHLD");
+		reap_child();
+		break;
+	case SIGHUP:
+		log_debug("got SIGHUP");
+		/* reconfigure */
+		/* ... */
+		break;
+	default:
+		fatalx("unexpected signal");
+		/* NOTREACHED */
+	}
+}
+
+int
+reap_child(void)
+{
+	struct mif	*mif;
+	int		 status, ret = 0;
+	
+	LIST_FOREACH(mif, &mconf->mif_list, entry) {
+		if (waitpid(mif->pid, &status, WNOHANG) <= 0)
+			continue;
+		if (WIFEXITED(status)) {
+			if (WEXITSTATUS(status)) 
+				log_warnx("mif %s termination error %d",
+				    mif->ifname, WEXITSTATUS(status));
+			else {
+				log_info("mif %s down",
+				    mif->ifname);
+				ret = -1;
+			}
+		}
+		else if (WIFSIGNALED(status)) {
+			log_warnx("mif %s termination with unhandled signal %d",
+			    mif->ifname, WTERMSIG(status));
+			ret = -2;
+		}
+		log_debug("child %u reaped", (unsigned int) mif->pid);
+	}
+	
+	return ret;
+}
+
+void
+mdnsd_shutdown(void)
+{
+	/* TODO send shutdown to children */
+	/* cleanup */
+	mdnsd_cleanup();
+
+	log_info("terminating");
+}
+
 int
 main(int argc, char *argv[])
 {
-	int			 ch;
-	int			 debug = 0;	
-	struct mdnsd_conf	 mconf;
-	struct passwd		*pw;
+	int		 ch;
+	int		 debug = 0;	
+	struct passwd	*pw;
+	struct event	 ev_sigint, ev_sigterm, ev_sigchld, ev_sighup;
 
-	bzero(&mconf, sizeof(mconf));
+	if ((mconf = calloc(1, sizeof(*mconf))) == NULL)
+		fatal("calloc");
 	
 	log_init(1);	/* log to stderr until daemonized */
 
@@ -102,7 +209,7 @@ main(int argc, char *argv[])
 	if (!argc)
 		usage();
 	
-	mdnsd_conf_init(argc, argv, &mconf);
+	mdnsd_conf_init(argc, argv);
 	
 	/* check for root privileges */
 	if (geteuid())
@@ -143,12 +250,27 @@ main(int argc, char *argv[])
 	/* init libevent */
 	event_init();
 
+	/* setup signals */
+	signal_set(&ev_sigint, SIGINT, main_sig_handler, NULL);
+	signal_set(&ev_sigterm, SIGTERM, main_sig_handler, NULL);
+	signal_set(&ev_sigchld, SIGCHLD, main_sig_handler, NULL);
+	signal_set(&ev_sighup, SIGHUP, main_sig_handler, NULL);
+	signal_add(&ev_sigint, NULL);
+	signal_add(&ev_sigterm, NULL);
+	signal_add(&ev_sigchld, NULL);
+	signal_add(&ev_sighup, NULL);
+	signal(SIGPIPE, SIG_IGN);
+
+	
 	/* listen to kernel interface events */
 	kev_init();
 	
+	/* init ifaces */
+	init_mifs();
+	
 	/* parent mainloop */
 	event_dispatch();
-
+	
 	/* NOTREACHED */
 	return 0;
 }
