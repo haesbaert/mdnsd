@@ -111,8 +111,10 @@ start_mifes(void)
 			log_warnx("couldn't find kernel iface %s", mif->ifname);
 			continue;
 		}
-		if (LINK_STATE_IS_UP(kif->link_state))
+		if (LINK_STATE_IS_UP(kif->link_state)) {
 			main_imsg_compose_mife(mif, IMSG_START, NULL, 0);
+			mif->state = MIF_STA_ACTIVE;
+		}
 	}
 }
 

@@ -98,7 +98,7 @@ mife_dispatch_main(int fd, short event, void *bula)
 
 	for (;;) {
 		if ((n = imsg_get(ibuf, &imsg)) == -1)
-			fatal("ripe_dispatch_main: imsg_read error");
+			fatal("mife_dispatch_main: imsg_read error");
 		if (n == 0)
 			break;
 
@@ -112,7 +112,7 @@ mife_dispatch_main(int fd, short event, void *bula)
 			mife->state = MIF_STA_DOWN;
 			break;
 		default:
-			log_debug("ripe_dispatch_main: error handling imsg %d",
+			log_debug("mife_dispatch_main: error handling imsg %d",
 			    imsg.hdr.type);
 			break;
 		}
