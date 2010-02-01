@@ -175,9 +175,9 @@ log_debug_mif(const char *msg, struct mif *mif)
 	
 	LOG_DEBUG_STRUCT(mif, ifname, %s);
 	LOG_DEBUG_STRUCT(mif, ifindex, %d);
-	LOG_DEBUG_STRUCT(mif, flags, 0x%x);
-	LOG_DEBUG_STRUCT(mif, linkstate, %d);
-	LOG_DEBUG_STRUCT(mif, linktype, %d);
-	LOG_DEBUG_STRUCT(mif, media_type, %d);
+/* 	LOG_DEBUG_STRUCT(mif, flags, 0x%x); */
+/* 	LOG_DEBUG_STRUCT(mif, linkstate, %d); */
+/* 	LOG_DEBUG_STRUCT(mif, linktype, %d); */
+/* 	LOG_DEBUG_STRUCT(mif, media_type, %d); */
 }
 

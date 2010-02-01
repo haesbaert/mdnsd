@@ -32,7 +32,7 @@ struct {
 	enum mif_if_action	action;
 } mif_if_fsm[] = {
 	/* current state	event that happened	action to take */
-	{MIF_STA_DOWN,		MIF_EVT_UP,		MIF_ACT_START},	
+	{MIF_STA_DOWN,		MIF_EVT_UP,		MIF_ACT_START},
 	{MIF_STA_DOWN,		MIF_EVT_DOWN,		MIF_ACT_NOTHING},
 	{MIF_STA_ACTIVE,	MIF_EVT_DOWN,		MIF_ACT_SHUTDOWN},
 	{MIF_STA_ACTIVE,	MIF_EVT_UP,		MIF_ACT_NOTHING},
@@ -56,7 +56,6 @@ static const char * const mif_if_event_names[] = {
 	"DOWN",
 };
 
-
 struct mif *
 mif_new(struct kif *k)
 { 
@@ -66,12 +65,9 @@ mif_new(struct kif *k)
 		fatal("calloc");
 	
 	strlcpy(mif->ifname, k->ifname, sizeof(mif->ifname));
-	mif->ifindex	= k->ifindex;
-	mif->flags	= k->flags;
-	mif->linkstate	= k->link_state;
-	mif->media_type = k->media_type;
-	mif->mtu	= k->mtu;
-	mif->state	= MIF_STA_DOWN;
+	mif->ifindex = k->ifindex;
+	mif->state = MIF_STA_DOWN;
+/* 	mif->pipe   = -1; */
 	
 	return mif;
 }
@@ -95,8 +91,11 @@ mif_fsm(struct mif *mif, enum mif_if_event event)
 {
 	int i, ret = 0;
 	enum mif_if_state old_state = mif->state;
+	struct imsg imsg;
 	
-	for (i = 0; mif_if_fsm[i].state != 0xFF; i++) 
+	bzero(&imsg, sizeof(struct imsg));
+	
+	for (i = 0; mif_if_fsm[i].state != 0xFF; i++)
 		if (mif->state == mif_if_fsm[i].state)
 			break;
 	
@@ -109,11 +108,13 @@ mif_fsm(struct mif *mif, enum mif_if_event event)
 	
 	switch (mif_if_fsm[i].action) {
 	case MIF_ACT_START:
-		mif->pid = mife_start(mif);
+		log_debug("Sending start message to mif %s", mif->ifname);
+		main_imsg_compose_mife(mif, IMSG_START, NULL, 0);
 		mif->state = MIF_STA_ACTIVE;
 		break;
 	case MIF_ACT_SHUTDOWN:
 		log_debug("Sending shutdown message to mif %s", mif->ifname);
+		main_imsg_compose_mife(mif, IMSG_STOP, NULL, 0);
 		mif->state = MIF_STA_DOWN;
 		break;
 	case MIF_ACT_NOTHING:
@@ -131,7 +132,6 @@ mif_fsm(struct mif *mif, enum mif_if_event event)
 
 	return 0;
 }
-
 
 const char *
 mif_if_event_name(int event)

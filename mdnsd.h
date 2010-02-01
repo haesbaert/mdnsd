@@ -20,11 +20,23 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <net/if.h>
+#include <event.h>
+
+#include "imsg.h"
 
 #define	MDNSD_SOCKET	"/var/run/mdnsd.sock"
 #define	MDNSD_USER	"_mdnsd"
 #define RT_BUF_SIZE	16384
 #define MAX_RTSOCK_BUF	128 * 1024
+
+/* imsgev.c */
+struct imsgev {
+	struct imsgbuf		 ibuf;
+	void			(*handler)(int, short, void *);
+	struct event		 ev;
+	void			*data;
+	short			 events;
+};
 
 /* kiface.c */
 struct kif {
@@ -43,61 +55,52 @@ struct kif	*kif_findname(char *);
 void		 kev_init(void);
 void		 kev_cleanup(void);
 
-/* main children structure, one per instance */
 /* mif.c */
-
-/* interface states */
 enum mif_if_state {
 	MIF_STA_ACTIVE,
 	MIF_STA_DOWN
 };
 
-/* interface events */
 enum mif_if_event {
 	MIF_EVT_NOTHING,
 	MIF_EVT_UP,
 	MIF_EVT_DOWN
 };
 
-/* interface actions */
 enum mif_if_action {
 	MIF_ACT_NOTHING,
 	MIF_ACT_START,
 	MIF_ACT_SHUTDOWN
 };
 
+struct mif {
+	LIST_ENTRY(mif)		entry;
+	enum mif_if_state	state;
+	pid_t			pid;
+	struct imsgev		iev;
+	char			ifname[IF_NAMESIZE];
+	u_short			ifindex;
+};
+
 struct mif *	mif_new(struct kif *);
 struct mif *    mif_find_index(u_short);
-int		mif_fsm(struct mif *, enum mif_if_event ev);
+int		mif_fsm(struct mif *, enum mif_if_event);
 
-struct mif {
-	LIST_ENTRY(mif)	 entry;
-	enum mif_if_state	state;
-	pid_t			pid; /* pid in parent, 0 in child */
-	int			enabled;
-	int			mdns_socket;
-	int			ppipe;
-	char			ifname[IF_NAMESIZE];
-	u_int			mtu;
-	u_int16_t		flags;
-	u_int8_t		linkstate;
-	u_int8_t		linktype;
-	u_int8_t		media_type;
-	u_short			ifindex;
-	
-};
-
+/* mdnsd.c */
 struct mdnsd_conf {
-	/* hostname to be used, will apend .local. if not already, 
-	 * that's 256 characters INCluding the null byte */
-	u_int8_t	hostname[MAXHOSTNAMELEN];
-	
 	LIST_HEAD(, mif)	 mif_list;
-
-	
 };
 
-/* mife.c */
-pid_t	mife_start(struct mif *);
+void	main_dispatch_mife(int, short, void *);
+void	imsg_event_add(struct imsgev *);
+void	main_imsg_compose_mife(struct mif *, int, void *, u_int16_t);
+int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
+	    pid_t, int, void *, u_int16_t);
+
+enum imsg_type {
+	IMSG_NONE,
+	IMSG_START,
+	IMSG_STOP,
+};
 
 #endif /* _MDNSD_H_ */

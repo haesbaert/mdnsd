@@ -1,5 +1,5 @@
 PROG=	mdnsd
-SRCS=	log.c mdnsd.c mif.c kiface.c mife.c
+SRCS=	log.c mdnsd.c mif.c kiface.c mife.c imsg.c buffer.c
 
 #MAN=	mdnsd.8
 

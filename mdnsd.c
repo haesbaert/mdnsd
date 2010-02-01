@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include "mdnsd.h"
+#include "mife.h"
 #include "log.h"
 
 __dead void	usage(void);
@@ -35,7 +36,7 @@ void	main_sig_handler(int, short, void *);
 void	mdnsd_conf_init(int, char *[]);
 void	mdnsd_shutdown(void);
 void	mdnsd_cleanup(void);
-void	init_mifs(void);
+void	start_mifes(void);
 int     reap_child(void);
 
 struct mdnsd_conf	*mconf = NULL;
@@ -78,18 +79,40 @@ mdnsd_conf_init(int argc, char *argv[])
 		fatal("Couldn't find any interface");
 	
 	LIST_FOREACH(mif, &mconf->mif_list, entry) {
-		log_debug("using iface %s", mif->ifname);
+		log_debug("using iface %s index %u", mif->ifname, mif->ifindex);
 	}
 }
 
 void
-init_mifs(void)
+start_mifes(void)
 {
 	struct mif	*mif;
+	struct kif	*kif;
+	int ppipe[2];
 	
 	LIST_FOREACH(mif, &mconf->mif_list, entry) {
-		if (LINK_STATE_IS_UP(mif->linkstate))
-			mif_fsm(mif, MIF_EVT_UP);
+		if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC,
+		    ppipe) == -1)
+			fatal("socketpair");
+		/* start children */
+		mif->pid = mife_start(mif, ppipe);
+		close(ppipe[1]);
+
+		/* setup children events */
+		imsg_init(&mif->iev.ibuf, ppipe[0]);
+		mif->iev.handler = main_dispatch_mife;
+		mif->iev.events = EV_READ;
+		event_set(&mif->iev.ev, mif->iev.ibuf.fd, mif->iev.events,
+		    mif->iev.handler, &mif->iev);
+		event_add(&mif->iev.ev, NULL);
+		
+		kif = kif_findname(mif->ifname);
+		if (kif == NULL) {
+			log_warnx("couldn't find kernel iface %s", mif->ifname);
+			continue;
+		}
+		if (LINK_STATE_IS_UP(kif->link_state))
+			main_imsg_compose_mife(mif, IMSG_START, NULL, 0);
 	}
 }
 
@@ -99,6 +122,7 @@ mdnsd_cleanup(void)
 	struct mif *mif;
 	
 	LIST_FOREACH(mif, &mconf->mif_list, entry) {
+		kill(mif->pid, SIGKILL);
 		free(mif);
 	}
 	kev_cleanup();
@@ -106,6 +130,8 @@ mdnsd_cleanup(void)
 	/* kiface_cleanup(); */
 	/* TODO FINISH ME */
 	free(mconf);
+	
+	exit(0);
 }
 
 /* ARGSUSED */
@@ -177,7 +203,87 @@ mdnsd_shutdown(void)
 	mdnsd_cleanup();
 
 	log_info("terminating");
+	exit(0);
 }
+
+int
+imsg_compose_event(struct imsgev *iev, u_int16_t type,
+    u_int32_t peerid, pid_t pid, int fd, void *data, u_int16_t datalen)
+{
+	int	ret;
+
+	if ((ret = imsg_compose(&iev->ibuf, type, peerid,
+	    pid, fd, data, datalen)) != -1)
+		imsg_event_add(iev);
+	return (ret);
+}
+
+void
+main_imsg_compose_mife(struct mif *mif, int type, void *data, u_int16_t datalen)
+{
+	imsg_compose_event(&mif->iev, type, 0, mif->pid, -1, data, datalen);
+}
+
+void
+main_dispatch_mife(int fd, short event, void *bula)
+{
+	struct imsgev		*iev = bula;
+	struct imsgbuf		*ibuf = &iev->ibuf;
+	struct imsg		 imsg;
+	ssize_t			 n;
+	int			 shut = 0;
+
+	if (event & EV_READ) {
+		if ((n = imsg_read(ibuf)) == -1)
+			fatal("imsg_read error");
+		if (n == 0)	/* connection closed */
+			shut = 1;
+	}
+	if (event & EV_WRITE) {
+		if (msgbuf_write(&ibuf->w) == -1)
+			fatal("msgbuf_write");
+	}
+
+	for (;;) {
+		if ((n = imsg_get(ibuf, &imsg)) == -1)
+			fatal("imsg_get");
+
+		if (n == 0)
+			break;
+
+		switch (imsg.hdr.type) {
+		default:
+			log_debug("main_dispatch_ripe: error handling imsg %d",
+			    imsg.hdr.type);
+			break;
+		}
+		imsg_free(&imsg);
+	}
+	if (!shut)
+		imsg_event_add(iev);
+	else {
+		/* this pipe is dead, so remove the event handler */  
+		event_del(&iev->ev);
+	}
+}
+
+void
+imsg_event_add(struct imsgev *iev)
+{
+	if (iev->handler == NULL) {
+		imsg_flush(&iev->ibuf);
+		return;
+	}
+
+	iev->events = EV_READ;
+	if (iev->ibuf.w.queued)
+		iev->events |= EV_WRITE;
+
+	event_del(&iev->ev);
+	event_set(&iev->ev, iev->ibuf.fd, iev->events, iev->handler, iev);
+	event_add(&iev->ev, NULL);
+}
+
 
 int
 main(int argc, char *argv[])
@@ -261,16 +367,15 @@ main(int argc, char *argv[])
 	signal_add(&ev_sighup, NULL);
 	signal(SIGPIPE, SIG_IGN);
 
-	
 	/* listen to kernel interface events */
 	kev_init();
 	
 	/* init ifaces */
-	init_mifs();
+	start_mifes();
 	
 	/* parent mainloop */
 	event_dispatch();
 	
-	/* NOTREACHED */
+	log_debug("main event_dispatch retornou");
 	return 0;
 }

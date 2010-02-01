@@ -258,6 +258,7 @@ kev_dispatch_msg(int fd, short event, void *bula)
 
 	lim = buf + n;
 	for (next = buf; next < lim; next += rtm->rtm_msglen) {
+		memcpy(&ifm, next, sizeof(ifm));
 		rtm = (struct rt_msghdr *)next;
 		if (rtm->rtm_version != RTM_VERSION)
 			continue;
@@ -294,15 +295,7 @@ kev_dispatch_msg(int fd, short event, void *bula)
 void
 kev_ifinfo(struct if_data *ifd, struct mif *mif)
 {
-	
-	/* update mif */
-	/* FIX ME, fill all mif struct */
-/* 	mif->flags = ifd->ifi_flags; */
-	mif->mtu = ifd->ifi_mtu;
-	mif->linktype = ifd->ifi_type; /* correct ? */
-	mif->linkstate = ifd->ifi_link_state;
-	
-	if (LINK_STATE_IS_UP(mif->linkstate))
+	if (LINK_STATE_IS_UP(ifd->ifi_link_state))
 		mif_fsm(mif, MIF_EVT_UP);
 	else
 		mif_fsm(mif, MIF_EVT_DOWN);
