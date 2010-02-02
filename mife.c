@@ -25,9 +25,10 @@
 extern struct mdnsd_conf *mconf;
 
 struct mife	*mife;
-struct imsgev	*iev_main;
 
 void	mife_dispatch_main(int, short, void *);
+int	mife_sock(void);
+void	mife_recv_packet(int, short, void *);
 
 /* mdns interface engine main */
 pid_t
@@ -50,20 +51,23 @@ mife_start(struct mif *mif, int ppipe[2])
 	
 	strlcpy(mife->ifname, mif->ifname, sizeof(mif->ifname));
 	mife->state = MIF_STA_DOWN;
+	mife->mdns_sock = mife_sock();
 	close(ppipe[0]);
 	
 	event_init();
 	
-	if ((iev_main = calloc(1, sizeof(struct imsgev))) == NULL)
-		fatal("calloc");
-	
 	/* setup events with parent */
-	imsg_init(&iev_main->ibuf, ppipe[1]);
-	iev_main->handler = mife_dispatch_main;
-	iev_main->events = EV_READ;
-	event_set(&iev_main->ev, iev_main->ibuf.fd, iev_main->events,
-	    iev_main->handler, iev_main);
-	event_add(&iev_main->ev, NULL);
+	imsg_init(&mife->iev_main->ibuf, ppipe[1]);
+	mife->iev_main->handler = mife_dispatch_main;
+	mife->iev_main->events	= EV_READ;
+	event_set(&mife->iev_main->ev, mife->iev_main->ibuf.fd,
+	    mife->iev_main->events, mife->iev_main->handler, mife->iev_main);
+	event_add(&mife->iev_main->ev, NULL);
+	
+	/* setup mdns events */
+	event_set(&mife->ev_mdns, mife->mdns_sock, EV_READ|EV_PERSIST,
+	    mife_recv_packet, NULL);
+	event_add(&mife->ev_mdns, NULL);
 	
 	log_debug("starting mife %s pid %u", mife->ifname, (u_int) getpid());
 	
@@ -128,3 +132,64 @@ mife_dispatch_main(int fd, short event, void *bula)
 
 }
 
+int
+mife_sock(void)
+{
+	int sock;
+	struct sockaddr_in addr;
+	
+	if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+		fatal("socket");
+	
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(MDNS_PORT);
+	if (inet_aton("192.168.8.102", &addr.sin_addr) != 1)
+		fatal("inet_aton");
+	
+	if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1)
+		fatal("bind");
+	
+	if (if_set_opt(sock) == -1)
+		fatal("if_set_opt");
+
+	if (if_set_mcast_ttl(sock, IP_DEFAULT_MULTICAST_TTL) == -1)
+		fatal("if_set_mcast_ttl");
+
+	if (if_set_mcast_loop(sock) == -1)
+		fatal("if_set_mcast_loop");
+
+	if (if_set_tos(sock, IPTOS_PREC_INTERNETCONTROL) == -1)
+		fatal("if_set_tos");
+
+	if_set_recvbuf(sock);
+	
+	log_debug("mife %s bound to %s:%u", mife->ifname,
+	    inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+	return sock;
+}
+
+void
+mife_recv_packet(int fd, short event, void *bula)
+{
+	char tmpbuf[4096];
+	ssize_t n;
+	
+	if (event != EV_READ)
+		return;
+	
+	bzero(tmpbuf, sizeof(tmpbuf));
+	
+	n = read(fd, tmpbuf, sizeof(tmpbuf));
+	
+	switch(n) {
+	case -1:
+		fatal("read");
+		break;		/* NOTREACHED */
+	case 0:
+		log_debug("mife %s mdns socket closed", mife->ifname);
+		return;
+		break;		/* NOTREACHED */
+	}
+	
+	log_debug("mife %s read %zd bytes", mife->ifname);
+}

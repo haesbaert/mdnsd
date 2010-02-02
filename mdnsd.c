@@ -379,5 +379,6 @@ main(int argc, char *argv[])
 	event_dispatch();
 	
 	log_debug("main event_dispatch retornou");
+	
 	return 0;
 }

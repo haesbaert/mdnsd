@@ -13,20 +13,8 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-#ifndef _MIFE_H_
-#define	_MIFE_H_
 
-#include "mdnsd.h"
+#define MDNS_QUERY_TTL		1
+#define MDNS_RESPONSE_TTL	255
+#define MDNS_PORT		5353
 
-struct mife {
-	enum mif_if_state	 state;
-	int			 mdns_sock;
-	char			 ifname[IF_NAMESIZE];
-	struct imsgev		*iev_main;
-	struct event		*ev_mdns;
-
-};
-
-pid_t	mife_start(struct mif *, int[2]);
-
-#endif /* _MIFE_H_ */

@@ -19,6 +19,7 @@
 
 #include <sys/param.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <net/if.h>
 #include <event.h>
 
@@ -80,6 +81,7 @@ struct mif {
 	struct imsgev		iev;
 	char			ifname[IF_NAMESIZE];
 	u_short			ifindex;
+	
 };
 
 struct mif *	mif_new(struct kif *);
@@ -102,5 +104,15 @@ enum imsg_type {
 	IMSG_START,
 	IMSG_STOP,
 };
+
+/* interface.c */
+int	if_set_mcast_ttl(int, u_int8_t);
+int	if_join_group(struct iface *, struct in_addr *);
+int	if_leave_group(struct iface *, struct in_addr *);
+int	if_set_mcast(struct iface *);
+int	if_set_mcast_loop(int);
+int	if_set_opt(int);
+int	if_set_tos(int, int);
+void	if_set_recvbuf(int);
 
 #endif /* _MDNSD_H_ */
