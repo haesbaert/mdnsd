@@ -1,3 +1,5 @@
+/*	$OpenBSD: interface.c,v 1.8 2009/09/26 18:24:58 michele Exp $ */
+
 /*
  * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
  * Copyright (c) 2006 Michele Marchetto <mydecay@openbeer.it>
@@ -16,6 +18,7 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
@@ -33,7 +36,204 @@
 #include <event.h>
 
 #include "mdnsd.h"
+#include "mdns.h"
+#include "log.h"
 
+extern struct mdnsd_conf	*mconf;
+
+const char *	if_event_name(int);
+
+struct {
+	int			state;
+	enum iface_event	event;
+	enum iface_action	action;
+} iface_fsm[] = {
+	/* current state	event that happened	action to take */
+	{IF_STA_DOWN,		IF_EVT_UP,		IF_ACT_START},
+	{IF_STA_DOWN,		IF_EVT_DOWN,		IF_ACT_NOTHING},
+	{IF_STA_ACTIVE,		IF_EVT_DOWN,		IF_ACT_SHUTDOWN},
+	{IF_STA_ACTIVE,		IF_EVT_UP,		IF_ACT_NOTHING},
+	{0xFF,			IF_EVT_NOTHING,		IF_ACT_NOTHING},
+};
+
+const char * const if_action_names[] = {
+	"NOTHING",
+	"START",
+	"SHUTDOWN"
+};
+
+static const char * const if_event_names[] = {
+	"NOTHING",
+	"UP",
+	"DOWN",
+};
+
+/* void */
+/* if_init(struct ripd_conf *xconf, struct iface *iface) */
+/* { */
+/* 	struct ifreq	ifr; */
+/* 	u_int		rdomain; */
+
+/* 	/\* XXX as in ospfd I would like to kill that. This is a design error *\/ */
+/* 	iface->fd = xconf->rip_socket; */
+
+/* 	strlcpy(ifr.ifr_name, iface->name, sizeof(ifr.ifr_name)); */
+/* 	if (ioctl(iface->fd, SIOCGIFRTABLEID, (caddr_t)&ifr) == -1) */
+/* 		rdomain = 0; */
+/* 	else { */
+/* 		rdomain = ifr.ifr_rdomainid; */
+/* 		if (setsockopt(iface->fd, IPPROTO_IP, SO_RDOMAIN, &rdomain, */
+/* 		    sizeof(rdomain)) == -1) */
+/* 			fatal("failed to set rdomain"); */
+/* 	} */
+/* 	if (rdomain != xconf->rdomain) */
+/* 		fatalx("interface rdomain mismatch"); */
+
+/* 	ripe_demote_iface(iface, 0); */
+/* } */
+
+int
+if_fsm(struct iface *iface, enum iface_event event)
+{
+	int i;
+	int old_state = iface->state;
+	struct imsg imsg;
+	
+	bzero(&imsg, sizeof(struct imsg));
+	
+	for (i = 0; iface_fsm[i].state != 0xFF; i++)
+		if (iface->state == iface_fsm[i].state)
+			break;
+	
+	if (iface_fsm[i].state == 0xFF) {
+		log_debug("if_fsm: interface %s, "
+		    "event '%s' not expected in state '%s'", iface->name,
+		    if_event_name(event), if_state_name(iface->state));
+		return -1;
+	}
+	
+	switch (iface_fsm[i].action) {
+	case IF_ACT_START:
+		log_debug("Sending start message to interface %s", iface->name);
+		main_imsg_compose_mife(iface, IMSG_START, NULL, 0);
+		iface->state = IF_STA_ACTIVE;
+		break;
+	case IF_ACT_SHUTDOWN:
+		log_debug("Sending shutdown message to interface %s", iface->name);
+		main_imsg_compose_mife(iface, IMSG_STOP, NULL, 0);
+		iface->state = IF_STA_DOWN;
+		break;
+	case IF_ACT_NOTHING:
+		/* do nothing */
+		break;
+	default:
+		log_warnx("if_fsm: Unknown action");
+		return -1;
+	}
+
+	log_debug("if_fsm: event '%s' resulted in action '%s' and changing "
+	    "state for interface %s from '%s' to '%s'",
+	    if_event_name(event), if_action_name(iface_fsm[i].action),
+	    iface->name, if_state_name(old_state), if_state_name(iface->state));
+
+	return 0;
+}
+
+struct iface *
+if_find_index(u_short ifindex)
+{
+	struct iface	 *iface;
+
+	LIST_FOREACH(iface, &mconf->iface_list, entry) {
+		if (iface->ifindex == ifindex)
+			return (iface);
+	}
+
+	return (NULL);
+}
+
+
+/* actions */
+/* called by children in mife.c */
+int
+if_act_start(struct iface *iface)
+{
+	struct in_addr	 addr;
+	struct timeval	 now;
+
+	/* this is calculated in parent now, don't fuck up */
+/* 	if (!((iface->flags & IFF_UP) && */
+/* 	    (LINK_STATE_IS_UP(iface->linkstate) || */
+/* 	    (iface->linkstate == LINK_STATE_UNKNOWN && */
+/* 	    iface->media_type != IFT_CARP)))) { */
+/* 		log_debug("if_act_start: interface %s link down", */
+/* 		    iface->name); */
+/* 		return (0); */
+/* 	} */
+
+	gettimeofday(&now, NULL);
+	iface->uptime = now.tv_sec;
+
+	switch (iface->type) {
+	case IF_TYPE_POINTOPOINT:
+	case IF_TYPE_BROADCAST:
+		inet_aton(MDNS_MCAST_ADDR, &addr);
+		if (if_join_group(iface, &addr)) {
+			log_warn("if_act_start: error joining group %s, "
+			    "interface %s", inet_ntoa(addr), iface->name);
+			return (-1);
+		}
+
+		iface->state = IF_STA_ACTIVE;
+		break;
+	default:
+		fatalx("if_act_start: unknown interface type");
+	}
+
+	return (0);
+}
+
+int
+if_act_reset(struct iface *iface)
+{
+	struct in_addr		 addr;
+
+	switch (iface->type) {
+	case IF_TYPE_POINTOPOINT:
+	case IF_TYPE_BROADCAST:
+		inet_aton(MDNS_MCAST_ADDR, &addr);
+		if (if_leave_group(iface, &addr)) {
+		log_warn("if_act_reset: error leaving group %s, "
+		    "interface %s", inet_ntoa(addr), iface->name);
+		}
+		break;
+	default:
+		fatalx("if_act_reset: unknown interface type");
+	}
+
+/* 	LIST_FOREACH(nbr, &iface->nbr_list, entry) { */
+/* 		if (nbr_fsm(nbr, NBR_EVT_KILL_NBR)) { */
+/* 			log_debug("if_act_reset: error killing neighbor %s", */
+/* 			    inet_ntoa(nbr->id)); */
+/* 		} */
+/* 	} */
+
+	return (0);
+}
+
+const char *
+if_event_name(int event)
+{
+	return (if_event_names[event]);
+}
+
+const char *
+if_action_name(int action)
+{
+	return (if_action_names[action]);
+}
+
+/* misc */
 int
 if_set_mcast_ttl(int fd, u_int8_t ttl)
 {
@@ -74,7 +274,7 @@ if_set_tos(int fd, int tos)
 }
 
 int
-if_set_mcast(int fd, int type)
+if_set_mcast(struct iface *iface)
 {
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
@@ -82,7 +282,7 @@ if_set_mcast(int fd, int type)
 		if (setsockopt(iface->fd, IPPROTO_IP, IP_MULTICAST_IF,
 		    &iface->addr.s_addr, sizeof(iface->addr.s_addr)) < 0) {
 			log_debug("if_set_mcast: error setting "
-			    "IP_MULTICAST_IF, interface %s", iface->name);
+				"IP_MULTICAST_IF, interface %s", iface->name);
 			return (-1);
 		}
 		break;
@@ -161,3 +361,124 @@ if_leave_group(struct iface *iface, struct in_addr *addr)
 
 	return (0);
 }
+
+struct iface *
+if_new(struct kif *kif)
+{
+	struct sockaddr_in	*sain;
+	struct iface		*iface;
+	struct ifreq		*ifr;
+	int			s;
+
+	if ((iface = calloc(1, sizeof(*iface))) == NULL)
+		err(1, "if_new: calloc");
+
+	iface->state = IF_STA_DOWN;
+
+	strlcpy(iface->name, kif->ifname, sizeof(iface->name));
+
+	if ((ifr = calloc(1, sizeof(*ifr))) == NULL)
+		err(1, "if_new: calloc");
+
+	/* set up ifreq */
+	strlcpy(ifr->ifr_name, kif->ifname, sizeof(ifr->ifr_name));
+	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+		err(1, "if_new: socket");
+
+	/* get type */
+	if (kif->flags & IFF_POINTOPOINT)
+		iface->type = IF_TYPE_POINTOPOINT;
+	if (kif->flags & IFF_BROADCAST &&
+	    kif->flags & IFF_MULTICAST)
+		iface->type = IF_TYPE_BROADCAST;
+	if (kif->flags & IFF_LOOPBACK) {
+		iface->type = IF_TYPE_POINTOPOINT;
+		/* XXX protect loopback from sending packets over lo? */
+	}
+
+	/* get mtu, index and flags */
+	iface->mtu = kif->mtu;
+	iface->ifindex = kif->ifindex;
+	iface->flags = kif->flags;
+	iface->linkstate = kif->link_state;
+	iface->media_type = kif->media_type;
+	iface->baudrate = kif->baudrate;
+
+	/* get address */
+	if (ioctl(s, SIOCGIFADDR, ifr) < 0)
+		err(1, "if_new: cannot get address");
+	sain = (struct sockaddr_in *)&ifr->ifr_addr;
+	iface->addr = sain->sin_addr;
+
+	/* get mask */
+	if (ioctl(s, SIOCGIFNETMASK, ifr) < 0)
+		err(1, "if_new: cannot get mask");
+	sain = (struct sockaddr_in *)&ifr->ifr_addr;
+	iface->mask = sain->sin_addr;
+
+	/* get p2p dst address */
+	if (kif->flags & IFF_POINTOPOINT) {
+		if (ioctl(s, SIOCGIFDSTADDR, ifr) < 0)
+			err(1, "if_new: cannot get dst addr");
+		sain = (struct sockaddr_in *)&ifr->ifr_addr;
+		iface->dst = sain->sin_addr;
+	}
+
+	free(ifr);
+	close(s);
+
+	return (iface);
+}
+/* todo delete me */
+void if_del(struct iface *iface);
+void
+if_del(struct iface *iface)
+{
+/* 	struct nbr	*nbr; */
+
+	log_debug("if_del: interface %s", iface->name);
+
+	/* revert the demotion when the interface is deleted */
+/* 	if (iface->state == IF_STA_DOWN) */
+/* 		ripe_demote_iface(iface, 1); */
+
+	/* clear lists etc */
+/* 	while ((nbr = LIST_FIRST(&iface->nbr_list)) != NULL) */
+/* 		nbr_act_del(nbr); */
+
+	/* XXX rq_list, rp_list */
+
+	free(iface);
+}
+
+/* struct ctl_iface * */
+/* if_to_ctl(struct iface *iface) */
+/* { */
+/* 	static struct ctl_iface	 ictl; */
+/* 	struct timeval		 now; */
+
+/* 	memcpy(ictl.name, iface->name, sizeof(ictl.name)); */
+/* 	memcpy(&ictl.addr, &iface->addr, sizeof(ictl.addr)); */
+/* 	memcpy(&ictl.mask, &iface->mask, sizeof(ictl.mask)); */
+
+/* 	ictl.ifindex = iface->ifindex; */
+/* 	ictl.state = iface->state; */
+/* 	ictl.mtu = iface->mtu; */
+
+/* 	ictl.baudrate = iface->baudrate; */
+/* 	ictl.flags = iface->flags; */
+/* 	ictl.metric = iface->cost; */
+/* 	ictl.type = iface->type; */
+/* 	ictl.linkstate = iface->linkstate; */
+/* 	ictl.passive = iface->passive; */
+/* 	ictl.mediatype = iface->media_type; */
+
+/* 	gettimeofday(&now, NULL); */
+
+/* 	if (iface->state != IF_STA_DOWN) { */
+/* 		ictl.uptime = now.tv_sec - iface->uptime; */
+/* 	} else */
+/* 		ictl.uptime = 0; */
+
+/* 	return (&ictl); */
+/* } */

@@ -14,11 +14,24 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/time.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <net/if_types.h>
+#include <ctype.h>
+#include <err.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
+#include <string.h>
+#include <event.h>
 
 #include "mdnsd.h"
+#include "mdns.h"
 #include "mife.h"
 #include "log.h"
 
@@ -27,12 +40,12 @@ extern struct mdnsd_conf *mconf;
 struct mife	*mife;
 
 void	mife_dispatch_main(int, short, void *);
-int	mife_sock(void);
+int	mife_sock(struct iface *iface);
 void	mife_recv_packet(int, short, void *);
 
 /* mdns interface engine main */
 pid_t
-mife_start(struct mif *mif, int ppipe[2])
+mife_start(struct iface *iface, int ppipe[2])
 {
 	pid_t pid;
 	/* setup pipe */
@@ -49,33 +62,37 @@ mife_start(struct mif *mif, int ppipe[2])
 	if ((mife = calloc(1, sizeof(struct mife))) == NULL)
 		fatal("calloc");
 	
-	strlcpy(mife->ifname, mif->ifname, sizeof(mif->ifname));
-	mife->state = MIF_STA_DOWN;
-	mife->mdns_sock = mife_sock();
+	
+	/* show who we are */
+	setproctitle("mdnsd mife %s", iface->name);
+
+	mife->iface = iface;
+	mife->iface->state = IF_STA_DOWN;
+	mife->iface->fd = mife_sock(iface);
 	close(ppipe[0]);
 	
 	event_init();
 	
 	/* setup events with parent */
-	imsg_init(&mife->iev_main->ibuf, ppipe[1]);
-	mife->iev_main->handler = mife_dispatch_main;
-	mife->iev_main->events	= EV_READ;
-	event_set(&mife->iev_main->ev, mife->iev_main->ibuf.fd,
-	    mife->iev_main->events, mife->iev_main->handler, mife->iev_main);
-	event_add(&mife->iev_main->ev, NULL);
+	imsg_init(&mife->iev_main.ibuf, ppipe[1]);
+	mife->iev_main.handler = mife_dispatch_main;
+	mife->iev_main.events  = EV_READ;
+	event_set(&mife->iev_main.ev, mife->iev_main.ibuf.fd,
+	    mife->iev_main.events, mife->iev_main.handler, &mife->iev_main);
+	event_add(&mife->iev_main.ev, NULL);
 	
 	/* setup mdns events */
-	event_set(&mife->ev_mdns, mife->mdns_sock, EV_READ|EV_PERSIST,
+	event_set(&mife->ev_mdns, mife->iface->fd, EV_READ|EV_PERSIST,
 	    mife_recv_packet, NULL);
 	event_add(&mife->ev_mdns, NULL);
 	
-	log_debug("starting mife %s pid %u", mife->ifname, (u_int) getpid());
+	log_debug("starting mife %s pid %u", mife->iface->name, (u_int) getpid());
 	
 	event_dispatch();
 	
 /* 	mife_shutdown(); */
 	/* NOTREACHED */
-	return 0;
+	exit(0);
 }
 
 void
@@ -109,11 +126,11 @@ mife_dispatch_main(int fd, short event, void *bula)
 		switch (imsg.hdr.type) {
 		case IMSG_START:
 			log_debug("IMSG_START");
-			mife->state = MIF_STA_ACTIVE;
+			if_act_start(mife->iface);
 			break;
 		case IMSG_STOP:
 			log_debug("IMSG_STOP");
-			mife->state = MIF_STA_DOWN;
+			if_act_reset(mife->iface);
 			break;
 		default:
 			log_debug("mife_dispatch_main: error handling imsg %d",
@@ -133,7 +150,7 @@ mife_dispatch_main(int fd, short event, void *bula)
 }
 
 int
-mife_sock(void)
+mife_sock(struct iface *iface)
 {
 	int sock;
 	struct sockaddr_in addr;
@@ -143,8 +160,10 @@ mife_sock(void)
 	
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(MDNS_PORT);
-	if (inet_aton("192.168.8.102", &addr.sin_addr) != 1)
-		fatal("inet_aton");
+ 	addr.sin_addr.s_addr = iface->addr.s_addr; 
+
+/* 	if (inet_aton(MDNS_MCAST_ADDR, &addr.sin_addr) != 1) */
+/* 		fatal("inet_aton"); */
 	
 	if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1)
 		fatal("bind");
@@ -158,12 +177,12 @@ mife_sock(void)
 	if (if_set_mcast_loop(sock) == -1)
 		fatal("if_set_mcast_loop");
 
-	if (if_set_tos(sock, IPTOS_PREC_INTERNETCONTROL) == -1)
-		fatal("if_set_tos");
+/* 	if (if_set_tos(sock, IPTOS_PREC_INTERNETCONTROL) == -1) */
+/* 		fatal("if_set_tos"); */
 
 	if_set_recvbuf(sock);
 	
-	log_debug("mife %s bound to %s:%u", mife->ifname,
+	log_debug("mife %s bound to %s:%u", mife->iface->name,
 	    inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
 	return sock;
 }
@@ -186,10 +205,10 @@ mife_recv_packet(int fd, short event, void *bula)
 		fatal("read");
 		break;		/* NOTREACHED */
 	case 0:
-		log_debug("mife %s mdns socket closed", mife->ifname);
+		log_debug("mife %s mdns socket closed", mife->iface->name);
 		return;
 		break;		/* NOTREACHED */
 	}
 	
-	log_debug("mife %s read %zd bytes", mife->ifname);
+	log_debug("mife %s read %zd bytes", mife->iface->name, n);
 }

@@ -167,17 +167,29 @@ fatalx(const char *emsg)
 	fatal(emsg);
 }
 
-void
-log_debug_mif(const char *msg, struct mif *mif)
-{
-	if (msg)
-		log_debug(msg);
+/* void */
+/* log_debug_mif(const char *msg, struct mif *mif) */
+/* { */
+/* 	if (msg) */
+/* 		log_debug(msg); */
 	
-	LOG_DEBUG_STRUCT(mif, ifname, %s);
-	LOG_DEBUG_STRUCT(mif, ifindex, %d);
+/* 	LOG_DEBUG_STRUCT(mif, ifname, %s); */
+/* 	LOG_DEBUG_STRUCT(mif, ifindex, %d); */
 /* 	LOG_DEBUG_STRUCT(mif, flags, 0x%x); */
 /* 	LOG_DEBUG_STRUCT(mif, linkstate, %d); */
 /* 	LOG_DEBUG_STRUCT(mif, linktype, %d); */
 /* 	LOG_DEBUG_STRUCT(mif, media_type, %d); */
-}
+/* } */
 
+const char *
+if_state_name(int state)
+{
+	switch (state) {
+	case IF_STA_DOWN:
+		return ("DOWN");
+	case IF_STA_ACTIVE:
+		return ("ACTIVE");
+	default:
+		return ("UNKNOWN");
+	}
+}

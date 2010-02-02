@@ -19,14 +19,12 @@
 #include "mdnsd.h"
 
 struct mife {
-	enum mif_if_state	 state;
-	int			 mdns_sock;
-	char			 ifname[IF_NAMESIZE];
-	struct imsgev		*iev_main;
-	struct event		*ev_mdns;
-
+	struct iface	*iface;
+	int		 state;
+	struct imsgev	 iev_main;
+	struct event	 ev_mdns;
 };
 
-pid_t	mife_start(struct mif *, int[2]);
+pid_t	mife_start(struct iface *, int[2]);
 
 #endif /* _MIFE_H_ */

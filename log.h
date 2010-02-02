@@ -23,15 +23,20 @@
 
 #include "mdnsd.h"
 
-void	log_init(int);
-void	log_verbose(int);
-void	vlog(int, const char *, va_list);
-void	log_warn(const char *, ...);
-void	log_warnx(const char *, ...);
-void	log_info(const char *, ...);
-void	log_debug(const char *, ...);
-void	fatal(const char *) __dead;
-void	fatalx(const char *) __dead;
-void    log_debug_mif(const char *, struct mif *);
+void		log_init(int);
+void		log_verbose(int);
+void		vlog(int, const char *, va_list);
+void		log_warn(const char *, ...);
+void		log_warnx(const char *, ...);
+void		log_info(const char *, ...);
+void		log_debug(const char *, ...);
+void		fatal(const char *) __dead;
+void		fatalx(const char *) __dead;
+const char *	if_state_name(int);
+const char *	if_type_name(enum iface_type);
+const char *	if_action_name(int);
+
+
+/* void    log_debug_mif(const char *, struct mif *); */
 
 #endif /* _LOG_H_ */

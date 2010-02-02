@@ -57,7 +57,7 @@ mdnsd_conf_init(int argc, char *argv[])
 	int		 found = 0;
 	int		 i;
 	struct kif	*k;
-	struct mif	*mif;
+	struct iface	*iface;
 	
 	/* fetch all kernel interfaces and match argv */
 	if (kif_init() != 0)
@@ -71,61 +71,60 @@ mdnsd_conf_init(int argc, char *argv[])
 		}
 		
 		found++;
-		mif = mif_new(k);
-		LIST_INSERT_HEAD(&mconf->mif_list, mif, entry);
+		iface = if_new(k);
+		LIST_INSERT_HEAD(&mconf->iface_list, iface, entry);
 	}
 	
 	if (!found)
 		fatal("Couldn't find any interface");
 	
-	LIST_FOREACH(mif, &mconf->mif_list, entry) {
-		log_debug("using iface %s index %u", mif->ifname, mif->ifindex);
+	LIST_FOREACH(iface, &mconf->iface_list, entry) {
+		log_debug("using iface %s index %u", iface->name, iface->ifindex);
 	}
 }
 
 void
 start_mifes(void)
 {
-	struct mif	*mif;
+	struct iface	*iface;
 	struct kif	*kif;
 	int ppipe[2];
 	
-	LIST_FOREACH(mif, &mconf->mif_list, entry) {
+	LIST_FOREACH(iface, &mconf->iface_list, entry) {
 		if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC,
 		    ppipe) == -1)
 			fatal("socketpair");
 		/* start children */
-		mif->pid = mife_start(mif, ppipe);
+		iface->pid = mife_start(iface, ppipe);
 		close(ppipe[1]);
 
 		/* setup children events */
-		imsg_init(&mif->iev.ibuf, ppipe[0]);
-		mif->iev.handler = main_dispatch_mife;
-		mif->iev.events = EV_READ;
-		event_set(&mif->iev.ev, mif->iev.ibuf.fd, mif->iev.events,
-		    mif->iev.handler, &mif->iev);
-		event_add(&mif->iev.ev, NULL);
+		imsg_init(&iface->iev.ibuf, ppipe[0]);
+		iface->iev.handler = main_dispatch_mife;
+		iface->iev.events = EV_READ;
+		event_set(&iface->iev.ev, iface->iev.ibuf.fd, iface->iev.events,
+		    iface->iev.handler, &iface->iev);
+		event_add(&iface->iev.ev, NULL);
 		
-		kif = kif_findname(mif->ifname);
+		kif = kif_findname(iface->name);
 		if (kif == NULL) {
-			log_warnx("couldn't find kernel iface %s", mif->ifname);
+			log_warnx("couldn't find kernel iface %s", iface->name);
 			continue;
 		}
-		if (LINK_STATE_IS_UP(kif->link_state)) {
-			main_imsg_compose_mife(mif, IMSG_START, NULL, 0);
-			mif->state = MIF_STA_ACTIVE;
-		}
+		if (LINK_STATE_IS_UP(kif->link_state))
+			if_fsm(iface, IF_EVT_UP);
 	}
 }
 
 void
 mdnsd_cleanup(void)
 {
-	struct mif *mif;
+	struct iface *iface;
 	
-	LIST_FOREACH(mif, &mconf->mif_list, entry) {
-		kill(mif->pid, SIGKILL);
-		free(mif);
+	LIST_FOREACH(iface, &mconf->iface_list, entry) {
+		if (iface->state == IF_STA_ACTIVE)
+			kill(iface->pid, SIGTERM);
+		free(iface);
 	}
 	kev_cleanup();
 	/* control_cleanup */
@@ -170,28 +169,28 @@ main_sig_handler(int sig, short event, void *arg)
 int
 reap_child(void)
 {
-	struct mif	*mif;
+	struct iface	*iface;
 	int		 status, ret = 0;
 	
-	LIST_FOREACH(mif, &mconf->mif_list, entry) {
-		if (waitpid(mif->pid, &status, WNOHANG) <= 0)
+	LIST_FOREACH(iface, &mconf->iface_list, entry) {
+		if (waitpid(iface->pid, &status, WNOHANG) <= 0)
 			continue;
 		if (WIFEXITED(status)) {
 			if (WEXITSTATUS(status)) 
-				log_warnx("mif %s termination error %d",
-				    mif->ifname, WEXITSTATUS(status));
+				log_warnx("iface %s termination error %d",
+				    iface->name, WEXITSTATUS(status));
 			else {
-				log_info("mif %s down",
-				    mif->ifname);
+				log_info("iface %s down",
+				    iface->name);
 				ret = -1;
 			}
 		}
 		else if (WIFSIGNALED(status)) {
-			log_warnx("mif %s termination with unhandled signal %d",
-			    mif->ifname, WTERMSIG(status));
+			log_warnx("iface %s termination with unhandled signal %d",
+			    iface->name, WTERMSIG(status));
 			ret = -2;
 		}
-		log_debug("child %u reaped", (unsigned int) mif->pid);
+		log_debug("child %u reaped", (unsigned int) iface->pid);
 	}
 	
 	return ret;
@@ -221,9 +220,9 @@ imsg_compose_event(struct imsgev *iev, u_int16_t type,
 }
 
 void
-main_imsg_compose_mife(struct mif *mif, int type, void *data, u_int16_t datalen)
+main_imsg_compose_mife(struct iface *iface, int type, void *data, u_int16_t datalen)
 {
-	imsg_compose_event(&mif->iev, type, 0, mif->pid, -1, data, datalen);
+	imsg_compose_event(&iface->iev, type, 0, iface->pid, -1, data, datalen);
 }
 
 void

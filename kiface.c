@@ -52,7 +52,7 @@ int	kif_compare(struct kif_node *, struct kif_node *);
 int	kif_insert(struct kif_node *);
 int	fetchifs(int);
 void	kev_dispatch_msg(int, short, void *);
-void	kev_ifinfo(struct if_data *, struct mif *);
+void	kev_ifinfo(struct if_data *, struct iface *);
 
 struct {
 	int fd;
@@ -248,7 +248,7 @@ kev_dispatch_msg(int fd, short event, void *bula)
 	ssize_t			 n;
 	struct rt_msghdr	*rtm;
 	struct if_msghdr	 ifm;
-	struct mif *mif;
+	struct iface *iface;
 
 	if ((n = read(kev_state.fd, &buf, sizeof(buf))) == -1)
 		fatal("kev_dispatch_rtmsg: read error");
@@ -263,14 +263,14 @@ kev_dispatch_msg(int fd, short event, void *bula)
 		if (rtm->rtm_version != RTM_VERSION)
 			continue;
 
-		mif = mif_find_index(ifm.ifm_index);
-		if (mif == NULL) /* this interface isn't configured */
+		iface = if_find_index(ifm.ifm_index);
+		if (iface == NULL) /* this interface isn't configured */
 			continue;
 		
 		switch (rtm->rtm_type) {
 		case RTM_IFINFO:
 			log_debug("RTM_IFINFO");
-			kev_ifinfo(&ifm.ifm_data, mif);
+			kev_ifinfo(&ifm.ifm_data, iface);
 			break;
 		case RTM_IFANNOUNCE:
 			log_debug("RTM_IFANNOUNCE");
@@ -284,7 +284,6 @@ kev_dispatch_msg(int fd, short event, void *bula)
 			/* TODO */
 			log_debug("RTM_DELADDR");
 			break;
-			break;
 		default:
 			/* ignore for now */
 			break;
@@ -293,12 +292,12 @@ kev_dispatch_msg(int fd, short event, void *bula)
 }
 
 void
-kev_ifinfo(struct if_data *ifd, struct mif *mif)
+kev_ifinfo(struct if_data *ifd, struct iface *iface)
 {
 	if (LINK_STATE_IS_UP(ifd->ifi_link_state))
-		mif_fsm(mif, MIF_EVT_UP);
+		if_fsm(iface, IF_EVT_UP);
 	else
-		mif_fsm(mif, MIF_EVT_DOWN);
+		if_fsm(iface, IF_EVT_DOWN);
 }
 
 void
