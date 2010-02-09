@@ -1,7 +1,6 @@
 /*	$OpenBSD: interface.c,v 1.8 2009/09/26 18:24:58 michele Exp $ */
 
 /*
- * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
  * Copyright (c) 2006 Michele Marchetto <mydecay@openbeer.it>
  * Copyright (c) 2005 Claudio Jeker <claudio@openbsd.org>
  * Copyright (c) 2004, 2005 Esben Norby <norby@openbsd.org>
@@ -39,27 +38,27 @@
 #include "mdns.h"
 #include "log.h"
 
-extern struct mdnsd_conf	*mconf;
+extern struct mdnsd_conf *conf;
 
-const char *	if_event_name(int);
+int	 if_act_start(struct iface *);
+int	 if_act_reset(struct iface *);
 
 struct {
 	int			state;
 	enum iface_event	event;
 	enum iface_action	action;
+	int			new_state;
 } iface_fsm[] = {
-	/* current state	event that happened	action to take */
-	{IF_STA_DOWN,		IF_EVT_UP,		IF_ACT_START},
-	{IF_STA_DOWN,		IF_EVT_DOWN,		IF_ACT_NOTHING},
-	{IF_STA_ACTIVE,		IF_EVT_DOWN,		IF_ACT_SHUTDOWN},
-	{IF_STA_ACTIVE,		IF_EVT_UP,		IF_ACT_NOTHING},
-	{0xFF,			IF_EVT_NOTHING,		IF_ACT_NOTHING},
+    /* current state	event that happened	action to take	resulting state */
+    {IF_STA_DOWN,	IF_EVT_UP,		IF_ACT_STRT,	0},
+    {IF_STA_ANY,	IF_EVT_DOWN,		IF_ACT_RST,	IF_STA_DOWN},
+    {-1,		IF_EVT_NOTHING,		IF_ACT_NOTHING,	0},
 };
 
 const char * const if_action_names[] = {
 	"NOTHING",
 	"START",
-	"SHUTDOWN"
+	"RESET"
 };
 
 static const char * const if_event_names[] = {
@@ -68,75 +67,63 @@ static const char * const if_event_names[] = {
 	"DOWN",
 };
 
-/* void */
-/* if_init(struct ripd_conf *xconf, struct iface *iface) */
-/* { */
-/* 	struct ifreq	ifr; */
-/* 	u_int		rdomain; */
-
-/* 	/\* XXX as in ospfd I would like to kill that. This is a design error *\/ */
-/* 	iface->fd = xconf->rip_socket; */
-
-/* 	strlcpy(ifr.ifr_name, iface->name, sizeof(ifr.ifr_name)); */
-/* 	if (ioctl(iface->fd, SIOCGIFRTABLEID, (caddr_t)&ifr) == -1) */
-/* 		rdomain = 0; */
-/* 	else { */
-/* 		rdomain = ifr.ifr_rdomainid; */
-/* 		if (setsockopt(iface->fd, IPPROTO_IP, SO_RDOMAIN, &rdomain, */
-/* 		    sizeof(rdomain)) == -1) */
-/* 			fatal("failed to set rdomain"); */
-/* 	} */
-/* 	if (rdomain != xconf->rdomain) */
-/* 		fatalx("interface rdomain mismatch"); */
-
-/* 	ripe_demote_iface(iface, 0); */
-/* } */
-
 int
 if_fsm(struct iface *iface, enum iface_event event)
 {
-	int i;
-	int old_state = iface->state;
-	struct imsg imsg;
-	
-	bzero(&imsg, sizeof(struct imsg));
-	
-	for (i = 0; iface_fsm[i].state != 0xFF; i++)
-		if (iface->state == iface_fsm[i].state)
+	int	 old_state;
+	int	 new_state = 0;
+	int	 i, ret = 0;
+
+	old_state = iface->state;
+
+	for (i = 0; iface_fsm[i].state != -1; i++)
+		if ((iface_fsm[i].state & old_state) &&
+		    (iface_fsm[i].event == event)) {
+			new_state = iface_fsm[i].new_state;
 			break;
-	
-	if (iface_fsm[i].state == 0xFF) {
+		}
+
+	if (iface_fsm[i].state == -1) {
+		/* event outside of the defined fsm, ignore it. */
 		log_debug("if_fsm: interface %s, "
 		    "event '%s' not expected in state '%s'", iface->name,
-		    if_event_name(event), if_state_name(iface->state));
-		return -1;
+		    if_event_name(event), if_state_name(old_state));
+		return (0);
 	}
-	
+
 	switch (iface_fsm[i].action) {
-	case IF_ACT_START:
-		log_debug("Sending start message to interface %s", iface->name);
-		main_imsg_compose_mife(iface, IMSG_START, NULL, 0);
-		iface->state = IF_STA_ACTIVE;
+	case IF_ACT_STRT:
+		ret = if_act_start(iface);
 		break;
-	case IF_ACT_SHUTDOWN:
-		log_debug("Sending shutdown message to interface %s", iface->name);
-		main_imsg_compose_mife(iface, IMSG_STOP, NULL, 0);
-		iface->state = IF_STA_DOWN;
+	case IF_ACT_RST:
+		ret = if_act_reset(iface);
 		break;
 	case IF_ACT_NOTHING:
 		/* do nothing */
 		break;
-	default:
-		log_warnx("if_fsm: Unknown action");
-		return -1;
 	}
+
+	if (ret) {
+		log_debug("if_fsm: error changing state for interface %s, "
+		    "event '%s', state '%s'", iface->name, if_event_name(event),
+		    if_state_name(old_state));
+		return (0);
+	}
+
+	if (new_state != 0)
+		iface->state = new_state;
+
+/* 	if (old_state == IF_STA_ACTIVE && iface->state == IF_STA_DOWN) */
+/* 		ripe_demote_iface(iface, 0); */
+/* 	if (old_state & IF_STA_DOWN && iface->state == IF_STA_ACTIVE) */
+/* 		ripe_demote_iface(iface, 1); */
 
 	log_debug("if_fsm: event '%s' resulted in action '%s' and changing "
 	    "state for interface %s from '%s' to '%s'",
 	    if_event_name(event), if_action_name(iface_fsm[i].action),
 	    iface->name, if_state_name(old_state), if_state_name(iface->state));
 
-	return 0;
+	return (ret);
 }
 
 struct iface *
@@ -144,7 +131,7 @@ if_find_index(u_short ifindex)
 {
 	struct iface	 *iface;
 
-	LIST_FOREACH(iface, &mconf->iface_list, entry) {
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		if (iface->ifindex == ifindex)
 			return (iface);
 	}
@@ -154,22 +141,26 @@ if_find_index(u_short ifindex)
 
 
 /* actions */
-/* called by children in mife.c */
 int
 if_act_start(struct iface *iface)
 {
 	struct in_addr	 addr;
 	struct timeval	 now;
 
-	/* this is calculated in parent now, don't fuck up */
-/* 	if (!((iface->flags & IFF_UP) && */
-/* 	    (LINK_STATE_IS_UP(iface->linkstate) || */
-/* 	    (iface->linkstate == LINK_STATE_UNKNOWN && */
-/* 	    iface->media_type != IFT_CARP)))) { */
-/* 		log_debug("if_act_start: interface %s link down", */
+/* 	if (iface->passive) { */
+/* 		log_debug("if_act_start: cannot start passive interface %s", */
 /* 		    iface->name); */
 /* 		return (0); */
 /* 	} */
+
+	if (!((iface->flags & IFF_UP) &&
+	    (LINK_STATE_IS_UP(iface->linkstate) ||
+	    (iface->linkstate == LINK_STATE_UNKNOWN &&
+	    iface->media_type != IFT_CARP)))) {
+		log_debug("if_act_start: interface %s link down",
+		    iface->name);
+		return (0);
+	}
 
 	gettimeofday(&now, NULL);
 	iface->uptime = now.tv_sec;
@@ -196,7 +187,11 @@ if_act_start(struct iface *iface)
 int
 if_act_reset(struct iface *iface)
 {
+/* 	struct nbr		*nbr = NULL; */
 	struct in_addr		 addr;
+
+/* 	if (iface->passive) */
+/* 		return (0); */
 
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
@@ -375,6 +370,10 @@ if_new(struct kif *kif)
 
 	iface->state = IF_STA_DOWN;
 
+/* 	LIST_INIT(&iface->nbr_list); */
+/* 	TAILQ_INIT(&iface->rp_list); */
+/* 	TAILQ_INIT(&iface->rq_list); */
+
 	strlcpy(iface->name, kif->ifname, sizeof(iface->name));
 
 	if ((ifr = calloc(1, sizeof(*ifr))) == NULL)
@@ -429,8 +428,7 @@ if_new(struct kif *kif)
 
 	return (iface);
 }
-/* todo delete me */
-void if_del(struct iface *iface);
+
 void
 if_del(struct iface *iface)
 {

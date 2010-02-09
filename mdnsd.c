@@ -14,6 +14,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -27,19 +30,16 @@
 #include <unistd.h>
 
 #include "mdnsd.h"
-#include "mife.h"
+#include "mdns.h"
 #include "log.h"
 
 __dead void	usage(void);
+void		mdnsd_sig_handler(int, short, void *);
+void		mdnsd_conf_init(int, char *[]);
+void		mdnsd_shutdown(void);
+int		mdns_sock(void);
 
-void	main_sig_handler(int, short, void *);
-void	mdnsd_conf_init(int, char *[]);
-void	mdnsd_shutdown(void);
-void	mdnsd_cleanup(void);
-void	start_mifes(void);
-int     reap_child(void);
-
-struct mdnsd_conf	*mconf = NULL;
+struct mdnsd_conf	*conf = NULL;
 
 __dead void
 usage(void)
@@ -72,72 +72,19 @@ mdnsd_conf_init(int argc, char *argv[])
 		
 		found++;
 		iface = if_new(k);
-		LIST_INSERT_HEAD(&mconf->iface_list, iface, entry);
+		LIST_INSERT_HEAD(&conf->iface_list, iface, entry);
 	}
 	
 	if (!found)
 		fatal("Couldn't find any interface");
 	
-	LIST_FOREACH(iface, &mconf->iface_list, entry) {
+	LIST_FOREACH(iface, &conf->iface_list, entry) 
 		log_debug("using iface %s index %u", iface->name, iface->ifindex);
-	}
-}
-
-void
-start_mifes(void)
-{
-	struct iface	*iface;
-	struct kif	*kif;
-	int ppipe[2];
-	
-	LIST_FOREACH(iface, &mconf->iface_list, entry) {
-		if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC,
-		    ppipe) == -1)
-			fatal("socketpair");
-		/* start children */
-		iface->pid = mife_start(iface, ppipe);
-		close(ppipe[1]);
-
-		/* setup children events */
-		imsg_init(&iface->iev.ibuf, ppipe[0]);
-		iface->iev.handler = main_dispatch_mife;
-		iface->iev.events = EV_READ;
-		event_set(&iface->iev.ev, iface->iev.ibuf.fd, iface->iev.events,
-		    iface->iev.handler, &iface->iev);
-		event_add(&iface->iev.ev, NULL);
-		
-		kif = kif_findname(iface->name);
-		if (kif == NULL) {
-			log_warnx("couldn't find kernel iface %s", iface->name);
-			continue;
-		}
-		if (LINK_STATE_IS_UP(kif->link_state))
-			if_fsm(iface, IF_EVT_UP);
-	}
-}
-
-void
-mdnsd_cleanup(void)
-{
-	struct iface *iface;
-	
-	LIST_FOREACH(iface, &mconf->iface_list, entry) {
-		if (iface->state == IF_STA_ACTIVE)
-			kill(iface->pid, SIGTERM);
-		free(iface);
-	}
-	kev_cleanup();
-	/* control_cleanup */
-	/* kiface_cleanup(); */
-	/* TODO FINISH ME */
-	free(mconf);
-	
-	exit(0);
 }
 
 /* ARGSUSED */
 void
-main_sig_handler(int sig, short event, void *arg)
+mdnsd_sig_handler(int sig, short event, void *arg)
 {
 	/*
 	 * signal handler rules don't apply, libevent decouples for us
@@ -148,12 +95,10 @@ main_sig_handler(int sig, short event, void *arg)
 	case SIGTERM:
 		log_debug("got SIGTERM/SIGINT");
 		
-		/* TODO shutdown and wait for all children */
 		mdnsd_shutdown();
 		break;		/* NOTREACHED */
 	case SIGCHLD:
 		log_debug("got SIGCHLD");
-		reap_child();
 		break;
 	case SIGHUP:
 		log_debug("got SIGHUP");
@@ -166,125 +111,62 @@ main_sig_handler(int sig, short event, void *arg)
 	}
 }
 
-int
-reap_child(void)
-{
-	struct iface	*iface;
-	int		 status, ret = 0;
-	
-	LIST_FOREACH(iface, &mconf->iface_list, entry) {
-		if (waitpid(iface->pid, &status, WNOHANG) <= 0)
-			continue;
-		if (WIFEXITED(status)) {
-			if (WEXITSTATUS(status)) 
-				log_warnx("iface %s termination error %d",
-				    iface->name, WEXITSTATUS(status));
-			else {
-				log_info("iface %s down",
-				    iface->name);
-				ret = -1;
-			}
-		}
-		else if (WIFSIGNALED(status)) {
-			log_warnx("iface %s termination with unhandled signal %d",
-			    iface->name, WTERMSIG(status));
-			ret = -2;
-		}
-		log_debug("child %u reaped", (unsigned int) iface->pid);
-	}
-	
-	return ret;
-}
-
 void
 mdnsd_shutdown(void)
 {
-	/* TODO send shutdown to children */
-	/* cleanup */
-	mdnsd_cleanup();
-
+	struct iface	*iface;
+	
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		/* TODO FINISH ME */
+		free(iface);
+	}
+	
+	kev_cleanup();
+	/* control_cleanup */
+	/* kiface_cleanup(); */
+	/* TODO FINISH ME */
+	free(conf);
+	
 	log_info("terminating");
 	exit(0);
 }
 
+
 int
-imsg_compose_event(struct imsgev *iev, u_int16_t type,
-    u_int32_t peerid, pid_t pid, int fd, void *data, u_int16_t datalen)
+mdns_sock(void)
 {
-	int	ret;
+	int sock;
+	struct sockaddr_in addr;
+	
+	if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+		fatal("socket");
+	
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(MDNS_PORT);
+	addr.sin_addr.s_addr = INADDR_ANY;
 
-	if ((ret = imsg_compose(&iev->ibuf, type, peerid,
-	    pid, fd, data, datalen)) != -1)
-		imsg_event_add(iev);
-	return (ret);
+	if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1)
+		fatal("bind");
+	
+	if (if_set_opt(sock) == -1)
+		fatal("if_set_opt");
+
+	if (if_set_mcast_ttl(sock, IP_DEFAULT_MULTICAST_TTL) == -1)
+		fatal("if_set_mcast_ttl");
+
+	if (if_set_mcast_loop(sock) == -1)
+		fatal("if_set_mcast_loop");
+
+/* 	if (if_set_tos(sock, IPTOS_PREC_INTERNETCONTROL) == -1) */
+/* 		fatal("if_set_tos"); */
+
+	if_set_recvbuf(sock);
+	
+	log_debug("mdns sock bound to %s:%u", inet_ntoa(addr.sin_addr),
+	    ntohs(addr.sin_port));
+	
+	return sock;
 }
-
-void
-main_imsg_compose_mife(struct iface *iface, int type, void *data, u_int16_t datalen)
-{
-	imsg_compose_event(&iface->iev, type, 0, iface->pid, -1, data, datalen);
-}
-
-void
-main_dispatch_mife(int fd, short event, void *bula)
-{
-	struct imsgev		*iev = bula;
-	struct imsgbuf		*ibuf = &iev->ibuf;
-	struct imsg		 imsg;
-	ssize_t			 n;
-	int			 shut = 0;
-
-	if (event & EV_READ) {
-		if ((n = imsg_read(ibuf)) == -1)
-			fatal("imsg_read error");
-		if (n == 0)	/* connection closed */
-			shut = 1;
-	}
-	if (event & EV_WRITE) {
-		if (msgbuf_write(&ibuf->w) == -1)
-			fatal("msgbuf_write");
-	}
-
-	for (;;) {
-		if ((n = imsg_get(ibuf, &imsg)) == -1)
-			fatal("imsg_get");
-
-		if (n == 0)
-			break;
-
-		switch (imsg.hdr.type) {
-		default:
-			log_debug("main_dispatch_ripe: error handling imsg %d",
-			    imsg.hdr.type);
-			break;
-		}
-		imsg_free(&imsg);
-	}
-	if (!shut)
-		imsg_event_add(iev);
-	else {
-		/* this pipe is dead, so remove the event handler */  
-		event_del(&iev->ev);
-	}
-}
-
-void
-imsg_event_add(struct imsgev *iev)
-{
-	if (iev->handler == NULL) {
-		imsg_flush(&iev->ibuf);
-		return;
-	}
-
-	iev->events = EV_READ;
-	if (iev->ibuf.w.queued)
-		iev->events |= EV_WRITE;
-
-	event_del(&iev->ev);
-	event_set(&iev->ev, iev->ibuf.fd, iev->events, iev->handler, iev);
-	event_add(&iev->ev, NULL);
-}
-
 
 int
 main(int argc, char *argv[])
@@ -292,9 +174,10 @@ main(int argc, char *argv[])
 	int		 ch;
 	int		 debug = 0;	
 	struct passwd	*pw;
+	struct iface	*iface;
 	struct event	 ev_sigint, ev_sigterm, ev_sigchld, ev_sighup;
 
-	if ((mconf = calloc(1, sizeof(*mconf))) == NULL)
+	if ((conf = calloc(1, sizeof(*conf))) == NULL)
 		fatal("calloc");
 	
 	log_init(1);	/* log to stderr until daemonized */
@@ -346,22 +229,22 @@ main(int argc, char *argv[])
 		fatal("chdir(\"/\")");
 
 	/* show who we are */
-	setproctitle("mdnsd parent");
+	setproctitle("mdnsd");
 	    
 	/* drop privileges */
 	if (setgroups(1, &pw->pw_gid) ||
 	    setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) ||
 	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
-		fatal("can't drop privileges");
+		fatal("error droping privileges");
 
 	/* init libevent */
 	event_init();
 
 	/* setup signals */
-	signal_set(&ev_sigint, SIGINT, main_sig_handler, NULL);
-	signal_set(&ev_sigterm, SIGTERM, main_sig_handler, NULL);
-	signal_set(&ev_sigchld, SIGCHLD, main_sig_handler, NULL);
-	signal_set(&ev_sighup, SIGHUP, main_sig_handler, NULL);
+	signal_set(&ev_sigint, SIGINT, mdnsd_sig_handler, NULL);
+	signal_set(&ev_sigterm, SIGTERM, mdnsd_sig_handler, NULL);
+	signal_set(&ev_sigchld, SIGCHLD, mdnsd_sig_handler, NULL);
+	signal_set(&ev_sighup, SIGHUP, mdnsd_sig_handler, NULL);
 	signal_add(&ev_sigint, NULL);
 	signal_add(&ev_sigterm, NULL);
 	signal_add(&ev_sigchld, NULL);
@@ -371,13 +254,24 @@ main(int argc, char *argv[])
 	/* listen to kernel interface events */
 	kev_init();
 	
-	/* init ifaces */
-	start_mifes();
+	/* create mdns socket */
+	conf->mdns_sock = mdns_sock();
+	
+	/* setup mdns events */
+	event_set(&conf->ev_mdns, conf->mdns_sock, EV_READ|EV_PERSIST,
+	    recv_packet, NULL);
+	event_add(&conf->ev_mdns, NULL);
+	
+	/* start interfaces */
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		/* XXX yep it seems wrong indeed */
+		iface->fd = conf->mdns_sock;
+		if (if_fsm(iface, IF_EVT_UP))
+			log_warnx("error starting interface %s", iface->name);
+	}
 	
 	/* parent mainloop */
 	event_dispatch();
-	
-	log_debug("main event_dispatch retornou");
 	
 	return 0;
 }

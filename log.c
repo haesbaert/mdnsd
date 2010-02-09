@@ -25,12 +25,13 @@
 #include <unistd.h>
 
 #include "log.h"
+#include "mdns.h"
 #include "mdnsd.h"
 
 int	debug;
 int	verbose;
 
-void	 logit(int, const char *, ...);
+void	logit(int, const char *, ...);
 
 #ifndef S
 #define S(a) #a
@@ -38,7 +39,6 @@ void	 logit(int, const char *, ...);
 
 #define LOG_DEBUG_STRUCT(x, field, how)		\
 	log_debug("%s = " S(how), S(field), x->field)
-
 
 void
 log_init(int n_debug)
@@ -192,4 +192,15 @@ if_state_name(int state)
 	default:
 		return ("UNKNOWN");
 	}
+}
+
+void
+log_debug_pkt(struct mdns_pkt *pkt)
+{
+	LOG_DEBUG_STRUCT(pkt, id, %u);
+	LOG_DEBUG_STRUCT(pkt, qr, %u);
+	LOG_DEBUG_STRUCT(pkt, tc, %u);
+	LOG_DEBUG_STRUCT(pkt, qdcount, %u);
+	LOG_DEBUG_STRUCT(pkt, ancount, %u);
+	LOG_DEBUG_STRUCT(pkt, nscount, %u);
 }

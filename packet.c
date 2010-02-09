@@ -1,6 +1,5 @@
-/*	$OpenBSD: packet.c,v 1.10 2008/03/24 16:11:05 deraadt Exp $ */
-
 /*
+ * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
  * Copyright (c) 2006 Michele Marchetto <mydecay@openbeer.it>
  * Copyright (c) 2004, 2005 Esben Norby <norby@openbsd.org>
  *
@@ -19,6 +18,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/queue.h>
 #include <sys/uio.h>
 
 #include <netinet/in.h>
@@ -39,10 +39,25 @@
 #include "mdns.h"
 #include "log.h"
 
-extern struct mdnsd_conf *conf;
-static u_int8_t pkt_buf[READ_BUF_SIZE];
+/* extern struct mdnsd_conf *conf; */
+struct mdnsd_conf *conf;
 
-struct iface	*find_iface(unsigned int, struct in_addr);
+/* used in name compression */
+struct {
+	u_int8_t *start;
+	u_int16_t len;
+} pktcomp;
+
+static struct iface	*find_iface(unsigned int, struct in_addr);
+
+static void	pkt_init(struct mdns_pkt *);
+static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct mdns_pkt *);
+static int	pkt_parse_labels(u_int8_t **, u_int16_t *, char *[], size_t);
+static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
+static int	pkt_parse_allrr(u_int8_t **, u_int16_t *, struct mdns_pkt *);
+static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
+    struct mdns_rr *);
+static void	free_labels(char *[], size_t);
 
 /* send and receive packets */
 int
@@ -79,21 +94,20 @@ recv_packet(int fd, short event, void *bula)
 	struct cmsghdr		*cmsg;
 	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
-	u_int8_t		*buf;
+	struct mdns_pkt		 pkt;
+	u_int8_t		buf[MDNS_MAX_PACKET];
 	ssize_t			 r;
-	u_int16_t		 srcport;
-	HEADER			*qh;
-
+	u_int16_t		 len, srcport;
+	static int pktnum = 0;
+	
 	if (event != EV_READ)
 		return;
 
-	/* setup buffer */
-	buf = pkt_buf;
-
 	bzero(&msg, sizeof(msg));
+	bzero(buf, sizeof(buf));
 
 	iov.iov_base = buf;
-	iov.iov_len = READ_BUF_SIZE;
+	iov.iov_len = MDNS_MAX_PACKET;
 	msg.msg_name = &src;
 	msg.msg_namelen = sizeof(src);
 	msg.msg_iov = &iov;
@@ -103,7 +117,7 @@ recv_packet(int fd, short event, void *bula)
 
 	if ((r = recvmsg(fd, &msg, 0)) == -1) {
 		if (errno != EINTR && errno != EAGAIN)
-			log_debug("recv_packet: read error: %s",
+			log_warn("recv_packet: read error: %s",
 			    strerror(errno));
 		return;
 	}
@@ -120,6 +134,8 @@ recv_packet(int fd, short event, void *bula)
 	if (dst == NULL)
 		return;
 	
+	len = (u_int16_t)r;
+
 	/* Check the packet is not from one of the local interfaces */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		if (iface->addr.s_addr == src.sin_addr.s_addr)
@@ -128,45 +144,30 @@ recv_packet(int fd, short event, void *bula)
 
 	/* find a matching interface */
 	if ((iface = find_iface(dst->sdl_index, src.sin_addr)) == NULL) {
-		log_debug("recv_packet: cannot find a matching interface");
+		log_warn("recv_packet: cannot find a matching interface");
 		return;
 	}
 	
-	log_debug("read %zd bytes from iface %s", r, iface->name);
+/* 	log_debug("read %zd bytes from iface %s", r, iface->name); */
 
 	srcport = ntohs(src.sin_port);
 	
-	qh = (HEADER *) pkt_buf;
-	log_debug("id: %u", ntohs(qh->id));
-	log_debug("qr: %u", qh->qr);
-	log_debug("opcode: %u", qh->opcode);
-	log_debug("aa: %u", qh->aa);
-	log_debug("tc: %u", qh->tc);
-	log_debug("rd: %u", qh->rd);
-	log_debug("ra: %u", qh->ra);
-	log_debug("unused: %u", qh->unused);
-	log_debug("ad: %u", qh->ad);
-	log_debug("cd: %u", qh->cd);
-	log_debug("rcode: %u", qh->rcode);
-	log_debug("qdcount: %u", ntohs(qh->qdcount));
-	log_debug("ancount: %u", ntohs(qh->ancount));
-	log_debug("nscount: %u", ntohs(qh->nscount));
-	log_debug("arcount: %u", ntohs(qh->arcount));
-	log_debug("===============================================");
+	log_debug("###### PACKET %d #####", ++pktnum);
+	if (pkt_parse(buf, len, &pkt) == -1)
+		return;
 	
-	/* take a look at recv_request and send_request */
-
+	/* finish me */
 }
 
-struct iface *
+static struct iface *
 find_iface(unsigned int ifindex, struct in_addr src)
 {
 	struct iface	*iface = NULL;
 
 	/* returned interface needs to be active */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		if (ifindex != 0 && ifindex == iface->ifindex &&
-		    (iface->addr.s_addr & iface->mask.s_addr) ==
+		if (ifindex				      != 0 && ifindex == iface->ifindex &&
+		    (iface->addr.s_addr & iface->mask.s_addr) == 
 		    (src.s_addr & iface->mask.s_addr))
 			/*
 			 * XXX may fail on P2P links because src and dst don't
@@ -178,4 +179,397 @@ find_iface(unsigned int ifindex, struct in_addr src)
 	}
 
 	return (NULL);
+}
+
+static void
+pkt_init(struct mdns_pkt *pkt)
+{
+	bzero(pkt, sizeof(*pkt));
+	SIMPLEQ_INIT(&pkt->qlist);
+	SIMPLEQ_INIT(&pkt->anlist);
+	SIMPLEQ_INIT(&pkt->nslist);
+	SIMPLEQ_INIT(&pkt->arlist);
+}
+
+int
+pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
+{
+	u_int16_t		 i;
+	struct mdns_question	*mq;
+	
+	pkt_init(pkt);
+	pktcomp.start = buf;
+	pktcomp.len = len;
+	
+	if (pkt_parse_header(&buf, &len, pkt) == -1)
+		return -1;
+	
+	/* Parse question section */
+	for (i = 0; i < pkt->qdcount; i++)
+		if (pkt_parse_question(&buf, &len, pkt) == -1)
+			return -1;
+	
+	/* Question count sanity check */
+	i = 0;
+	SIMPLEQ_FOREACH(mq, &pkt->qlist, entry)
+		i++;
+
+	if (i != pkt->qdcount) {
+		log_debug("found less questions than advertised");
+		/* clean up */
+		while ((mq = SIMPLEQ_FIRST(&pkt->qlist)) != NULL) {
+			SIMPLEQ_REMOVE_HEAD(&pkt->qlist, entry);
+			free_labels(mq->labels, mq->nlabels);
+			free(mq);
+		}
+		
+		return -1;
+	}
+	
+	if (pkt->qdcount > 0)
+		log_debug_pkt(pkt);
+	
+	/* Parse RR sections */
+	if (pkt_parse_allrr(&buf, &len, pkt) == -1)
+		return -1;
+	
+	return 0;
+}
+
+static int
+pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
+{
+	HEADER *qh;
+	u_int8_t *buf = *pbuf;
+	
+	/* MDNS header sanity check */
+	if (*len < MDNS_HDR_LEN) {
+		log_debug("recv_packet: bad packet size %u", len);
+		return -1;
+	}
+	
+	qh = (HEADER *) buf;
+
+	pkt->id = ntohs(qh->id);
+	pkt->qr = qh->qr;
+	pkt->tc = qh->tc;
+	pkt->qdcount = ntohs(qh->qdcount);
+	pkt->ancount = ntohs(qh->ancount);
+	pkt->nscount = ntohs(qh->nscount);
+	pkt->arcount = ntohs(qh->arcount);
+	
+	*len -= MDNS_HDR_LEN;
+	*pbuf += MDNS_HDR_LEN;
+
+	return 0;
+}
+
+static int
+pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
+{
+	u_int16_t i, us;
+	struct mdns_question *mq;
+	u_int8_t *buf = *pbuf;
+	
+	/* MDNS question sanity check */
+	if (*len < MDNS_MINQRY_LEN) {
+		log_debug("pkt_parse_question: bad query packet size %u", *len);
+		return -1;
+	}
+	
+	if ((mq = calloc(1, sizeof(*mq))) == NULL)
+		fatal("calloc");
+	
+	mq->nlabels = pkt_parse_labels(pbuf, len, mq->labels, MDNS_MAX_LABELS);
+	if (mq->nlabels == -1) {
+		free(mq);
+		return -1;
+	}
+	
+	GETSHORT(mq->qtype, *pbuf);
+	*len -= INT16SZ;
+	log_debug("qtype = %u", mq->qtype);
+	
+	GETSHORT(us, *pbuf);
+	*len -= INT16SZ;
+	
+	mq->uniresp = !!(us & UNIRESP_MSK);
+	mq->qclass = us & CLASS_MSK;
+
+	log_debug("uniresp = %d", mq->uniresp);
+	log_debug("qclass = %u", mq->qclass);
+	
+	*pbuf = buf;
+	/* This really sucks, we can't know if the class is valid prior to
+	 * parsing the labels, I mean, we could but would be ugly */
+	if (mq->qclass != C_ANY && mq->qclass != C_IN) {
+		log_debug("pkt_parse_question: Invalid packet qclass %u", mq->qclass);
+		free_labels(mq->labels, mq->nlabels);
+		free(mq);
+		return -1;
+	}
+	
+	for (i = 0; i < mq->nlabels; i++) {
+		strlcat(mq->name, (const char *)mq->labels[i],
+		    sizeof(mq->name));
+		if (i != mq->nlabels)
+			strlcat(mq->name, ".", sizeof(mq->name));
+	}
+
+	SIMPLEQ_INSERT_TAIL(&pkt->qlist, mq, entry);
+	
+	return 0;
+}
+
+/* 
+ * RFC defines no max number of labels, but 128 is enough isn't ?
+ * but, each label must be no greater than MAXLABEL and their sum can'
+ * be higher than MAXHOSTNAMELEN.
+ */
+
+/* anda em buf, preenche label e devolve 0 se fim, -1 se erro, offset se ok */
+static ssize_t
+pkt_fetch_label(u_int8_t *buf, u_int16_t len, char label[MAXLABEL + 1])
+{
+	u_int8_t llen;
+	llen = *buf++;
+	
+	log_debug("pkt_fetch_label llen %u", llen);
+	bzero(label, MAXLABEL + 1) ;
+	/* finished */
+	if (llen == 0)
+		return 0;
+	
+	if (llen > MAXLABEL || llen > len) {
+		log_debug("pkt_fetch_label: invalid len %u,"
+		    "MAXLABEL = %u len = %u", llen, MAXLABEL, len);
+		return -1;
+	}
+		
+	log_debug("llen %u", llen);
+	strlcpy(label, buf, llen + 1);
+	
+	return llen;
+}
+
+static int
+pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, char *labels[], size_t n)
+{
+	u_int8_t *buf = NULL;
+	u_int16_t llen, tlen;
+	u_int8_t *lptr;
+	size_t i;
+	int error, namecomp;
+	
+	error = 0;
+	
+	log_debug("pkt_parse_labels: *len = %u", *len);
+	/* Deal with name compression */
+	if (*len < 2)
+		return -1;
+	
+	/* peek and check for namecompression */
+	log_debug("*(*pbuf) = 0x%x", *(*pbuf));
+	if (*(*pbuf) & 0xc0)
+		namecomp = 1;
+	else
+		namecomp = 0;
+	
+	if (namecomp) {
+		u_int16_t naddr, us;
+
+		GETSHORT(us, *pbuf);
+		(*len) -= INT16SZ;
+		
+		/* Make sure the address is sane */
+		naddr = us & NAMEADDR_MSK;
+		if (naddr > (pktcomp.len - MAXHOSTNAMELEN)) {
+			log_debug("Insane name compress pointer");
+			return -1;
+		}
+		
+		buf = pktcomp.start + naddr;
+		namecomp = 1;
+		log_debug("Namecompression: YES");
+	}
+	else {
+		log_debug("Namecompression: NO");
+		buf = *pbuf;
+	}
+	
+	
+	for (i = 0, tlen = 0; i < n; i++) {
+		if (*buf == '\0') {
+			break;
+		}
+			
+		llen = *buf++;
+		if (!namecomp)
+			(*len)--;
+		tlen += llen;
+		
+		if (llen > MAXLABEL || llen > *len) {
+			log_debug("pkt_parse_labels: Invalid len %u,"
+			    "MAXLABEL = %u *len = %u", llen, MAXLABEL, *len);
+			error = 1;
+			break;
+		}
+		
+		if (tlen > MAXHOSTNAMELEN) {
+			log_debug("total len %u > MAXHOSTNAMELEN(%d)",
+			    tlen, MAXLABEL);
+			error = 1;
+			break;
+		}
+		
+		if ((lptr = malloc(llen + 1)) == NULL)
+			fatal("malloc");
+		
+		bzero(lptr, llen + 1); /* NULL terminated */
+		memcpy(lptr, buf, llen);
+		labels[i] = lptr;
+		log_debug("got label %s", lptr);
+
+		buf   += llen;
+		if (!namecomp)
+			*len  -= llen;
+/* 		log_debug("*len = %u", *len); */
+	}
+	
+	if (i == n) {
+		log_debug("MAX_LABELS reached! discard packet");
+		error = 1;
+	}
+	
+	if (error || i == n) {
+		free_labels(labels, n);
+		return -1;
+	}
+	
+	/* jump over null byte */
+	(*len)--;
+
+	if (namecomp)
+		*pbuf++;
+	else {
+		buf++;
+		*pbuf = buf;
+	}
+	
+	return i;
+}
+
+static int
+pkt_parse_allrr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
+{
+	u_int16_t i;
+	struct mdns_rr rr;
+	
+	for (i = 0; i < pkt->ancount; i++) {
+		bzero(&rr, sizeof(rr));
+		log_debug("BEGIN PARSE RR");
+		if (pkt_parse_rr(pbuf, len, pkt, &rr) == -1) {
+			log_debug("Can't parse RR");
+			return -1;
+		}
+		log_debug("END PARSE RR");
+		
+	}
+	
+	return 0;
+}
+
+static int
+pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
+    struct mdns_rr *rr)
+{
+	u_int16_t us;
+	int r = 0;
+
+	rr->nlabels = pkt_parse_labels(pbuf, len, rr->labels, MDNS_MAX_LABELS);
+	if (rr->nlabels == -1) 
+		return -1;
+	
+	/* Make sure rr packet len is ok */
+	if (*len < 8) {
+		log_debug("Unexpected packet len");
+		return -1;
+	}
+	
+	GETSHORT(rr->type, *pbuf);
+	*len -= INT16SZ;
+
+	GETSHORT(us, *pbuf);
+	*len -= INT16SZ;
+	
+	rr->cacheflush = !!(us & CACHEFLUSH_MSK);
+	rr->class = us & CLASS_MSK;
+	
+	if (rr->class != C_ANY && rr->class != C_IN) {
+		free_labels(rr->labels, rr->nlabels);
+		log_debug("pkt_parse_rr: Invalid packet class %u", rr->class);
+		return -1;
+	}
+
+	GETLONG(rr->ttl, *pbuf);
+	*len -= INT32SZ;
+	log_debug("rr->ttl = %u 0x%x", rr->ttl, rr->ttl);
+
+
+	GETSHORT(rr->rdlen, *pbuf);
+	*len -= INT16SZ;
+	log_debug("rr->rdlen = %u", rr->rdlen);
+
+	switch (rr->type) {
+	case T_A:
+		if (rr->rdlen != INT32SZ ||
+		    *len < INT32SZ) {
+			log_debug("Invalid A record rdlen %u", rr->rdlen);
+			r = -1;
+		}
+		log_debug("got A record");
+		
+		break;
+	case T_HINFO:
+		log_debug("got a HINFO record");
+		break;
+	case T_CNAME:
+		log_debug("got a CNAME record");
+		break;
+	case T_PTR:
+		log_debug("got a PTR record");
+		break;
+	case T_TXT:
+		log_debug("got a TXT record");
+		break;
+	case T_NS:
+		log_debug("got a NS record");
+		break;
+	case T_SRV:
+		log_debug("got a SRV record");
+		break;
+	case T_AAAA:
+		log_debug("got a AAAA record");
+		break;
+	default:
+		log_debug("Unknown record type %u", rr->type);
+		r = -1;
+		break;
+	}
+	
+	*len -= rr->rdlen;
+	*pbuf += rr->rdlen;
+	
+	return r;
+}
+
+static void
+free_labels(char *labels[], size_t n)
+{
+	size_t j;
+	
+	for (j = 0; j < n; j++) {
+		free(labels[j]);
+		labels[j] = NULL; /* Avoid a possible double free */
+	}
 }

@@ -184,10 +184,6 @@ fetchifs(int ifindex)
 		kif->k.media_type = ifm.ifm_data.ifi_type;
 		kif->k.baudrate = ifm.ifm_data.ifi_baudrate;
 		kif->k.mtu = ifm.ifm_data.ifi_mtu;
-/* 		kif->k.nh_reachable = (kif->k.flags & IFF_UP) && */
-/* 		    (LINK_STATE_IS_UP(ifm.ifm_data.ifi_link_state) || */
-/* 			(ifm.ifm_data.ifi_link_state == LINK_STATE_UNKNOWN && */
-/* 			ifm.ifm_data.ifi_type != IFT_CARP)); */
 		if ((sa = rti_info[RTAX_IFP]) != NULL)
 			if (sa->sa_family == AF_LINK) {
 				sdl = (struct sockaddr_dl *)sa;
@@ -270,7 +266,7 @@ kev_dispatch_msg(int fd, short event, void *bula)
 		switch (rtm->rtm_type) {
 		case RTM_IFINFO:
 			log_debug("RTM_IFINFO");
-			kev_ifinfo(&ifm.ifm_data, iface);
+/* 			kev_ifinfo(&ifm.ifm_data, iface); */
 			break;
 		case RTM_IFANNOUNCE:
 			log_debug("RTM_IFANNOUNCE");

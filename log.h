@@ -22,6 +22,7 @@
 #include <stdarg.h>
 
 #include "mdnsd.h"
+#include "mdns.h"
 
 void		log_init(int);
 void		log_verbose(int);
@@ -30,6 +31,7 @@ void		log_warn(const char *, ...);
 void		log_warnx(const char *, ...);
 void		log_info(const char *, ...);
 void		log_debug(const char *, ...);
+void		log_debug_pkt(struct mdns_pkt *);
 void		fatal(const char *) __dead;
 void		fatalx(const char *) __dead;
 const char *	if_state_name(int);

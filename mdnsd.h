@@ -24,22 +24,13 @@
 #include <event.h>
 
 #include "imsg.h"
+#include "mdns.h"
 
 #define	MDNSD_SOCKET	"/var/run/mdnsd.sock"
 #define	MDNSD_USER	"_mdnsd"
 #define RT_BUF_SIZE	16384
 #define MAX_RTSOCK_BUF	128 * 1024
 
-
-
-/* imsgev.c */
-struct imsgev {
-	struct imsgbuf		 ibuf;
-	void			(*handler)(int, short, void *);
-	struct event		 ev;
-	void			*data;
-	short			 events;
-};
 
 /* kiface.c */
 struct kif {
@@ -58,25 +49,7 @@ struct kif	*kif_findname(char *);
 void		 kev_init(void);
 void		 kev_cleanup(void);
 
-/* mif.c */
-/* enum mif_if_state { */
-/* 	MIF_STA_ACTIVE, */
-/* 	MIF_STA_DOWN */
-/* }; */
-
-/* enum mif_if_event { */
-/* 	MIF_EVT_NOTHING, */
-/* 	MIF_EVT_UP, */
-/* 	MIF_EVT_DOWN */
-/* }; */
-
-/* enum mif_if_action { */
-/* 	MIF_ACT_NOTHING, */
-/* 	MIF_ACT_START, */
-/* 	MIF_ACT_SHUTDOWN */
-/* }; */
-
-
+/* interface.c */
 /* interface states */
 #define IF_STA_DOWN		0x01
 #define IF_STA_ACTIVE		(~IF_STA_DOWN)
@@ -92,8 +65,8 @@ enum iface_event {
 /* interface actions */
 enum iface_action {
 	IF_ACT_NOTHING,
-	IF_ACT_START,
-	IF_ACT_SHUTDOWN
+	IF_ACT_STRT,
+	IF_ACT_RST
 };
 
 /* interface types */
@@ -104,12 +77,9 @@ enum iface_type {
 	IF_TYPE_POINTOMULTIPOINT
 };
 
-
 struct iface {
 	LIST_ENTRY(iface)	 entry;
-	pid_t			pid;
-	struct imsgev		iev;
-	
+
 	char			 name[IF_NAMESIZE];
 	struct in_addr		 addr;
 	struct in_addr		 dst;
@@ -129,38 +99,34 @@ struct iface {
 	u_int8_t		 linkstate;
 };
 
-/* interface.c */
-struct iface *	if_new(struct kif *);
-struct iface *	if_find_index(u_short);
-int		if_fsm(struct iface *, enum iface_event);
-int		if_act_start(struct iface *);
-int		if_act_reset(struct iface *);
+const char	*if_action_name(int);
+const char	*if_event_name(int);
+int		 if_act_reset(struct iface *);
+int		 if_act_start(struct iface *);
+int		 if_fsm(struct iface *, enum iface_event);
+int		 if_join_group(struct iface *, struct in_addr *);
+int		 if_leave_group(struct iface *, struct in_addr *);
+int		 if_set_mcast(struct iface *);
+int		 if_set_mcast_loop(int);
+int		 if_set_mcast_ttl(int, u_int8_t);
+int		 if_set_opt(int);
+int		 if_set_tos(int, int);
+struct iface *	 if_find_index(u_short);
+struct iface *	 if_new(struct kif *);
+void		 if_set_recvbuf(int);
+void		 if_del(struct iface *);
+
 
 /* mdnsd.c */
 struct mdnsd_conf {
-	LIST_HEAD(, iface)	 iface_list;
+	LIST_HEAD(, iface)	iface_list;
+	int 			mdns_sock;
+	struct event	 	ev_mdns;
 };
 
-void	main_dispatch_mife(int, short, void *);
-void	imsg_event_add(struct imsgev *);
-void	main_imsg_compose_mife(struct iface *, int, void *, u_int16_t);
-int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
-	    pid_t, int, void *, u_int16_t);
-
-enum imsg_type {
-	IMSG_NONE,
-	IMSG_START,
-	IMSG_STOP,
-};
-
-/* interface.c */
-int	if_set_mcast_ttl(int, u_int8_t);
-int	if_join_group(struct iface *, struct in_addr *);
-int	if_leave_group(struct iface *, struct in_addr *);
-int	if_set_mcast(struct iface *);
-int	if_set_mcast_loop(int);
-int	if_set_opt(int);
-int	if_set_tos(int, int);
-void	if_set_recvbuf(int);
-
+/* packet.c */
+int	pkt_parse(u_int8_t *, uint16_t, struct mdns_pkt *);
+void	recv_packet(int, short, void *); /* these don't belong here */
+int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+	
 #endif /* _MDNSD_H_ */
