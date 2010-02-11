@@ -52,16 +52,15 @@ static struct iface	*find_iface(unsigned int, struct in_addr);
 
 static void	pkt_init(struct mdns_pkt *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct mdns_pkt *);
-static int	pkt_parse_labels(u_int8_t **, u_int16_t *, u_char *[], size_t);
+static int	pkt_parse_dname(u_int8_t **, u_int16_t *, struct dname *);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_allrr(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
-static void	free_labels(u_char *[], size_t);
 static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
-static int	rr_parse_cname(struct mdns_rr *, u_int8_t *, u_int16_t);
-	
+static int	rr_parse_dname(struct mdns_rr *, u_int8_t *, u_int16_t, struct
+    dname *);
 
 /* send and receive packets */
 int
@@ -225,7 +224,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		/* clean up */
 		while ((mq = SIMPLEQ_FIRST(&pkt->qlist)) != NULL) {
 			SIMPLEQ_REMOVE_HEAD(&pkt->qlist, entry);
-			free_labels(mq->labels, mq->nlabels);
+			dname_free(&mq->dname);
 			free(mq);
 		}
 		
@@ -273,10 +272,11 @@ pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 static int
 pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 {
-	u_int16_t i, us;
+	u_int16_t us;
 	struct mdns_question *mq;
 	u_int8_t *buf = *pbuf;
 	
+	size_t i;
 	/* MDNS question sanity check */
 	if (*len < MDNS_MINQRY_LEN) {
 		log_debug("pkt_parse_question: bad query packet size %u", *len);
@@ -286,12 +286,16 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	if ((mq = calloc(1, sizeof(*mq))) == NULL)
 		fatal("calloc");
 	
-	mq->nlabels = pkt_parse_labels(pbuf, len, mq->labels, MDNS_MAX_LABELS);
-	if (mq->nlabels == -1) {
+	if (pkt_parse_dname(pbuf, len, &mq->dname) == -1) {
 		free(mq);
 		return -1;
 	}
 	
+	log_debug("QUESTION %d nlabels", mq->dname.nlabels);
+	for (i = 0; i < mq->dname.nlabels; i++)
+		log_debug("QUESTION label %d: %s", i, mq->dname.labels[i]);
+
+		
 	GETSHORT(mq->qtype, *pbuf);
 	*len -= INT16SZ;
 	log_debug("qtype = %u", mq->qtype);
@@ -310,17 +314,17 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	 * parsing the labels, I mean, we could but would be ugly */
 	if (mq->qclass != C_ANY && mq->qclass != C_IN) {
 		log_debug("pkt_parse_question: Invalid packet qclass %u", mq->qclass);
-		free_labels(mq->labels, mq->nlabels);
+		dname_free(&mq->dname);
 		free(mq);
 		return -1;
 	}
 	
-	for (i = 0; i < mq->nlabels; i++) {
-		strlcat(mq->name, (const u_char *)mq->labels[i],
-		    sizeof(mq->name));
-		if (i != mq->nlabels)
-			strlcat(mq->name, ".", sizeof(mq->name));
-	}
+/* 	for (i = 0; i < mq->nlabels; i++) { */
+/* 		strlcat(mq->name, (const u_char *)mq->labels[i], */
+/* 		    sizeof(mq->name)); */
+/* 		if (i != mq->nlabels) */
+/* 			strlcat(mq->name, ".", sizeof(mq->name)); */
+/* 	} */
 
 	SIMPLEQ_INSERT_TAIL(&pkt->qlist, mq, entry);
 	
@@ -332,8 +336,9 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
  * but, each label must be no greater than MAXLABEL and their sum can'
  * be higher than MAXHOSTNAMELEN.
  */
+/* Real unhappy name for this function */
 static int
-pkt_fetch_ptr(u_int8_t *head, u_int16_t len, u_char *labels[], size_t n)
+pkt_fetch_ptr(u_int8_t *head, u_int16_t len, struct dname *dname)
 {
 	u_int16_t	 us = 0;
 	u_int16_t	 llen;
@@ -341,10 +346,7 @@ pkt_fetch_ptr(u_int8_t *head, u_int16_t len, u_char *labels[], size_t n)
 	u_char		*buf;
 	
 	
-	for (i = 0; i < n; i++) {
-		if (!(*head & 0xc0)) /* make sure head is a pointer */
-			break;
-		
+	for (i = dname->nlabels; dname->nlabels < MDNS_MAX_LABELS; i++) {
 		GETSHORT(us, head);
 		buf =  pktcomp.start + (us & NAMEADDR_MSK);
 	
@@ -355,16 +357,22 @@ pkt_fetch_ptr(u_int8_t *head, u_int16_t len, u_char *labels[], size_t n)
 			return -1;
 		}
 		
-		if (llen == 0)	/* The end */
+		if (llen == 0) {	/* The end */
+			log_debug("cheguei no fim!");
 			break;
+		}
 		
-		if ((labels[i] = malloc(llen + 1)) == NULL)
+		if ((dname->labels[i] = malloc(llen + 1)) == NULL)
 			fatal("malloc");
-		bzero(labels[i], llen + 1); /* NULL terminated */
-		memcpy(labels[i], buf, llen);
-		
+		bzero(dname->labels[i], llen + 1); /* NULL terminated */
+		memcpy(dname->labels[i], buf, llen);
+		dname->nlabels++;
+		log_debug("%s", dname->labels[i]);
 		buf += llen;
 		head = buf;
+		
+		if (!(*head & 0xc0)) /* make sure head is a pointer */
+			break;
 /* 		log_debug("proximo byte = 0x%x ", *buf); */
 	}
 
@@ -372,7 +380,7 @@ pkt_fetch_ptr(u_int8_t *head, u_int16_t len, u_char *labels[], size_t n)
 }
 	
 static int
-pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, u_char *labels[], size_t n)
+pkt_parse_dname(u_int8_t **pbuf, u_int16_t *len, struct dname *dname)
 {
 	size_t		 i;
 	u_int16_t	 llen, tlen;
@@ -380,10 +388,9 @@ pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, u_char *labels[], size_t n)
 	u_int8_t	*start = *pbuf;
 	u_int8_t	*buf = *pbuf;
 	
-	for (i = 0, tlen = 0; i < n; i++) {
+	for (i = 0, tlen = 0; i < MDNS_MAX_LABELS; i++) {
 		if (*buf & 0xc0) {
-			if (pkt_fetch_ptr(buf, *len, &labels[n - i],
-			    n - i) == -1)
+			if (pkt_fetch_ptr(buf, *len, dname) == -1)
 				return -1;
 			buf  += INT16SZ; /* jump over ptr */
 			*len -= INT16SZ;
@@ -406,7 +413,8 @@ pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, u_char *labels[], size_t n)
 			fatal("malloc");
 		bzero(lptr, llen + 1); /* NULL terminated */
 		memcpy(lptr, buf, llen);
-		labels[i] = lptr;
+		dname->labels[i] = lptr;
+		dname->nlabels++;
 		
 		buf  += llen;
 		*len -= llen;
@@ -445,8 +453,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	u_int16_t us;
 	int r = 0;
 
-	rr->nlabels = pkt_parse_labels(pbuf, len, rr->labels, MDNS_MAX_LABELS);
-	if (rr->nlabels == -1) 
+	if (pkt_parse_dname(pbuf, len, &rr->dname) == -1)
 		return -1;
 	
 	/* Make sure rr packet len is ok */
@@ -465,7 +472,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	rr->class = us & CLASS_MSK;
 	
 	if (rr->class != C_ANY && rr->class != C_IN) {
-		free_labels(rr->labels, rr->nlabels);
+		dname_free(&rr->dname);
 		log_debug("pkt_parse_rr: Invalid packet class %u", rr->class);
 		return -1;
 	}
@@ -498,10 +505,14 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 		break;
 	case T_CNAME:
 		log_debug("got a CNAME record");
-		if (rr_parse_cname(rr, *pbuf, *len) == -1)
+		if (rr_parse_dname(rr, *pbuf, *len,
+		    &rr->rdata.CNAME.dname) == -1)
 			return -1;
 		break;
 	case T_PTR:
+		if (rr_parse_dname(rr, *pbuf, *len,
+		    &rr->rdata.PTR.dname) == -1)
+			return -1;
 		log_debug("got a PTR record");
 		break;
 	case T_TXT:
@@ -528,14 +539,14 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	return r;
 }
 
-static void
-free_labels(u_char *labels[], size_t n)
+void
+dname_free(struct dname *dname)
 {
 	size_t j;
 	
-	for (j = 0; j < n; j++) {
-		free(labels[j]);
-		labels[j] = NULL; /* Avoid a possible double free */
+	for (j = 0; j < dname->nlabels; j++) {
+		free(dname->labels[j]);
+		dname->labels[j] = NULL; /* Avoid a possible double free */
 	}
 }
 
@@ -605,19 +616,23 @@ rr_parse_a(struct mdns_rr *rr, u_int8_t *buf)
 }
 
 static int
-rr_parse_cname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
+rr_parse_dname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len, struct dname *dname)
 {
-
-/* 	if (pkt_fetch_ptr(*buf, len, rr->rdata.CNAME.labels, */
-/* 	    rr->rdata.CNAME.nlabels) == -1) { */
-/* 		log_debug("Invalid CNAME record"); */
-/* 		return -1; */
-/* 	} */
-		
+	size_t i;
+	
+	if (pkt_fetch_ptr(buf, len, dname) == -1) {
+		log_debug("Invalid CNAME record");
+		return -1;
+	}
+	
+	log_debug("%d nlabels", dname->nlabels);
+	for (i = 0; i < dname->nlabels; i++)
+		log_debug("label %d: %s", i, dname->labels[i]);
 	
 	return 0;
 	
 }
+
 
 ssize_t
 charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
@@ -637,3 +652,24 @@ charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
 	
 	return tocpy + 1;
 }
+
+/* void */
+/* labelstr(char domain[MAXHOSTNAMELEN], u_char *l[], ssize_t nl) */
+/* { */
+/* 	ssize_t i; */
+	
+	
+/* 	log_debug("sizeof domain = %zd", sizeof(domain)); */
+/* 	bzero(domain, MAXHOSTNAMELEN); */
+	
+/* 	for (i = 0; i < nl; i++) { */
+/* 		strlcat(domain, (const u_char *)l[i], sizeof(domain)); */
+/* 		if (i != mq->nlabels) */
+/* 			strlcat(mq->name, ".", sizeof(mq->name)); */
+/* 	} */
+
+/* 	for (i = 0; i < nl; i++) { */
+/* 		strlcat(domain, l[i], ) */
+/* 	} */
+/* 	strlcpy(l) */
+/* } */

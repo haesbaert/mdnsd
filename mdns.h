@@ -39,11 +39,19 @@
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
 
+struct dname
+{
+	u_char		*labels[MDNS_MAX_LABELS];
+	size_t		 nlabels;
+};
+	
 struct mdns_question {
 	SIMPLEQ_ENTRY(mdns_question)	 entry;
 	
-	u_char		name[MAXHOSTNAMELEN];
-	u_char		*labels[MDNS_MAX_LABELS]; /* why isn't this a list ? */
+/* 	u_char		name[MAXHOSTNAMELEN]; */
+/* 	u_char		*labels[MDNS_MAX_LABELS]; /\* why isn't this a list ? *\/ */
+	struct dname	dname;
+	
 	ssize_t		nlabels;
 	u_int16_t	qtype;
 	u_int16_t	qclass;
@@ -51,13 +59,14 @@ struct mdns_question {
 };
 
 struct mdns_rr {
-	u_char		*labels[MDNS_MAX_LABELS];
-	ssize_t		 nlabels;
-	u_int16_t	 type;
-	int		 cacheflush;	
-	u_int16_t	 class;
-	u_int32_t	 ttl;
-	u_int16_t	 rdlen;
+/* 	u_char		*labels[MDNS_MAX_LABELS]; */
+/* 	ssize_t		 nlabels; */
+	struct dname	dname;
+	u_int16_t	type;
+	int		cacheflush;	
+	u_int16_t	class;
+	u_int32_t	ttl;
+	u_int16_t	rdlen;
 	union {
 		struct {
 			struct in_addr addr;
@@ -69,13 +78,15 @@ struct mdns_rr {
 		} HINFO;
 		
 		struct {
-			u_char		*labels[MDNS_MAX_LABELS];
-			ssize_t		 nlabels;
+/* 			u_char		*labels[MDNS_MAX_LABELS]; */
+/* 			ssize_t		 nlabels; */
+			struct dname dname;
 		} CNAME;
 		
 		struct {
-			char		*labels[MDNS_MAX_LABELS];
-			ssize_t		 nlabels;
+/* 			char		*labels[MDNS_MAX_LABELS]; */
+/* 			ssize_t		 nlabels; */
+			struct dname dname;
 		} PTR;
 
 		struct {
@@ -112,5 +123,7 @@ struct mdns_pkt {
 
 void *	rrdata(struct mdns_rr *);
 ssize_t	charstr(char [MDNS_MAX_CHARSTR], u_int8_t *, uint16_t);
+void	labelstr(char domain[MAXHOSTNAMELEN], u_char *l[], ssize_t nl);
+void	dname_free(struct dname *);
 
 #endif	/* _MDNS_H_ */
