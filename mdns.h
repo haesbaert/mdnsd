@@ -16,6 +16,8 @@
 #ifndef _MDNS_H_
 #define	_MDNS_H_
 
+#include <netinet/in.h>
+
 /* TODO REMOVE THE STUPID MDNS PREFIX */
 
 #define MDNS_QUERY_TTL		1
@@ -58,7 +60,7 @@ struct mdns_rr {
 	u_int16_t	 rdlen;
 	union {
 		struct {
-			uint32_t addr;
+			struct in_addr addr;
 		} A;
 		
 		struct {

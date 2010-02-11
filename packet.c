@@ -58,7 +58,11 @@ static int	pkt_parse_allrr(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
 static void	free_labels(u_char *[], size_t);
+static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
+static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
+static int	rr_parse_cname(struct mdns_rr *, u_int8_t *, u_int16_t);
 	
+
 /* send and receive packets */
 int
 send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
@@ -474,32 +478,28 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	GETSHORT(rr->rdlen, *pbuf);
 	*len -= INT16SZ;
 	log_debug("rr->rdlen = %u", rr->rdlen);
+	
+	if (*len < rr->rdlen) {
+		log_debug("Invalid rr data length, *len = %u, rdlen = %u",
+		    *len,rr->rdlen);
+		return -1;
+	}
 
 	switch (rr->type) {
-		ssize_t n;
 	case T_A:
-		if (rr->rdlen != INT32SZ ||
-		    *len < INT32SZ) {
-			log_debug("Invalid A record rdlen %u", rr->rdlen);
-			r = -1;
-		}
-		log_debug("got A record");
+		if (rr_parse_a(rr, *pbuf) == -1)
+			return -1;
+		log_debug("A record");
 		break;
 	case T_HINFO:
-		log_debug("got a HINFO record");
-		
-		if ((n = charstr(rr->rdata.HINFO.cpu, *pbuf, rr->rdlen)) == -1)
+		log_debug("HINFO record");
+		if (rr_parse_hinfo(rr, *pbuf) == -1)
 			return -1;
-		log_debug("   cpu: %s", rr->rdata.HINFO.cpu);
-
-		if ((n = charstr(rr->rdata.HINFO.os, *pbuf + n,
-		    rr->rdlen - n)) == -1)
-			return -1;
-		log_debug("   os: %s",  rr->rdata.HINFO.os);
-		
 		break;
 	case T_CNAME:
 		log_debug("got a CNAME record");
+		if (rr_parse_cname(rr, *pbuf, *len) == -1)
+			return -1;
 		break;
 	case T_PTR:
 		log_debug("got a PTR record");
@@ -568,6 +568,55 @@ rrdata(struct mdns_rr *rr)
 		log_debug("Unknown type %d", rr->type);
 		return NULL;
 	}
+}
+
+static int
+rr_parse_hinfo(struct mdns_rr *rr, u_int8_t *buf)
+{
+	ssize_t n;
+	
+	if ((n = charstr(rr->rdata.HINFO.cpu, buf, rr->rdlen)) == -1)
+		return -1;
+	log_debug("   cpu: %s", rr->rdata.HINFO.cpu);
+
+	if ((n = charstr(rr->rdata.HINFO.os, buf + n, rr->rdlen - n)) == -1)
+		return -1;
+	log_debug("   os: %s",  rr->rdata.HINFO.os);
+	
+	return 0;
+}
+	
+static int
+rr_parse_a(struct mdns_rr *rr, u_int8_t *buf)
+{
+	u_int32_t ul;
+	
+	if (rr->rdlen != INT32SZ) {
+		log_debug("Invalid A record rdlen %u", rr->rdlen);
+		return -1;
+	}
+	
+	GETLONG(ul, buf);
+	rr->rdata.A.addr.s_addr = htonl(ul);
+	
+	log_debug("A record: %s", inet_ntoa(rr->rdata.A.addr));
+	return 0;
+	
+}
+
+static int
+rr_parse_cname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
+{
+
+/* 	if (pkt_fetch_ptr(*buf, len, rr->rdata.CNAME.labels, */
+/* 	    rr->rdata.CNAME.nlabels) == -1) { */
+/* 		log_debug("Invalid CNAME record"); */
+/* 		return -1; */
+/* 	} */
+		
+	
+	return 0;
+	
 }
 
 ssize_t
