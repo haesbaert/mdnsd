@@ -27,6 +27,8 @@
 #define MDNS_HDR_QR_MASK	0x8000
 #define MDNS_MAX_PACKET		10000
 #define MDNS_MAX_LABELS		128
+#define MDNS_MAX_CHSTRING	256 /* we swap the length byter per the null byte */
+
 #define CACHEFLUSH_MSK		0x8000
 #define CLASS_MSK		~0x8000
 #define UNIRESP_MSK		0x8000
@@ -38,8 +40,8 @@
 struct mdns_question {
 	SIMPLEQ_ENTRY(mdns_question)	 entry;
 	
-	char		name[MAXHOSTNAMELEN];
-	char		*labels[MDNS_MAX_LABELS]; /* why isn't this a list ? */
+	u_char		name[MAXHOSTNAMELEN];
+	u_char		*labels[MDNS_MAX_LABELS]; /* why isn't this a list ? */
 	ssize_t		nlabels;
 	u_int16_t	qtype;
 	u_int16_t	qclass;
@@ -47,14 +49,45 @@ struct mdns_question {
 };
 
 struct mdns_rr {
-	char		*labels[MDNS_MAX_LABELS];
+	u_char		*labels[MDNS_MAX_LABELS];
 	ssize_t		 nlabels;
 	u_int16_t	 type;
 	int		 cacheflush;	
 	u_int16_t	 class;
 	u_int32_t	 ttl;
 	u_int16_t	 rdlen;
-	void		*rddata;
+/* 	union { */
+/* 		struct { */
+/* 			uint32_t addr; */
+/* 		} A; */
+		
+/* 		struct { */
+/* 			u_char cpu[MDNS_MAX_CHSTRING]; */
+/* 			u_char os[MDNS_MAX_CHSTRING]; */
+/* 		} HINFO; */
+		
+/* 		struct { */
+/* 			u_char		*labels[MDNS_MAX_LABELS]; */
+/* 			ssize_t		 nlabels; */
+/* 		} CNAME; */
+		
+/* 		struct { */
+/* 			u_char		*labels[MDNS_MAX_LABELS]; */
+/* 			ssize_t		 nlabels; */
+/* 		} PTR; */
+
+/* 		struct { */
+/* 			int TODO; */
+/* 		} SRV; */
+		
+/* 		struct { */
+/* 			int */
+/* 		} TXT; */
+
+/* 		struct { */
+			
+/* 		} NS; */
+/* 	} rdata; */
 };
 
 struct mdns_pkt {

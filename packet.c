@@ -52,12 +52,12 @@ static struct iface	*find_iface(unsigned int, struct in_addr);
 
 static void	pkt_init(struct mdns_pkt *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct mdns_pkt *);
-static int	pkt_parse_labels(u_int8_t **, u_int16_t *, char *[], size_t);
+static int	pkt_parse_labels(u_int8_t **, u_int16_t *, u_char *[], size_t);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_allrr(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
-static void	free_labels(char *[], size_t);
+static void	free_labels(u_char *[], size_t);
 
 /* send and receive packets */
 int
@@ -95,7 +95,7 @@ recv_packet(int fd, short event, void *bula)
 	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
 	struct mdns_pkt		 pkt;
-	u_int8_t		buf[MDNS_MAX_PACKET];
+	static u_int8_t		buf[MDNS_MAX_PACKET];
 	ssize_t			 r;
 	u_int16_t		 len, srcport;
 	static int pktnum = 0;
@@ -152,6 +152,7 @@ recv_packet(int fd, short event, void *bula)
 
 	srcport = ntohs(src.sin_port);
 	
+/* 	log_debug("buf is at %p", buf); */
 	log_debug("###### PACKET %d #####", ++pktnum);
 	if (pkt_parse(buf, len, &pkt) == -1)
 		return;
@@ -201,6 +202,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	pktcomp.start = buf;
 	pktcomp.len = len;
 	
+	log_debug("pktcomp.start + 0xfb = 0x%x", *(pktcomp.start + 0xfb));
 	if (pkt_parse_header(&buf, &len, pkt) == -1)
 		return -1;
 	
@@ -310,7 +312,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	}
 	
 	for (i = 0; i < mq->nlabels; i++) {
-		strlcat(mq->name, (const char *)mq->labels[i],
+		strlcat(mq->name, (const u_char *)mq->labels[i],
 		    sizeof(mq->name));
 		if (i != mq->nlabels)
 			strlcat(mq->name, ".", sizeof(mq->name));
@@ -327,137 +329,194 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
  * be higher than MAXHOSTNAMELEN.
  */
 
-/* anda em buf, preenche label e devolve 0 se fim, -1 se erro, offset se ok */
-static ssize_t
-pkt_fetch_label(u_int8_t *buf, u_int16_t len, char label[MAXLABEL + 1])
-{
-	u_int8_t llen;
-	llen = *buf++;
-	
-	log_debug("pkt_fetch_label llen %u", llen);
-	bzero(label, MAXLABEL + 1) ;
-	/* finished */
-	if (llen == 0)
-		return 0;
-	
-	if (llen > MAXLABEL || llen > len) {
-		log_debug("pkt_fetch_label: invalid len %u,"
-		    "MAXLABEL = %u len = %u", llen, MAXLABEL, len);
-		return -1;
-	}
-		
-	log_debug("llen %u", llen);
-	strlcpy(label, buf, llen + 1);
-	
-	return llen;
-}
-
 static int
-pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, char *labels[], size_t n)
+pkt_fetch_ptr(u_int8_t *head, u_int16_t *len, u_char *labels[], size_t n)
 {
-	u_int8_t *buf = NULL;
-	u_int16_t llen, tlen;
-	u_int8_t *lptr;
-	size_t i;
-	int error, namecomp;
+	u_int16_t	 us = 0;
+	u_int16_t	 llen;
+	size_t		 i;
+	u_char		*buf;
 	
-	error = 0;
 	
-	log_debug("pkt_parse_labels: *len = %u", *len);
-	/* Deal with name compression */
-	if (*len < 2)
-		return -1;
-	
-	/* peek and check for namecompression */
-	log_debug("*(*pbuf) = 0x%x", *(*pbuf));
-	if (*(*pbuf) & 0xc0)
-		namecomp = 1;
-	else
-		namecomp = 0;
-	
-	if (namecomp) {
-		u_int16_t naddr, us;
-
-		GETSHORT(us, *pbuf);
-		(*len) -= INT16SZ;
+	for (i = 0; i < n; i++) {
+		if (!(*head & 0xc0)) /* make sure head is a pointer */
+			break;
 		
-		/* Make sure the address is sane */
-		naddr = us & NAMEADDR_MSK;
-		if (naddr > (pktcomp.len - MAXHOSTNAMELEN)) {
-			log_debug("Insane name compress pointer");
+		GETSHORT(us, head);
+		buf =  pktcomp.start + (us & NAMEADDR_MSK);
+	
+		llen = *buf++;
+		
+		if (llen > MAXLABEL) {
+			log_debug("llen insane: %u us = 0x%x", llen, us);
 			return -1;
 		}
 		
-		buf = pktcomp.start + naddr;
-		namecomp = 1;
-		log_debug("Namecompression: YES");
+		if (llen == 0)	/* The end */
+			break;
+		
+		if ((labels[i] = malloc(llen + 1)) == NULL)
+			fatal("malloc");
+		bzero(labels[i], llen + 1); /* NULL terminated */
+		memcpy(labels[i], buf, llen);
+		
+		buf += llen;
+		head = buf;
+/* 		log_debug("proximo byte = 0x%x ", *buf); */
 	}
-	else {
-		log_debug("Namecompression: NO");
-		buf = *pbuf;
-	}
+
+	return 0;
+}
 	
+static int
+pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, u_char *labels[], size_t n)
+{
+	size_t		 i;
+	u_int16_t	 llen, tlen;
+	u_int8_t	*lptr;
+	u_int8_t	*start = *pbuf;
+	u_int8_t	*buf = *pbuf;
 	
 	for (i = 0, tlen = 0; i < n; i++) {
-		if (*buf == '\0') {
+		if (*buf & 0xc0) {
+			if (pkt_fetch_ptr(buf, len, &labels[n - i],
+			    n - i) == -1)
+				return -1;
+			buf += INT16SZ; /* jump over ptr */
 			break;
 		}
-			
+		
 		llen = *buf++;
-		if (!namecomp)
-			(*len)--;
 		tlen += llen;
-		
-		if (llen > MAXLABEL || llen > *len) {
-			log_debug("pkt_parse_labels: Invalid len %u,"
-			    "MAXLABEL = %u *len = %u", llen, MAXLABEL, *len);
-			error = 1;
+		if (llen == 0) 	/* The end */
 			break;
-		}
 		
-		if (tlen > MAXHOSTNAMELEN) {
-			log_debug("total len %u > MAXHOSTNAMELEN(%d)",
-			    tlen, MAXLABEL);
-			error = 1;
-			break;
+		if (tlen > MAXHOSTNAMELEN || llen > *len  || tlen > *len) {
+			log_debug("len insane, llen: %u tlen: %u *len:", llen,
+			    tlen, *len);
+			return -1;
 		}
 		
 		if ((lptr = malloc(llen + 1)) == NULL)
 			fatal("malloc");
-		
 		bzero(lptr, llen + 1); /* NULL terminated */
 		memcpy(lptr, buf, llen);
 		labels[i] = lptr;
-		log_debug("got label %s", lptr);
-
-		buf   += llen;
-		if (!namecomp)
-			*len  -= llen;
-/* 		log_debug("*len = %u", *len); */
+		
+		buf += llen;
 	}
 	
-	if (i == n) {
-		log_debug("MAX_LABELS reached! discard packet");
-		error = 1;
-	}
-	
-	if (error || i == n) {
-		free_labels(labels, n);
-		return -1;
-	}
-	
-	/* jump over null byte */
-	(*len)--;
-
-	if (namecomp)
-		*pbuf++;
-	else {
-		buf++;
-		*pbuf = buf;
-	}
-	
-	return i;
+	log_debug("Andei: %zd", buf - start);
+	*pbuf += buf - start;
+	*len  -= buf - start;
+	return 0;
 }
+
+/* static int */
+/* pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, char *labels[], size_t n) */
+/* { */
+/* 	u_int16_t llen, tlen; */
+/* 	u_int8_t *lptr, *ncbuf = NULL; */
+/* 	size_t i; */
+/* 	int error, namecomp; */
+	
+/* 	error = 0; */
+	
+/* 	log_debug("pkt_parse_labels: *len = %u", *len); */
+/* 	/\* Deal with name compression *\/ */
+/* 	if (*len < 2) */
+/* 		return -1; */
+	
+/* 	/\* peek and check for namecompression *\/ */
+/* 	log_debug("*(*pbuf) = 0x%x", *(*pbuf)); */
+/* 	if (*(*pbuf) & 0xc0) */
+/* 		namecomp = 1; */
+/* 	else */
+/* 		namecomp = 0; */
+	
+/* 	if (namecomp) { */
+/* 		u_int16_t naddr, us; */
+
+/* 		GETSHORT(us, *pbuf); */
+/* 		(*len) -= INT16SZ; */
+		
+/* 		/\* Make sure the address is sane *\/ */
+/* 		naddr = us & NAMEADDR_MSK; */
+/* 		if (naddr > (pktcomp.len - MAXHOSTNAMELEN)) { */
+/* 			log_debug("Insane name compress pointer"); */
+/* 			return -1; */
+/* 		} */
+		
+/* 		ncbuf = pktcomp.start + naddr; */
+/* 		namecomp = 1; */
+/* 		log_debug("Namecompression: YES"); */
+/* 	} */
+/* 	else  */
+/* 		log_debug("Namecompression: NO"); */
+	
+	
+/* 	for (i = 0, tlen = 0; i < n; i++) { */
+/* 		if (namecomp && *ncbuf == '\0')  */
+/* 			break; */
+		
+/* 		if (!namecomp && *(*pbuf) == '\0') */
+/* 			break; */
+			
+/* 		llen = *buf++; */
+/* 		if (!namecomp) */
+/* 			(*len)--; */
+/* 		tlen += llen; */
+		
+/* 		if (llen > MAXLABEL || llen > *len) { */
+/* 			log_debug("pkt_parse_labels: Invalid len %u," */
+/* 			    "MAXLABEL = %u *len = %u", llen, MAXLABEL, *len); */
+/* 			error = 1; */
+/* 			break; */
+/* 		} */
+		
+/* 		if (tlen > MAXHOSTNAMELEN) { */
+/* 			log_debug("total len %u > MAXHOSTNAMELEN(%d)", */
+/* 			    tlen, MAXLABEL); */
+/* 			error = 1; */
+/* 			break; */
+/* 		} */
+		
+/* 		if ((lptr = malloc(llen + 1)) == NULL) */
+/* 			fatal("malloc"); */
+		
+/* 		bzero(lptr, llen + 1); /\* NULL terminated *\/ */
+/* 		memcpy(lptr, buf, llen); */
+/* 		labels[i] = lptr; */
+/* 		log_debug("got label %s", lptr); */
+
+/* 		buf   += llen; */
+/* 		if (!namecomp) */
+/* 			*len  -= llen; */
+/* /\* 		log_debug("*len = %u", *len); *\/ */
+/* 	} */
+	
+/* 	if (i == n) { */
+/* 		log_debug("MAX_LABELS reached! discard packet"); */
+/* 		error = 1; */
+/* 	} */
+	
+/* 	if (error || i == n) { */
+/* 		free_labels(labels, n); */
+/* 		return -1; */
+/* 	} */
+	
+/* 	/\* jump over null byte *\/ */
+/* 	(*len)--; */
+
+/* 	if (namecomp) */
+/* 		*pbuf++; */
+/* 	else { */
+/* 		buf++; */
+/* 		*pbuf = buf; */
+/* 	} */
+	
+/* 	return i; */
+/* } */
 
 static int
 pkt_parse_allrr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
@@ -467,15 +526,14 @@ pkt_parse_allrr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	
 	for (i = 0; i < pkt->ancount; i++) {
 		bzero(&rr, sizeof(rr));
-		log_debug("BEGIN PARSE RR");
+		log_debug("\n");
 		if (pkt_parse_rr(pbuf, len, pkt, &rr) == -1) {
 			log_debug("Can't parse RR");
 			return -1;
 		}
-		log_debug("END PARSE RR");
-		
 	}
 	
+	/* TODO parse rest of rr */
 	return 0;
 }
 
@@ -564,7 +622,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 }
 
 static void
-free_labels(char *labels[], size_t n)
+free_labels(u_char *labels[], size_t n)
 {
 	size_t j;
 	
