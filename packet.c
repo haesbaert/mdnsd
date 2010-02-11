@@ -58,7 +58,7 @@ static int	pkt_parse_allrr(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
 static void	free_labels(u_char *[], size_t);
-
+	
 /* send and receive packets */
 int
 send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
@@ -328,9 +328,8 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
  * but, each label must be no greater than MAXLABEL and their sum can'
  * be higher than MAXHOSTNAMELEN.
  */
-
 static int
-pkt_fetch_ptr(u_int8_t *head, u_int16_t *len, u_char *labels[], size_t n)
+pkt_fetch_ptr(u_int8_t *head, u_int16_t len, u_char *labels[], size_t n)
 {
 	u_int16_t	 us = 0;
 	u_int16_t	 llen;
@@ -379,10 +378,11 @@ pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, u_char *labels[], size_t n)
 	
 	for (i = 0, tlen = 0; i < n; i++) {
 		if (*buf & 0xc0) {
-			if (pkt_fetch_ptr(buf, len, &labels[n - i],
+			if (pkt_fetch_ptr(buf, *len, &labels[n - i],
 			    n - i) == -1)
 				return -1;
-			buf += INT16SZ; /* jump over ptr */
+			buf  += INT16SZ; /* jump over ptr */
+			*len -= INT16SZ;
 			break;
 		}
 		
@@ -391,8 +391,9 @@ pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, u_char *labels[], size_t n)
 		if (llen == 0) 	/* The end */
 			break;
 		
-		if (tlen > MAXHOSTNAMELEN || llen > *len  || tlen > *len) {
-			log_debug("len insane, llen: %u tlen: %u *len:", llen,
+		/* *len is already wrong here, revise everything ! */
+		if (tlen > MAXHOSTNAMELEN || llen > *len) {
+			log_debug("len insane, llen: %u tlen: %u *len: %u", llen,
 			    tlen, *len);
 			return -1;
 		}
@@ -403,120 +404,16 @@ pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, u_char *labels[], size_t n)
 		memcpy(lptr, buf, llen);
 		labels[i] = lptr;
 		
-		buf += llen;
+		buf  += llen;
+		*len -= llen;
+
 	}
 	
-	log_debug("Andei: %zd", buf - start);
 	*pbuf += buf - start;
-	*len  -= buf - start;
+/* 	*len  -= buf - start; */
+	
 	return 0;
 }
-
-/* static int */
-/* pkt_parse_labels(u_int8_t **pbuf, u_int16_t *len, char *labels[], size_t n) */
-/* { */
-/* 	u_int16_t llen, tlen; */
-/* 	u_int8_t *lptr, *ncbuf = NULL; */
-/* 	size_t i; */
-/* 	int error, namecomp; */
-	
-/* 	error = 0; */
-	
-/* 	log_debug("pkt_parse_labels: *len = %u", *len); */
-/* 	/\* Deal with name compression *\/ */
-/* 	if (*len < 2) */
-/* 		return -1; */
-	
-/* 	/\* peek and check for namecompression *\/ */
-/* 	log_debug("*(*pbuf) = 0x%x", *(*pbuf)); */
-/* 	if (*(*pbuf) & 0xc0) */
-/* 		namecomp = 1; */
-/* 	else */
-/* 		namecomp = 0; */
-	
-/* 	if (namecomp) { */
-/* 		u_int16_t naddr, us; */
-
-/* 		GETSHORT(us, *pbuf); */
-/* 		(*len) -= INT16SZ; */
-		
-/* 		/\* Make sure the address is sane *\/ */
-/* 		naddr = us & NAMEADDR_MSK; */
-/* 		if (naddr > (pktcomp.len - MAXHOSTNAMELEN)) { */
-/* 			log_debug("Insane name compress pointer"); */
-/* 			return -1; */
-/* 		} */
-		
-/* 		ncbuf = pktcomp.start + naddr; */
-/* 		namecomp = 1; */
-/* 		log_debug("Namecompression: YES"); */
-/* 	} */
-/* 	else  */
-/* 		log_debug("Namecompression: NO"); */
-	
-	
-/* 	for (i = 0, tlen = 0; i < n; i++) { */
-/* 		if (namecomp && *ncbuf == '\0')  */
-/* 			break; */
-		
-/* 		if (!namecomp && *(*pbuf) == '\0') */
-/* 			break; */
-			
-/* 		llen = *buf++; */
-/* 		if (!namecomp) */
-/* 			(*len)--; */
-/* 		tlen += llen; */
-		
-/* 		if (llen > MAXLABEL || llen > *len) { */
-/* 			log_debug("pkt_parse_labels: Invalid len %u," */
-/* 			    "MAXLABEL = %u *len = %u", llen, MAXLABEL, *len); */
-/* 			error = 1; */
-/* 			break; */
-/* 		} */
-		
-/* 		if (tlen > MAXHOSTNAMELEN) { */
-/* 			log_debug("total len %u > MAXHOSTNAMELEN(%d)", */
-/* 			    tlen, MAXLABEL); */
-/* 			error = 1; */
-/* 			break; */
-/* 		} */
-		
-/* 		if ((lptr = malloc(llen + 1)) == NULL) */
-/* 			fatal("malloc"); */
-		
-/* 		bzero(lptr, llen + 1); /\* NULL terminated *\/ */
-/* 		memcpy(lptr, buf, llen); */
-/* 		labels[i] = lptr; */
-/* 		log_debug("got label %s", lptr); */
-
-/* 		buf   += llen; */
-/* 		if (!namecomp) */
-/* 			*len  -= llen; */
-/* /\* 		log_debug("*len = %u", *len); *\/ */
-/* 	} */
-	
-/* 	if (i == n) { */
-/* 		log_debug("MAX_LABELS reached! discard packet"); */
-/* 		error = 1; */
-/* 	} */
-	
-/* 	if (error || i == n) { */
-/* 		free_labels(labels, n); */
-/* 		return -1; */
-/* 	} */
-	
-/* 	/\* jump over null byte *\/ */
-/* 	(*len)--; */
-
-/* 	if (namecomp) */
-/* 		*pbuf++; */
-/* 	else { */
-/* 		buf++; */
-/* 		*pbuf = buf; */
-/* 	} */
-	
-/* 	return i; */
-/* } */
 
 static int
 pkt_parse_allrr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
@@ -579,6 +476,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	log_debug("rr->rdlen = %u", rr->rdlen);
 
 	switch (rr->type) {
+		ssize_t n;
 	case T_A:
 		if (rr->rdlen != INT32SZ ||
 		    *len < INT32SZ) {
@@ -586,10 +484,19 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 			r = -1;
 		}
 		log_debug("got A record");
-		
 		break;
 	case T_HINFO:
 		log_debug("got a HINFO record");
+		
+		if ((n = charstr(rr->rdata.HINFO.cpu, *pbuf, rr->rdlen)) == -1)
+			return -1;
+		log_debug("   cpu: %s", rr->rdata.HINFO.cpu);
+
+		if ((n = charstr(rr->rdata.HINFO.os, *pbuf + n,
+		    rr->rdlen - n)) == -1)
+			return -1;
+		log_debug("   os: %s",  rr->rdata.HINFO.os);
+		
 		break;
 	case T_CNAME:
 		log_debug("got a CNAME record");
@@ -630,4 +537,54 @@ free_labels(u_char *labels[], size_t n)
 		free(labels[j]);
 		labels[j] = NULL; /* Avoid a possible double free */
 	}
+}
+
+void *
+rrdata(struct mdns_rr *rr)
+{
+	switch (rr->type) {
+	case T_A:
+		return &rr->rdata.A;
+		break;
+	case T_HINFO:
+		return &rr->rdata.HINFO;
+		break;
+	case T_CNAME:
+		return &rr->rdata.CNAME;
+		break;
+	case T_PTR:
+		return &rr->rdata.PTR;
+		break;
+	case T_SRV:
+		return &rr->rdata.SRV;
+		break;
+	case T_TXT:
+		return &rr->rdata.TXT;
+		break;
+	case T_NS:
+		return &rr->rdata.NS;
+		break;
+	default:
+		log_debug("Unknown type %d", rr->type);
+		return NULL;
+	}
+}
+
+ssize_t
+charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
+{
+	u_int8_t tocpy;
+	
+	tocpy = *buf++;
+	
+	if (tocpy > len) {
+		log_debug("tocpy: %u > len: %u", tocpy, len);
+		return -1;
+	}
+	
+	/* This isn't a case for strlcpy */
+	memcpy(dest, buf, tocpy);
+	dest[tocpy] = '\0'; 	/* Assure null terminated */
+	
+	return tocpy + 1;
 }

@@ -27,7 +27,7 @@
 #define MDNS_HDR_QR_MASK	0x8000
 #define MDNS_MAX_PACKET		10000
 #define MDNS_MAX_LABELS		128
-#define MDNS_MAX_CHSTRING	256 /* we swap the length byter per the null byte */
+#define MDNS_MAX_CHARSTR	256 /* we swap the length byter per the null byte */
 
 #define CACHEFLUSH_MSK		0x8000
 #define CLASS_MSK		~0x8000
@@ -56,38 +56,38 @@ struct mdns_rr {
 	u_int16_t	 class;
 	u_int32_t	 ttl;
 	u_int16_t	 rdlen;
-/* 	union { */
-/* 		struct { */
-/* 			uint32_t addr; */
-/* 		} A; */
+	union {
+		struct {
+			uint32_t addr;
+		} A;
 		
-/* 		struct { */
-/* 			u_char cpu[MDNS_MAX_CHSTRING]; */
-/* 			u_char os[MDNS_MAX_CHSTRING]; */
-/* 		} HINFO; */
+		struct {
+			char cpu[MDNS_MAX_CHARSTR];
+			char os[MDNS_MAX_CHARSTR];
+		} HINFO;
 		
-/* 		struct { */
-/* 			u_char		*labels[MDNS_MAX_LABELS]; */
-/* 			ssize_t		 nlabels; */
-/* 		} CNAME; */
+		struct {
+			u_char		*labels[MDNS_MAX_LABELS];
+			ssize_t		 nlabels;
+		} CNAME;
 		
-/* 		struct { */
-/* 			u_char		*labels[MDNS_MAX_LABELS]; */
-/* 			ssize_t		 nlabels; */
-/* 		} PTR; */
+		struct {
+			char		*labels[MDNS_MAX_LABELS];
+			ssize_t		 nlabels;
+		} PTR;
 
-/* 		struct { */
-/* 			int TODO; */
-/* 		} SRV; */
+		struct {
+			int TODO;
+		} SRV;
 		
-/* 		struct { */
-/* 			int */
-/* 		} TXT; */
+		struct {
+			int TODO;
+		} TXT;
 
-/* 		struct { */
-			
-/* 		} NS; */
-/* 	} rdata; */
+		struct {
+			int TODO;
+		} NS;
+	} rdata;
 };
 
 struct mdns_pkt {
@@ -107,5 +107,8 @@ struct mdns_pkt {
 	SIMPLEQ_HEAD(, mdns_rr) arlist;
 };
 
+
+void *	rrdata(struct mdns_rr *);
+ssize_t	charstr(char [MDNS_MAX_CHARSTR], u_int8_t *, uint16_t);
 
 #endif	/* _MDNS_H_ */
