@@ -68,38 +68,23 @@ struct mdns_rr {
 	u_int32_t	ttl;
 	u_int16_t	rdlen;
 	union {
-		struct {
-			struct in_addr addr;
-		} A;
+		struct in_addr A;
+		struct dname CNAME;
+		struct dname PTR;
+		char TXT[MDNS_MAX_CHARSTR];
 		
+		struct {
+			int TODO;
+		} NS;
+		struct {
+			int TODO;
+		} SRV;
+
 		struct {
 			char cpu[MDNS_MAX_CHARSTR];
 			char os[MDNS_MAX_CHARSTR];
 		} HINFO;
-		
-		struct {
-/* 			u_char		*labels[MDNS_MAX_LABELS]; */
-/* 			ssize_t		 nlabels; */
-			struct dname dname;
-		} CNAME;
-		
-		struct {
-/* 			char		*labels[MDNS_MAX_LABELS]; */
-/* 			ssize_t		 nlabels; */
-			struct dname dname;
-		} PTR;
 
-		struct {
-			int TODO;
-		} SRV;
-		
-		struct {
-			int TODO;
-		} TXT;
-
-		struct {
-			int TODO;
-		} NS;
 	} rdata;
 };
 

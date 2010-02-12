@@ -41,8 +41,8 @@
 #include "mdns.h"
 #include "log.h"
 
-/* extern struct mdnsd_conf *conf; */
-struct mdnsd_conf *conf;
+extern struct mdnsd_conf *conf;
+/* struct mdnsd_conf *conf; */
 
 /* used in name compression */
 struct {
@@ -61,6 +61,8 @@ static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
 static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
+static int	rr_parse_txt(struct mdns_rr *, u_int8_t *);
+
 static int	rr_parse_dname(struct mdns_rr *, u_int8_t *, u_int16_t, struct
     dname *);
 
@@ -103,7 +105,7 @@ recv_packet(int fd, short event, void *bula)
 	static u_int8_t		buf[MDNS_MAX_PACKET];
 	ssize_t			 r;
 	u_int16_t		 len, srcport;
-	static int pktnum = 0;
+/* 	static int pktnum = 0; */
 	
 	if (event != EV_READ)
 		return;
@@ -153,12 +155,10 @@ recv_packet(int fd, short event, void *bula)
 		return;
 	}
 	
-/* 	log_debug("read %zd bytes from iface %s", r, iface->name); */
-
 	srcport = ntohs(src.sin_port);
 	
 /* 	log_debug("buf is at %p", buf); */
-	log_debug("###### PACKET %d #####", ++pktnum);
+/* 	log_debug("###### PACKET %d #####", ++pktnum); */
 	if (pkt_parse(buf, len, &pkt) == -1)
 		return;
 	
@@ -207,7 +207,6 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	pktcomp.start = buf;
 	pktcomp.len = len;
 	
-	log_debug("pktcomp.start + 0xfb = 0x%x", *(pktcomp.start + 0xfb));
 	if (pkt_parse_header(&buf, &len, pkt) == -1)
 		return -1;
 	
@@ -240,6 +239,11 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	if (pkt_parse_allrr(&buf, &len, pkt) == -1)
 		return -1;
 	
+	if (len != 0) {
+		log_debug("Couldn't read all packet, %u bytes left", len);
+		return -1;
+	}
+		
 	return 0;
 }
 
@@ -267,7 +271,7 @@ pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	
 	*len -= MDNS_HDR_LEN;
 	*pbuf += MDNS_HDR_LEN;
-
+	
 	return 0;
 }
 
@@ -276,7 +280,6 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 {
 	u_int16_t us;
 	struct mdns_question *mq;
-	u_int8_t *buf = *pbuf;
 	ssize_t n;
 	
 	/* MDNS question sanity check */
@@ -303,7 +306,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 		
 	GETSHORT(mq->qtype, *pbuf);
 	*len -= INT16SZ;
-	log_debug("qtype = %u", mq->qtype);
+/* 	log_debug("qtype = %u", mq->qtype); */
 	
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
@@ -311,10 +314,9 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	mq->uniresp = !!(us & UNIRESP_MSK);
 	mq->qclass = us & CLASS_MSK;
 
-	log_debug("uniresp = %d", mq->uniresp);
-	log_debug("qclass = %u", mq->qclass);
+/* 	log_debug("uniresp = %d", mq->uniresp); */
+/* 	log_debug("qclass = %u", mq->qclass); */
 	
-	*pbuf = buf;
 	/* This really sucks, we can't know if the class is valid prior to
 	 * parsing the labels, I mean, we could but would be ugly */
 	if (mq->qclass != C_ANY && mq->qclass != C_IN) {
@@ -336,141 +338,6 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	return 0;
 }
 
-/* 
- * RFC defines no max number of labels, but 128 is enough isn't ?
- * but, each label must be no greater than MAXLABEL and their sum can'
- * be higher than MAXHOSTNAMELEN.
- */
-/* Real unhappy name for this function */
-/* static int */
-/* pkt_fetch_ptr(u_int8_t *head, u_int16_t len, struct dname *dname) */
-/* { */
-/* 	u_int16_t	 us = 0; */
-/* 	u_int16_t	 llen; */
-/* 	size_t		 i; */
-/* 	u_char		*buf; */
-	
-/* 	for (i = dname->nlabels; dname->nlabels < MDNS_MAX_LABELS; i++) { */
-/* 		GETSHORT(us, head); */
-/* 		buf =  pktcomp.start + (us & NAMEADDR_MSK); */
-	
-/* 		llen = *buf++; */
-		
-/* 		if (llen > MAXLABEL) { */
-/* 			log_debug("llen insane: %u us = 0x%x", llen, us); */
-/* 			return -1; */
-/* 		} */
-		
-/* 		if (llen == 0) */
-/* 			break; */
-		
-/* 		if ((dname->labels[i] = malloc(llen + 1)) == NULL) */
-/* 			fatal("malloc"); */
-/* 		bzero(dname->labels[i], llen + 1); /\* NULL terminated *\/ */
-/* 		memcpy(dname->labels[i], buf, llen); */
-/* 		dname->nlabels++; */
-/* 		buf += llen; */
-/* 		head = buf; */
-		
-/* 		if (strcmp("ubuntu810desktop", dname->labels[i]) == 0) */
-/* 			log_debug("****achei****"); */
-/* 		if (!(*head & 0xc0)) { /\* make sure head is a pointer *\/ */
-/* 			log_debug("acabou 0x%x", *head); */
-/* 			break; */
-/* 		} */
-/* 	} */
-
-/* 	return 0; */
-/* } */
-
-/* static int */
-/* pkt_fetch_ptr(u_int8_t *head, u_int16_t len, struct dname *dname) */
-/* { */
-/* 	u_int16_t	 us = 0; */
-/* 	u_int16_t	 llen; */
-/* 	size_t		 i; */
-/* 	u_char		*buf; */
-	
-/* 	buf = head; */
-	
-/* 	for (i = dname->nlabels; dname->nlabels < MDNS_MAX_LABELS; i++) { */
-/* 		if (*buf & 0xc0) { /\* it's a pointer *\/ */
-/* 			GETSHORT(us, buf); */
-/* 			buf =  pktcomp.start + (us & NAMEADDR_MSK); */
-/* 		} */
-		
-/* 		llen = *buf++; */
-		
-/* 		if (llen > MAXLABEL || llen > len) { */
-/* 			log_debug("llen insane: %u us = 0x%x", llen, us); */
-/* 			return -1; */
-/* 		} */
-		
-/* 		if (llen == 0) */
-/* 			break; */
-		
-/* 		if ((dname->labels[i] = malloc(llen + 1)) == NULL) */
-/* 			fatal("malloc"); */
-/* 		bzero(dname->labels[i], llen + 1); /\* NULL terminated *\/ */
-/* 		memcpy(dname->labels[i], buf, llen); */
-/* 		dname->nlabels++; */
-/* 		buf += llen; */
-/* 		len -= llen; */
-		
-/* 		if (strcmp("ubuntu810desktop", dname->labels[i]) == 0) */
-/* 			log_debug("****achei****"); */
-		
-/* 	} */
-
-/* 	return 0; */
-/* } */
-	
-/* static int */
-/* pkt_parse_dname(u_int8_t **pbuf, u_int16_t *len, struct dname *dname) */
-/* { */
-/* 	size_t		 i; */
-/* 	u_int16_t	 llen, tlen; */
-/* 	u_int8_t	*lptr; */
-/* 	u_int8_t	*start = *pbuf; */
-/* 	u_int8_t	*buf = *pbuf; */
-	
-/* 	for (i = 0, tlen = 0; i < MDNS_MAX_LABELS; i++) { */
-/* 		if (*buf & 0xc0) { */
-/* 			if (pkt_fetch_ptr(buf, *len, dname) == -1) */
-/* 				return -1; */
-/* 			buf  += INT16SZ; /\* jump over ptr *\/ */
-/* 			*len -= INT16SZ; */
-/* 			break; */
-/* 		} */
-		
-/* 		llen = *buf++; */
-/* 		tlen += llen; */
-/* 		if (llen == 0) 	/\* The end *\/ */
-/* 			break; */
-		
-/* 		/\* *len is already wrong here, revise everything ! *\/ */
-/* 		if (tlen > MAXHOSTNAMELEN || llen > *len) { */
-/* 			log_debug("len insane, llen: %u tlen: %u *len: %u", llen, */
-/* 			    tlen, *len); */
-/* 			return -1; */
-/* 		} */
-		
-/* 		if ((lptr = malloc(llen + 1)) == NULL) */
-/* 			fatal("malloc"); */
-/* 		bzero(lptr, llen + 1); /\* NULL terminated *\/ */
-/* 		memcpy(lptr, buf, llen); */
-/* 		dname->labels[i] = lptr; */
-/* 		dname->nlabels++; */
-		
-/* 		buf  += llen; */
-/* 		*len -= llen; */
-
-/* 	} */
-	
-/* 	*pbuf += buf - start; */
-	
-/* 	return 0; */
-/* } */
 ssize_t
 pkt_parse_dname(u_int8_t *buf, u_int16_t len, struct dname *dname)
 {
@@ -479,32 +346,33 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, struct dname *dname)
 	int jumped = 0;
 	uint16_t oldlen = len;
 	
+/* 	log_debug("primeiro byte: 0x%x, len: %u", *buf, len); */
 	for (i = dname->nlabels; dname->nlabels < MDNS_MAX_LABELS; i++) {
 		/* check if head is a pointer */
 		if (*buf & 0xc0) {
 			u_int16_t us;
-			log_debug("NAME COMPRESSION: 0x%x", *buf);
+/* 			log_debug("NAME COMPRESSION: 0x%x", *buf); */
 			
 			GETSHORT(us, buf);
 			if (!jumped)
 				len -= INT16SZ;
 			buf = pktcomp.start + (us & NAMEADDR_MSK);
-			log_debug("offset: 0x%x", (us & NAMEADDR_MSK));
+/* 			log_debug("offset: 0x%x", (us & NAMEADDR_MSK)); */
 			jumped = 1;
 		}
-		else
-			log_debug("SEM name compression");
+/* 		else */
+/* 			log_debug("SEM name compression"); */
 		
 		lablen = *buf++;
-		if (jumped)
-			log_debug("lablen: %u, 0x%x", lablen, lablen);
+/* 		if (jumped) */
+/* 			log_debug("lablen: %u, 0x%x", lablen, lablen); */
 		
 		if (!jumped) {
 			len--;
-			if (lablen > len) {
-				log_debug("lablen: %u, len: %u", lablen, len);
-				return -1;
-			}
+/* 			if (lablen > len) { */
+/* 				log_debug("lablen: %u, len: %u", lablen, len); */
+/* 				return -1; */
+/* 			} */
 		}
 		
 /* 		log_debug("proximo byte: 0x%x, 0x%x", *buf, buf[1]); */
@@ -524,7 +392,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, struct dname *dname)
 		}
 	}
 	
-	log_debug("oldlen: %u, len: %u", oldlen, len);
+/* 	log_debug("oldlen: %u, len: %u", oldlen, len); */
 	return oldlen - len;
 }
 
@@ -539,18 +407,46 @@ pkt_parse_allrr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	
 	for (i = 0; i < pkt->ancount; i++) {
 		bzero(&rr, sizeof(rr));
-		log_debug("==BEGIN RR==");
+		log_debug("==BEGIN AN RR==");
 		if (pkt_parse_rr(pbuf, len, pkt, &rr) == -1) {
 			log_debug("Can't parse RR");
 			return -1;
 		}
 		
-		for (j = 0; j < rr.dname.nlabels; j++)
-			log_debug("label[%d]: %s", j, rr.dname.labels[j]);
-		log_debug("==END RR==");
+/* 		for (j = 0; j < rr.dname.nlabels; j++) */
+/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
+		log_debug("==END AN RR==");
 
 	}
 	
+	for (i = 0; i < pkt->nscount; i++) {
+		bzero(&rr, sizeof(rr));
+		log_debug("==BEGIN NS RR==");
+		if (pkt_parse_rr(pbuf, len, pkt, &rr) == -1) {
+			log_debug("Can't parse RR");
+			return -1;
+		}
+/* 		for (j = 0; j < rr.dname.nlabels; j++) */
+/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
+		
+		log_debug("==END NS RR==");
+
+	}
+
+	for (i = 0; i < pkt->arcount; i++) {
+		bzero(&rr, sizeof(rr));
+		log_debug("==BEGIN AR RR==");
+		if (pkt_parse_rr(pbuf, len, pkt, &rr) == -1) {
+			log_debug("Can't parse RR");
+			return -1;
+		}
+		for (j = 0; j < rr.dname.nlabels; j++)
+			log_debug("label[%d]: %s", j, rr.dname.labels[j]);
+		
+		log_debug("==END AR RR==");
+
+	}
+
 	/* TODO parse rest of rr */
 	return 0;
 }
@@ -567,7 +463,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	if (n == -1)
 		return -1;
 	
-	log_debug("n = %zd", n);
+/* 	log_debug("n = %zd", n); */
 	*pbuf += n;
 	*len  -= n;
 	
@@ -621,16 +517,18 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	case T_CNAME:
 		log_debug("got a CNAME record");
 		if (rr_parse_dname(rr, *pbuf, *len,
-		    &rr->rdata.CNAME.dname) == -1)
+		    &rr->rdata.CNAME) == -1)
 			return -1;
 		break;
 	case T_PTR:
 		if (rr_parse_dname(rr, *pbuf, *len,
-		    &rr->rdata.PTR.dname) == -1)
+		    &rr->rdata.PTR) == -1)
 			return -1;
 		log_debug("got a PTR record");
 		break;
 	case T_TXT:
+		if (rr_parse_txt(rr, *pbuf) == -1)
+			return -1;
 		log_debug("got a TXT record");
 		break;
 	case T_NS:
@@ -723,25 +621,37 @@ rr_parse_a(struct mdns_rr *rr, u_int8_t *buf)
 	}
 	
 	GETLONG(ul, buf);
-	rr->rdata.A.addr.s_addr = htonl(ul);
+	rr->rdata.A.s_addr = htonl(ul);
 	
-	log_debug("A record: %s", inet_ntoa(rr->rdata.A.addr));
+	log_debug("A record: %s", inet_ntoa(rr->rdata.A));
 	return 0;
 	
 }
 
 static int
+rr_parse_txt(struct mdns_rr *rr, u_int8_t *buf)
+{
+	ssize_t n;
+	
+	if ((n = charstr(rr->rdata.TXT, buf, rr->rdlen)) == -1)
+		return -1;
+	log_debug("TXT: %s", rr->rdata.TXT);
+
+	return 0;
+}
+
+static int
 rr_parse_dname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len, struct dname *dname)
 {
-	size_t i;
+/* 	size_t i; */
 	
 	if (pkt_parse_dname(buf, len, dname) == -1) {
 		log_debug("Invalid CNAME record");
 		return -1;
 	}
 	
-	for (i = 0; i < dname->nlabels; i++)
-		log_debug("AQUI PORRA label %d: %s", i, dname->labels[i]);
+/* 	for (i = 0; i < dname->nlabels; i++) */
+/* 		log_debug("AQUI PORRA label %d: %s", i, dname->labels[i]); */
 	
 	return 0;
 	
