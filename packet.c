@@ -56,15 +56,15 @@ static void	pkt_init(struct mdns_pkt *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, struct dname *);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
-static int	pkt_parse_allrr(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
 static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_txt(struct mdns_rr *, u_int8_t *);
+static int	rr_parse_srv(struct mdns_rr *, u_int8_t *, uint16_t);
+static int	rr_parse_dname(struct mdns_rr *, u_int8_t *, u_int16_t,
+    struct dname *);
 
-static int	rr_parse_dname(struct mdns_rr *, u_int8_t *, u_int16_t, struct
-    dname *);
 
 /* send and receive packets */
 int
@@ -159,9 +159,15 @@ recv_packet(int fd, short event, void *bula)
 	
 /* 	log_debug("buf is at %p", buf); */
 /* 	log_debug("###### PACKET %d #####", ++pktnum); */
-	if (pkt_parse(buf, len, &pkt) == -1)
-		return;
 	
+	if (pkt_parse(buf, len, &pkt) == -1) {
+		pkt_free(&pkt);
+		return;
+	}
+	
+	pkt_process(pkt);
+	/* process all shit */
+	pkt_free(&pkt);
 	/* finish me */
 }
 
@@ -172,7 +178,7 @@ find_iface(unsigned int ifindex, struct in_addr src)
 
 	/* returned interface needs to be active */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		if (ifindex				      != 0 && ifindex == iface->ifindex &&
+		if (ifindex != 0 && ifindex == iface->ifindex &&
 		    (iface->addr.s_addr & iface->mask.s_addr) == 
 		    (src.s_addr & iface->mask.s_addr))
 			/*
@@ -202,6 +208,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 {
 	u_int16_t		 i;
 	struct mdns_question	*mq;
+	struct mdns_rr		*rr;
 	
 	pkt_init(pkt);
 	pktcomp.start = buf;
@@ -222,23 +229,67 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 
 	if (i != pkt->qdcount) {
 		log_debug("found less questions than advertised");
-		/* clean up */
-		while ((mq = SIMPLEQ_FIRST(&pkt->qlist)) != NULL) {
-			SIMPLEQ_REMOVE_HEAD(&pkt->qlist, entry);
-			dname_free(&mq->dname);
-			free(mq);
-		}
-		
 		return -1;
 	}
 	
-	if (pkt->qdcount > 0)
-		log_debug_pkt(pkt);
-	
 	/* Parse RR sections */
-	if (pkt_parse_allrr(&buf, &len, pkt) == -1)
-		return -1;
+/* 	size_t j; */
 	
+	for (i = 0; i < pkt->ancount; i++) {
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			fatal("calloc");
+		log_debug("==BEGIN AN RR==");
+		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
+			log_debug("Can't parse RR");
+			rr_free(rr);
+			free(rr);
+			return -1;
+		}
+		SIMPLEQ_INSERT_TAIL(&pkt->anlist, rr, entry);
+
+/* 		for (j = 0; j < rr.dname.nlabels; j++) */
+/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
+		log_debug("==END AN RR==");
+
+	}
+	
+	for (i = 0; i < pkt->nscount; i++) {
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			fatal("calloc");
+		log_debug("==BEGIN NS RR==");
+		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
+			log_debug("Can't parse RR");
+			rr_free(rr);
+			free(rr);
+			return -1;
+		}
+/* 		for (j = 0; j < rr.dname.nlabels; j++) */
+/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
+		SIMPLEQ_INSERT_TAIL(&pkt->nslist, rr, entry);
+		
+		log_debug("==END NS RR==");
+
+	}
+
+	for (i = 0; i < pkt->arcount; i++) {
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			fatal("calloc");
+		log_debug("==BEGIN AR RR==");
+		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
+			log_debug("Can't parse RR");
+			rr_free(rr);
+			free(rr);
+			return -1;
+		}
+/* 		for (j = 0; j < rr.dname.nlabels; j++) */
+/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
+		
+		SIMPLEQ_INSERT_TAIL(&pkt->arlist, rr, entry);
+
+		log_debug("==END AR RR==");
+
+	}
+
 	if (len != 0) {
 		log_debug("Couldn't read all packet, %u bytes left", len);
 		return -1;
@@ -321,7 +372,6 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	 * parsing the labels, I mean, we could but would be ugly */
 	if (mq->qclass != C_ANY && mq->qclass != C_IN) {
 		log_debug("pkt_parse_question: Invalid packet qclass %u", mq->qclass);
-		dname_free(&mq->dname);
 		free(mq);
 		return -1;
 	}
@@ -392,64 +442,12 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, struct dname *dname)
 		}
 	}
 	
+	/* TODO: if error found, free labels */
+	
 /* 	log_debug("oldlen: %u, len: %u", oldlen, len); */
 	return oldlen - len;
 }
 
-
-static int
-pkt_parse_allrr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
-{
-	u_int16_t i;
-	struct mdns_rr rr;
-	
-	size_t j;
-	
-	for (i = 0; i < pkt->ancount; i++) {
-		bzero(&rr, sizeof(rr));
-		log_debug("==BEGIN AN RR==");
-		if (pkt_parse_rr(pbuf, len, pkt, &rr) == -1) {
-			log_debug("Can't parse RR");
-			return -1;
-		}
-		
-/* 		for (j = 0; j < rr.dname.nlabels; j++) */
-/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
-		log_debug("==END AN RR==");
-
-	}
-	
-	for (i = 0; i < pkt->nscount; i++) {
-		bzero(&rr, sizeof(rr));
-		log_debug("==BEGIN NS RR==");
-		if (pkt_parse_rr(pbuf, len, pkt, &rr) == -1) {
-			log_debug("Can't parse RR");
-			return -1;
-		}
-/* 		for (j = 0; j < rr.dname.nlabels; j++) */
-/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
-		
-		log_debug("==END NS RR==");
-
-	}
-
-	for (i = 0; i < pkt->arcount; i++) {
-		bzero(&rr, sizeof(rr));
-		log_debug("==BEGIN AR RR==");
-		if (pkt_parse_rr(pbuf, len, pkt, &rr) == -1) {
-			log_debug("Can't parse RR");
-			return -1;
-		}
-		for (j = 0; j < rr.dname.nlabels; j++)
-			log_debug("label[%d]: %s", j, rr.dname.labels[j]);
-		
-		log_debug("==END AR RR==");
-
-	}
-
-	/* TODO parse rest of rr */
-	return 0;
-}
 
 static int
 pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
@@ -483,7 +481,6 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	rr->class = us & CLASS_MSK;
 	
 	if (rr->class != C_ANY && rr->class != C_IN) {
-		dname_free(&rr->dname);
 		log_debug("pkt_parse_rr: Invalid packet class %u", rr->class);
 		return -1;
 	}
@@ -505,9 +502,9 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 
 	switch (rr->type) {
 	case T_A:
+		log_debug("A record");
 		if (rr_parse_a(rr, *pbuf) == -1)
 			return -1;
-		log_debug("A record");
 		break;
 	case T_HINFO:
 		log_debug("HINFO record");
@@ -515,27 +512,37 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 			return -1;
 		break;
 	case T_CNAME:
-		log_debug("got a CNAME record");
+		log_debug("CNAME record");
 		if (rr_parse_dname(rr, *pbuf, *len,
 		    &rr->rdata.CNAME) == -1)
 			return -1;
 		break;
 	case T_PTR:
+		log_debug("PTR record");
 		if (rr_parse_dname(rr, *pbuf, *len,
 		    &rr->rdata.PTR) == -1)
 			return -1;
-		log_debug("got a PTR record");
 		break;
 	case T_TXT:
+		log_debug("TXT record");
 		if (rr_parse_txt(rr, *pbuf) == -1)
 			return -1;
-		log_debug("got a TXT record");
 		break;
 	case T_NS:
-		log_debug("got a NS record");
+		log_debug("NS record");
+		if (rr_parse_dname(rr, *pbuf, *len,
+		    &rr->rdata.NS) == -1)
+			return -1;
 		break;
 	case T_SRV:
-		log_debug("got a SRV record");
+		log_debug("SRV record");
+		if (rr->dname.nlabels < 3) {
+			log_debug("SRV record expects a dname with"
+			    "at least 3 labels, got %d", rr->dname.nlabels);
+			return -1;
+		}
+		if (rr_parse_srv(rr, *pbuf, *len) == -1)
+			return -1;
 		break;
 	case T_AAAA:
 		log_debug("got a AAAA record");
@@ -641,6 +648,27 @@ rr_parse_txt(struct mdns_rr *rr, u_int8_t *buf)
 }
 
 static int
+rr_parse_srv(struct mdns_rr *rr, u_int8_t *buf, uint16_t len)
+{
+	GETSHORT(rr->rdata.SRV.priority, buf);
+	len -= INT16SZ;
+	log_debug("SRV priority: %u", rr->rdata.SRV.priority);
+	
+	GETSHORT(rr->rdata.SRV.weight, buf);
+	len -= INT16SZ;
+	log_debug("SRV weight: %u", rr->rdata.SRV.weight);
+
+	GETSHORT(rr->rdata.SRV.port, buf);
+	len -= INT16SZ;
+	log_debug("SRV port: %u", rr->rdata.SRV.port);
+
+	if (rr_parse_dname(rr, buf, len, &rr->rdata.SRV.dname) == -1)
+		return -1;
+	
+	return 0;
+}
+
+static int
 rr_parse_dname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len, struct dname *dname)
 {
 /* 	size_t i; */
@@ -675,5 +703,46 @@ charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
 	dest[tocpy] = '\0'; 	/* Assure null terminated */
 	
 	return tocpy + 1;
+}
+
+void
+pkt_free(struct mdns_pkt *pkt)
+{
+	struct mdns_question *mq;
+	struct mdns_rr *rr;
+	
+	SIMPLEQ_FOREACH(mq, &pkt->qlist, entry)
+	    dname_free(&mq->dname);
+	
+	SIMPLEQ_FOREACH(rr, &pkt->anlist, entry) 
+	    rr_free(rr);
+	
+	SIMPLEQ_FOREACH(rr, &pkt->nslist, entry) 
+	    rr_free(rr);
+	
+	SIMPLEQ_FOREACH(rr, &pkt->arlist, entry) 
+	    rr_free(rr);
+}
+
+void
+rr_free(struct mdns_rr *rr)
+{
+	dname_free(&rr->dname);
+	switch (rr->type) {
+	case T_CNAME:
+		dname_free(&rr->rdata.CNAME);
+		break;
+	case T_PTR:
+		dname_free(&rr->rdata.PTR);
+		break;
+	case T_SRV:
+		dname_free(&rr->rdata.SRV.dname);
+		break;
+	case T_NS:
+		dname_free(&rr->rdata.NS);
+		break;
+	default:
+		break;
+	}
 }
 

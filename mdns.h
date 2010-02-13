@@ -61,6 +61,8 @@ struct mdns_question {
 struct mdns_rr {
 /* 	u_char		*labels[MDNS_MAX_LABELS]; */
 /* 	ssize_t		 nlabels; */
+	SIMPLEQ_ENTRY(mdns_rr)	 entry;
+	
 	struct dname	dname;
 	u_int16_t	type;
 	int		cacheflush;	
@@ -71,13 +73,14 @@ struct mdns_rr {
 		struct in_addr A;
 		struct dname CNAME;
 		struct dname PTR;
+		struct dname NS;
 		char TXT[MDNS_MAX_CHARSTR];
 		
 		struct {
-			int TODO;
-		} NS;
-		struct {
-			int TODO;
+			uint16_t priority;
+			uint16_t weight;
+			uint16_t port;
+			struct dname dname;
 		} SRV;
 
 		struct {
@@ -110,5 +113,7 @@ void *	rrdata(struct mdns_rr *);
 ssize_t	charstr(char [MDNS_MAX_CHARSTR], u_int8_t *, uint16_t);
 void	labelstr(char domain[MAXHOSTNAMELEN], u_char *l[], ssize_t nl);
 void	dname_free(struct dname *);
+void	pkt_free(struct mdns_pkt *);
+void	rr_free(struct mdns_rr *);
 
 #endif	/* _MDNS_H_ */
