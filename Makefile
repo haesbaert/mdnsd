@@ -1,5 +1,5 @@
 PROG=	mdnsd
-SRCS=	log.c mdnsd.c kiface.c interface.c packet.c
+SRCS=	log.c mdnsd.c kiface.c interface.c packet.c cache.c
 
 #MAN=	mdnsd.8
 

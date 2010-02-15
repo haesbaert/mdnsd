@@ -50,6 +50,7 @@ struct {
 static struct iface	*find_iface(unsigned int, struct in_addr);
 
 static void	pkt_init(struct mdns_pkt *);
+static int	pkt_parse(u_int8_t *, uint16_t, struct mdns_pkt *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
@@ -61,6 +62,56 @@ static int	rr_parse_txt(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_srv(struct mdns_rr *, u_int8_t *, uint16_t);
 static int	rr_parse_dname(struct mdns_rr *, u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 
+/* util */
+ssize_t
+charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
+{
+	u_int8_t tocpy;
+	
+	tocpy = *buf++;
+	
+	if (tocpy > len) {
+		log_debug("tocpy: %u > len: %u", tocpy, len);
+		return -1;
+	}
+	
+	/* This isn't a case for strlcpy */
+	memcpy(dest, buf, tocpy);
+	dest[tocpy] = '\0'; 	/* Assure null terminated */
+	
+	return tocpy + 1;
+}
+
+void *
+rrdata(struct mdns_rr *rr)
+{
+	switch (rr->type) {
+	case T_A:
+		return &rr->rdata.A;
+		break;
+	case T_HINFO:
+		return &rr->rdata.HINFO;
+		break;
+	case T_CNAME:
+		return &rr->rdata.CNAME;
+		break;
+	case T_PTR:
+		return &rr->rdata.PTR;
+		break;
+	case T_SRV:
+		return &rr->rdata.SRV;
+		break;
+	case T_TXT:
+		return &rr->rdata.TXT;
+		break;
+	case T_NS:
+		return &rr->rdata.NS;
+		break;
+	default:
+		log_debug("Unknown type %d", rr->type);
+		return NULL;
+	}
+}
 
 /* send and receive packets */
 int
@@ -163,6 +214,7 @@ recv_packet(int fd, short event, void *bula)
 	/* process all shit */
 }
 
+
 static struct iface *
 find_iface(unsigned int ifindex, struct in_addr src)
 {
@@ -195,7 +247,7 @@ pkt_init(struct mdns_pkt *pkt)
 	SIMPLEQ_INIT(&pkt->arlist);
 }
 
-int
+static int
 pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 {
 	u_int16_t		 i;
@@ -356,7 +408,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	return 0;
 }
 
-ssize_t
+static ssize_t
 pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
 	size_t i;
@@ -535,37 +587,6 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	return r;
 }
 
-void *
-rrdata(struct mdns_rr *rr)
-{
-	switch (rr->type) {
-	case T_A:
-		return &rr->rdata.A;
-		break;
-	case T_HINFO:
-		return &rr->rdata.HINFO;
-		break;
-	case T_CNAME:
-		return &rr->rdata.CNAME;
-		break;
-	case T_PTR:
-		return &rr->rdata.PTR;
-		break;
-	case T_SRV:
-		return &rr->rdata.SRV;
-		break;
-	case T_TXT:
-		return &rr->rdata.TXT;
-		break;
-	case T_NS:
-		return &rr->rdata.NS;
-		break;
-	default:
-		log_debug("Unknown type %d", rr->type);
-		return NULL;
-	}
-}
-
 static int
 rr_parse_hinfo(struct mdns_rr *rr, u_int8_t *buf)
 {
@@ -645,21 +666,7 @@ rr_parse_dname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len, char dname[MAXH
 }
 
 
-ssize_t
-charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
-{
-	u_int8_t tocpy;
-	
-	tocpy = *buf++;
-	
-	if (tocpy > len) {
-		log_debug("tocpy: %u > len: %u", tocpy, len);
-		return -1;
-	}
-	
-	/* This isn't a case for strlcpy */
-	memcpy(dest, buf, tocpy);
-	dest[tocpy] = '\0'; 	/* Assure null terminated */
-	
-	return tocpy + 1;
-}
+/* int */
+/* rr_compare(struct mdns_rr *a, struct mdns_rr *b) */
+/* { */
+/* } */

@@ -125,8 +125,10 @@ struct mdnsd_conf {
 };
 
 /* packet.c */
-int	pkt_parse(u_int8_t *, uint16_t, struct mdns_pkt *);
 void	recv_packet(int, short, void *); /* these don't belong here */
 int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
 	
+/* cache.c */
+void	rrc_init(void);
+
 #endif /* _MDNSD_H_ */

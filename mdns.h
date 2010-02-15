@@ -49,6 +49,7 @@ struct mdns_question {
 };
 
 struct mdns_rr {
+	/* can only belong to one list, packet or cache */
 	SIMPLEQ_ENTRY(mdns_rr)	 entry;
 	
 	char			dname[MAXHOSTNAMELEN];
@@ -100,6 +101,7 @@ struct mdns_pkt {
 void *	rrdata(struct mdns_rr *);
 ssize_t	charstr(char [MDNS_MAX_CHARSTR], u_int8_t *, uint16_t);
 void	labelstr(char domain[MAXHOSTNAMELEN], u_char *l[], ssize_t nl);
+/* int	rr_compare(struct mdns_rr *, struct mdns_rr *); */
 /* void	dname_free(struct dname *); */
 /* void	pkt_free(struct mdns_pkt *); */
 /* void	rr_free(struct mdns_rr *); */
