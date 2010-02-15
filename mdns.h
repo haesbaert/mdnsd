@@ -38,54 +38,42 @@
 #define NAMEADDR_MSK		~0xc000
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
-
-struct dname
-{
-	u_char		*labels[MDNS_MAX_LABELS];
-	size_t		 nlabels;
-};
 	
 struct mdns_question {
 	SIMPLEQ_ENTRY(mdns_question)	 entry;
 	
-/* 	u_char		name[MAXHOSTNAMELEN]; */
-/* 	u_char		*labels[MDNS_MAX_LABELS]; /\* why isn't this a list ? *\/ */
-	struct dname	dname;
-	
-	ssize_t		nlabels;
+	char		dname[MAXHOSTNAMELEN];
 	u_int16_t	qtype;
 	u_int16_t	qclass;
 	int		uniresp;
 };
 
 struct mdns_rr {
-/* 	u_char		*labels[MDNS_MAX_LABELS]; */
-/* 	ssize_t		 nlabels; */
 	SIMPLEQ_ENTRY(mdns_rr)	 entry;
 	
-	struct dname	dname;
-	u_int16_t	type;
-	int		cacheflush;	
-	u_int16_t	class;
-	u_int32_t	ttl;
-	u_int16_t	rdlen;
+	char			dname[MAXHOSTNAMELEN];
+	u_int16_t		type;
+	int			cacheflush;	
+	u_int16_t		class;
+	u_int32_t		ttl;
+	u_int16_t		rdlen;
 	union {
-		struct in_addr A;
-		struct dname CNAME;
-		struct dname PTR;
-		struct dname NS;
-		char TXT[MDNS_MAX_CHARSTR];
+		struct in_addr	A;
+		char		CNAME[MAXHOSTNAMELEN];
+		char		PTR[MAXHOSTNAMELEN];
+		char		NS[MAXHOSTNAMELEN];
+		char		TXT[MDNS_MAX_CHARSTR];
 		
 		struct {
-			uint16_t priority;
-			uint16_t weight;
-			uint16_t port;
-			struct dname dname;
+			uint16_t	priority;
+			uint16_t	weight;
+			uint16_t	port;
+			char		dname[MAXHOSTNAMELEN];
 		} SRV;
 
 		struct {
-			char cpu[MDNS_MAX_CHARSTR];
-			char os[MDNS_MAX_CHARSTR];
+			char		cpu[MDNS_MAX_CHARSTR];
+			char		os[MDNS_MAX_CHARSTR];
 		} HINFO;
 
 	} rdata;
@@ -112,8 +100,8 @@ struct mdns_pkt {
 void *	rrdata(struct mdns_rr *);
 ssize_t	charstr(char [MDNS_MAX_CHARSTR], u_int8_t *, uint16_t);
 void	labelstr(char domain[MAXHOSTNAMELEN], u_char *l[], ssize_t nl);
-void	dname_free(struct dname *);
-void	pkt_free(struct mdns_pkt *);
-void	rr_free(struct mdns_rr *);
+/* void	dname_free(struct dname *); */
+/* void	pkt_free(struct mdns_pkt *); */
+/* void	rr_free(struct mdns_rr *); */
 
 #endif	/* _MDNS_H_ */

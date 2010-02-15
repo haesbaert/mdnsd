@@ -15,9 +15,6 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
-/* TODO check dname leaks, lots of them */
-
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/queue.h>
@@ -54,7 +51,7 @@ static struct iface	*find_iface(unsigned int, struct in_addr);
 
 static void	pkt_init(struct mdns_pkt *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct mdns_pkt *);
-static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, struct dname *);
+static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
@@ -62,8 +59,7 @@ static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_txt(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_srv(struct mdns_rr *, u_int8_t *, uint16_t);
-static int	rr_parse_dname(struct mdns_rr *, u_int8_t *, u_int16_t,
-    struct dname *);
+static int	rr_parse_dname(struct mdns_rr *, u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 
 
 /* send and receive packets */
@@ -102,7 +98,7 @@ recv_packet(int fd, short event, void *bula)
 	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
 	struct mdns_pkt		 pkt;
-	static u_int8_t		buf[MDNS_MAX_PACKET];
+	static u_int8_t		 buf[MDNS_MAX_PACKET];
 	ssize_t			 r;
 	u_int16_t		 len, srcport;
 /* 	static int pktnum = 0; */
@@ -160,15 +156,11 @@ recv_packet(int fd, short event, void *bula)
 /* 	log_debug("buf is at %p", buf); */
 /* 	log_debug("###### PACKET %d #####", ++pktnum); */
 	
-	if (pkt_parse(buf, len, &pkt) == -1) {
-		pkt_free(&pkt);
+	if (pkt_parse(buf, len, &pkt) == -1)
 		return;
-	}
 	
-	pkt_process(pkt);
+/* 	pkt_process(pkt); */
 	/* process all shit */
-	pkt_free(&pkt);
-	/* finish me */
 }
 
 static struct iface *
@@ -233,22 +225,17 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	}
 	
 	/* Parse RR sections */
-/* 	size_t j; */
-	
 	for (i = 0; i < pkt->ancount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		log_debug("==BEGIN AN RR==");
 		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
 			log_debug("Can't parse RR");
-			rr_free(rr);
 			free(rr);
 			return -1;
 		}
 		SIMPLEQ_INSERT_TAIL(&pkt->anlist, rr, entry);
 
-/* 		for (j = 0; j < rr.dname.nlabels; j++) */
-/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
 		log_debug("==END AN RR==");
 
 	}
@@ -259,12 +246,9 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		log_debug("==BEGIN NS RR==");
 		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
 			log_debug("Can't parse RR");
-			rr_free(rr);
 			free(rr);
 			return -1;
 		}
-/* 		for (j = 0; j < rr.dname.nlabels; j++) */
-/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
 		SIMPLEQ_INSERT_TAIL(&pkt->nslist, rr, entry);
 		
 		log_debug("==END NS RR==");
@@ -277,12 +261,10 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		log_debug("==BEGIN AR RR==");
 		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
 			log_debug("Can't parse RR");
-			rr_free(rr);
+/* 			rr_free(rr); */
 			free(rr);
 			return -1;
 		}
-/* 		for (j = 0; j < rr.dname.nlabels; j++) */
-/* 			log_debug("label[%d]: %s", j, rr.dname.labels[j]); */
 		
 		SIMPLEQ_INSERT_TAIL(&pkt->arlist, rr, entry);
 
@@ -342,7 +324,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	if ((mq = calloc(1, sizeof(*mq))) == NULL)
 		fatal("calloc");
 	
-	n = pkt_parse_dname(*pbuf, *len, &mq->dname);
+	n = pkt_parse_dname(*pbuf, *len, mq->dname);
 	if (n == -1) {
 		free(mq);
 		return -1;
@@ -350,14 +332,10 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	
 	*pbuf += n;
 	*len  -= n;
-/* 	log_debug("QUESTION %d nlabels", mq->dname.nlabels); */
-/* 	for (i = 0; i < mq->dname.nlabels; i++) */
-/* 		log_debug("QUESTION label %d: %s", i, mq->dname.labels[i]); */
 
 		
 	GETSHORT(mq->qtype, *pbuf);
 	*len -= INT16SZ;
-/* 	log_debug("qtype = %u", mq->qtype); */
 	
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
@@ -365,9 +343,6 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	mq->uniresp = !!(us & UNIRESP_MSK);
 	mq->qclass = us & CLASS_MSK;
 
-/* 	log_debug("uniresp = %d", mq->uniresp); */
-/* 	log_debug("qclass = %u", mq->qclass); */
-	
 	/* This really sucks, we can't know if the class is valid prior to
 	 * parsing the labels, I mean, we could but would be ugly */
 	if (mq->qclass != C_ANY && mq->qclass != C_IN) {
@@ -376,73 +351,73 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 		return -1;
 	}
 	
-/* 	for (i = 0; i < mq->nlabels; i++) { */
-/* 		strlcat(mq->name, (const u_char *)mq->labels[i], */
-/* 		    sizeof(mq->name)); */
-/* 		if (i != mq->nlabels) */
-/* 			strlcat(mq->name, ".", sizeof(mq->name)); */
-/* 	} */
-
 	SIMPLEQ_INSERT_TAIL(&pkt->qlist, mq, entry);
 	
 	return 0;
 }
 
 ssize_t
-pkt_parse_dname(u_int8_t *buf, u_int16_t len, struct dname *dname)
+pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
 	size_t i;
 	uint8_t lablen;
 	int jumped = 0;
 	uint16_t oldlen = len;
+	u_char label[MAXLABEL + 1];
 	
-/* 	log_debug("primeiro byte: 0x%x, len: %u", *buf, len); */
-	for (i = dname->nlabels; dname->nlabels < MDNS_MAX_LABELS; i++) {
+	/* be extra safe */
+	bzero(dname, MAXHOSTNAMELEN);
+	
+	for (i = 0; i < MDNS_MAX_LABELS; i++) {
 		/* check if head is a pointer */
 		if (*buf & 0xc0) {
 			u_int16_t us;
-/* 			log_debug("NAME COMPRESSION: 0x%x", *buf); */
 			
 			GETSHORT(us, buf);
 			if (!jumped)
 				len -= INT16SZ;
 			buf = pktcomp.start + (us & NAMEADDR_MSK);
-/* 			log_debug("offset: 0x%x", (us & NAMEADDR_MSK)); */
 			jumped = 1;
 		}
-/* 		else */
-/* 			log_debug("SEM name compression"); */
 		
 		lablen = *buf++;
-/* 		if (jumped) */
-/* 			log_debug("lablen: %u, 0x%x", lablen, lablen); */
 		
-		if (!jumped) {
+		if (!jumped)
 			len--;
-/* 			if (lablen > len) { */
-/* 				log_debug("lablen: %u, len: %u", lablen, len); */
-/* 				return -1; */
-/* 			} */
-		}
 		
-/* 		log_debug("proximo byte: 0x%x, 0x%x", *buf, buf[1]); */
 		if (lablen == 0)
 			break;
 		
-		if ((dname->labels[i] = malloc(lablen + 1)) == NULL)
-			fatal("malloc");
-		bzero(dname->labels[i], lablen + 1); /* NULL terminated */
-		memcpy(dname->labels[i], buf, lablen);
-		dname->nlabels++;
+		if (lablen > (MAXHOSTNAMELEN - strlen(dname)) ||
+		    lablen > MAXLABEL) {
+			log_debug("label won't fit");
+			return -1;
+		}
+		memcpy(label, buf, lablen);
+		label[lablen] = '\0';
+		/* strlcat needs a proper C string in src */
+		if (strlcat(dname, label, MAXHOSTNAMELEN) > MAXHOSTNAMELEN)  {
+			log_debug("domain-name truncated");
+			return -1;
+		}
+		
+		/* should we leave the dot on the last tag ? */
+		if (strlcat(dname, ".", MAXHOSTNAMELEN) > MAXHOSTNAMELEN) {
+			log_debug("domain-name truncated");
+			return -1;
+		}
+			
 		
 		buf += lablen;
-		if (!jumped) {
-/* 			log_debug("len: %u, lablen: %u", len, lablen); */
+		if (!jumped)
 			len -= lablen;
-		}
+
 	}
-	
-	/* TODO: if error found, free labels */
+
+	if (i == MDNS_MAX_LABELS) {
+		log_debug("max labels reached");
+		return -1;
+	}
 	
 /* 	log_debug("oldlen: %u, len: %u", oldlen, len); */
 	return oldlen - len;
@@ -457,10 +432,11 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	ssize_t n;
 	int r = 0;
 
-	n = pkt_parse_dname(*pbuf, *len, &rr->dname);
+	n = pkt_parse_dname(*pbuf, *len, rr->dname);
 	if (n == -1)
 		return -1;
 	
+	log_debug("dname: %s", rr->dname);
 /* 	log_debug("n = %zd", n); */
 	*pbuf += n;
 	*len  -= n;
@@ -514,13 +490,13 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	case T_CNAME:
 		log_debug("CNAME record");
 		if (rr_parse_dname(rr, *pbuf, *len,
-		    &rr->rdata.CNAME) == -1)
+		    rr->rdata.CNAME) == -1)
 			return -1;
 		break;
 	case T_PTR:
 		log_debug("PTR record");
 		if (rr_parse_dname(rr, *pbuf, *len,
-		    &rr->rdata.PTR) == -1)
+		    rr->rdata.PTR) == -1)
 			return -1;
 		break;
 	case T_TXT:
@@ -531,16 +507,16 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	case T_NS:
 		log_debug("NS record");
 		if (rr_parse_dname(rr, *pbuf, *len,
-		    &rr->rdata.NS) == -1)
+		    rr->rdata.NS) == -1)
 			return -1;
 		break;
 	case T_SRV:
 		log_debug("SRV record");
-		if (rr->dname.nlabels < 3) {
-			log_debug("SRV record expects a dname with"
-			    "at least 3 labels, got %d", rr->dname.nlabels);
-			return -1;
-		}
+/* 		if (rr->dname.nlabels < 3) { */
+/* 			log_debug("SRV record expects a dname with" */
+/* 			    "at least 3 labels, got %d", rr->dname.nlabels); */
+/* 			return -1; */
+/* 		} */
 		if (rr_parse_srv(rr, *pbuf, *len) == -1)
 			return -1;
 		break;
@@ -557,17 +533,6 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	*pbuf += rr->rdlen;
 	
 	return r;
-}
-
-void
-dname_free(struct dname *dname)
-{
-	size_t j;
-	
-	for (j = 0; j < dname->nlabels; j++) {
-		free(dname->labels[j]);
-		dname->labels[j] = NULL; /* Avoid a possible double free */
-	}
 }
 
 void *
@@ -662,27 +627,21 @@ rr_parse_srv(struct mdns_rr *rr, u_int8_t *buf, uint16_t len)
 	len -= INT16SZ;
 	log_debug("SRV port: %u", rr->rdata.SRV.port);
 
-	if (rr_parse_dname(rr, buf, len, &rr->rdata.SRV.dname) == -1)
+	if (rr_parse_dname(rr, buf, len, rr->rdata.SRV.dname) == -1)
 		return -1;
 	
 	return 0;
 }
 
 static int
-rr_parse_dname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len, struct dname *dname)
+rr_parse_dname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
-/* 	size_t i; */
-	
 	if (pkt_parse_dname(buf, len, dname) == -1) {
-		log_debug("Invalid CNAME record");
+		log_debug("Invalid record");
 		return -1;
 	}
 	
-/* 	for (i = 0; i < dname->nlabels; i++) */
-/* 		log_debug("AQUI PORRA label %d: %s", i, dname->labels[i]); */
-	
 	return 0;
-	
 }
 
 
@@ -704,45 +663,3 @@ charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
 	
 	return tocpy + 1;
 }
-
-void
-pkt_free(struct mdns_pkt *pkt)
-{
-	struct mdns_question *mq;
-	struct mdns_rr *rr;
-	
-	SIMPLEQ_FOREACH(mq, &pkt->qlist, entry)
-	    dname_free(&mq->dname);
-	
-	SIMPLEQ_FOREACH(rr, &pkt->anlist, entry) 
-	    rr_free(rr);
-	
-	SIMPLEQ_FOREACH(rr, &pkt->nslist, entry) 
-	    rr_free(rr);
-	
-	SIMPLEQ_FOREACH(rr, &pkt->arlist, entry) 
-	    rr_free(rr);
-}
-
-void
-rr_free(struct mdns_rr *rr)
-{
-	dname_free(&rr->dname);
-	switch (rr->type) {
-	case T_CNAME:
-		dname_free(&rr->rdata.CNAME);
-		break;
-	case T_PTR:
-		dname_free(&rr->rdata.PTR);
-		break;
-	case T_SRV:
-		dname_free(&rr->rdata.SRV.dname);
-		break;
-	case T_NS:
-		dname_free(&rr->rdata.NS);
-		break;
-	default:
-		break;
-	}
-}
-
