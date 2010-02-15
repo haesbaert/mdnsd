@@ -129,6 +129,9 @@ void	recv_packet(int, short, void *); /* these don't belong here */
 int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
 	
 /* cache.c */
-void	rrc_init(void);
+void		 rrc_init(void);
+void		 rrc_insert(struct mdns_rr *);
+struct rr_head	*rrc_lookup_head(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+struct mdns_rr	*rrc_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
 #endif /* _MDNSD_H_ */

@@ -14,6 +14,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <sys/queue.h>
+
+#include <stdlib.h>
 #include <string.h>
 
 #include "mdnsd.h"
@@ -23,11 +26,10 @@
 /* resource record cache node */
 struct rrc_node {
 	RB_ENTRY(rrc_node)	entry;
-	LIST_HEAD(, mdns_rr) hrr; /* head rr */
+	LIST_HEAD(rr_head, mdns_rr) hrr; /* head rr */
 };
 
 static int	rrc_compare(struct rrc_node *, struct rrc_node *);
-
 
 RB_HEAD(rrc_tree, rrc_node) rrt;
 RB_PROTOTYPE(rrc_tree, rrc_node, entry, rrc_compare);
@@ -39,6 +41,56 @@ rrc_init(void)
 	RB_INIT(&rrt);
 }
 
+struct rr_head *
+rrc_lookup_head(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+{
+	struct rrc_node	 		s, *tmp;
+	struct mdns_rr			rr;
+	
+	bzero(&s, sizeof(s));
+	rr.type	 = type;
+	rr.class = class;
+	strlcpy(rr.dname, (const char *)dname, MAXHOSTNAMELEN);
+
+	/* Yes, we use a dummy head to find the node */
+	LIST_INIT(&s.hrr);
+	LIST_INSERT_HEAD(&s.hrr, &rr, c_entry);
+	
+	tmp = RB_FIND(rrc_tree, &rrt, &s);
+	if (tmp == NULL)
+		return NULL;
+	
+	return &tmp->hrr;
+}
+
+struct mdns_rr *
+rrc_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+{
+	struct rr_head	*hrr;
+	
+	hrr = rrc_lookup_head(dname, type, class);
+	return LIST_FIRST(hrr);
+}
+
+void
+rrc_insert(struct mdns_rr *rr)
+{
+	struct rr_head *hrr;
+	
+	/* Check if shared RR */
+	hrr = rrc_lookup_head(rr->dname, rr->type, rr->class);
+	if (hrr == NULL) {
+		struct rrc_node *n;
+		
+		if ((n = calloc(1, sizeof(*n))) == NULL)
+			fatal("calloc");
+		LIST_INIT(&n->hrr);
+		hrr = &n->hrr;
+	}
+	
+	LIST_INSERT_HEAD(hrr, rr, c_entry);
+}
+	
 static int
 rrc_compare(struct rrc_node *a, struct rrc_node *b)
 {

@@ -49,9 +49,8 @@ struct mdns_question {
 };
 
 struct mdns_rr {
-	/* can only belong to one list, packet or cache */
-	SIMPLEQ_ENTRY(mdns_rr)	 entry;
-	
+	SIMPLEQ_ENTRY(mdns_rr)		s_entry; /* used in packet queue */
+	LIST_ENTRY(mdns_rr)	c_entry; /* used in cache */
 	char			dname[MAXHOSTNAMELEN];
 	u_int16_t		type;
 	int			cacheflush;	

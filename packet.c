@@ -286,7 +286,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 			free(rr);
 			return -1;
 		}
-		SIMPLEQ_INSERT_TAIL(&pkt->anlist, rr, entry);
+		SIMPLEQ_INSERT_TAIL(&pkt->anlist, rr, s_entry);
 
 		log_debug("==END AN RR==");
 
@@ -301,7 +301,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 			free(rr);
 			return -1;
 		}
-		SIMPLEQ_INSERT_TAIL(&pkt->nslist, rr, entry);
+		SIMPLEQ_INSERT_TAIL(&pkt->nslist, rr, s_entry);
 		
 		log_debug("==END NS RR==");
 
@@ -318,7 +318,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 			return -1;
 		}
 		
-		SIMPLEQ_INSERT_TAIL(&pkt->arlist, rr, entry);
+		SIMPLEQ_INSERT_TAIL(&pkt->arlist, rr, s_entry);
 
 		log_debug("==END AR RR==");
 
@@ -458,7 +458,6 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 			log_debug("domain-name truncated");
 			return -1;
 		}
-			
 		
 		buf += lablen;
 		if (!jumped)
