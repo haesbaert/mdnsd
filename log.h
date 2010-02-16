@@ -32,11 +32,14 @@ void		log_warnx(const char *, ...);
 void		log_info(const char *, ...);
 void		log_debug(const char *, ...);
 void		log_debug_pkt(struct mdns_pkt *);
+void		log_debug_rrdata(struct mdns_rr *);
 void		fatal(const char *) __dead;
 void		fatalx(const char *) __dead;
 const char *	if_state_name(int);
 const char *	if_type_name(enum iface_type);
 const char *	if_action_name(int);
+const char *	rr_type_name(uint16_t);
+
 
 
 /* void    log_debug_mif(const char *, struct mif *); */

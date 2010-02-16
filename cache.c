@@ -72,25 +72,43 @@ rrc_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	return LIST_FIRST(hrr);
 }
 
+/* This is FAR from finished */
 void
 rrc_insert(struct mdns_rr *rr)
 {
 	struct rr_head *hrr;
+	struct rrc_node *n;
 	
-	/* Check if shared RR */
 	hrr = rrc_lookup_head(rr->dname, rr->type, rr->class);
-	if (hrr == NULL) {
-		struct rrc_node *n;
-		
-		if ((n = calloc(1, sizeof(*n))) == NULL)
-			fatal("calloc");
-		LIST_INIT(&n->hrr);
-		hrr = &n->hrr;
+	if (hrr != NULL) {
+		LIST_INSERT_HEAD(hrr, rr, c_entry);
+		return;
 	}
 	
-	LIST_INSERT_HEAD(hrr, rr, c_entry);
+	if ((n = calloc(1, sizeof(*n))) == NULL)
+		fatal("calloc");
+	LIST_INIT(&n->hrr);
+	LIST_INSERT_HEAD(&n->hrr, rr, c_entry);
+	RB_INSERT(rrc_tree, &rrt, n);
 }
 	
+void
+rrc_dump(void)
+{
+	struct mdns_rr	*rr;
+	struct rrc_node *n;
+
+	log_debug("rrc_dump");
+	
+	RB_FOREACH(n, rrc_tree, &rrt) {
+		rr = LIST_FIRST(&n->hrr);
+/* 		log_debug("**node head** dname: %s, type: %u, class: %u", */
+/* 		    rr->dname, rr->type, rr->class); */
+		LIST_FOREACH(rr, &n->hrr, c_entry)
+		    log_debug_rrdata(rr);
+	}
+}
+
 static int
 rrc_compare(struct rrc_node *a, struct rrc_node *b)
 {
@@ -110,3 +128,4 @@ rrc_compare(struct rrc_node *a, struct rrc_node *b)
 	
 	return strcmp(rra->dname, rrb->dname);
 }
+

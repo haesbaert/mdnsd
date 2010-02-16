@@ -49,8 +49,9 @@ struct mdns_question {
 };
 
 struct mdns_rr {
-	SIMPLEQ_ENTRY(mdns_rr)		s_entry; /* used in packet queue */
+	SIMPLEQ_ENTRY(mdns_rr)	s_entry; /* used in packet queue */
 	LIST_ENTRY(mdns_rr)	c_entry; /* used in cache */
+	
 	char			dname[MAXHOSTNAMELEN];
 	u_int16_t		type;
 	int			cacheflush;	
@@ -97,12 +98,7 @@ struct mdns_pkt {
 };
 
 
-void *	rrdata(struct mdns_rr *);
 ssize_t	charstr(char [MDNS_MAX_CHARSTR], u_int8_t *, uint16_t);
 void	labelstr(char domain[MAXHOSTNAMELEN], u_char *l[], ssize_t nl);
-/* int	rr_compare(struct mdns_rr *, struct mdns_rr *); */
-/* void	dname_free(struct dname *); */
-/* void	pkt_free(struct mdns_pkt *); */
-/* void	rr_free(struct mdns_rr *); */
 
 #endif	/* _MDNS_H_ */

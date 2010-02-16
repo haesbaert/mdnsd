@@ -56,11 +56,12 @@ static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
+static int	pkt_process(struct mdns_pkt *);
 static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_txt(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_srv(struct mdns_rr *, u_int8_t *, uint16_t);
-static int	rr_parse_dname(struct mdns_rr *, u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
+static int	rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 
 /* util */
 ssize_t
@@ -80,37 +81,6 @@ charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
 	dest[tocpy] = '\0'; 	/* Assure null terminated */
 	
 	return tocpy + 1;
-}
-
-void *
-rrdata(struct mdns_rr *rr)
-{
-	switch (rr->type) {
-	case T_A:
-		return &rr->rdata.A;
-		break;
-	case T_HINFO:
-		return &rr->rdata.HINFO;
-		break;
-	case T_CNAME:
-		return &rr->rdata.CNAME;
-		break;
-	case T_PTR:
-		return &rr->rdata.PTR;
-		break;
-	case T_SRV:
-		return &rr->rdata.SRV;
-		break;
-	case T_TXT:
-		return &rr->rdata.TXT;
-		break;
-	case T_NS:
-		return &rr->rdata.NS;
-		break;
-	default:
-		log_debug("Unknown type %d", rr->type);
-		return NULL;
-	}
 }
 
 /* send and receive packets */
@@ -210,7 +180,9 @@ recv_packet(int fd, short event, void *bula)
 	if (pkt_parse(buf, len, &pkt) == -1)
 		return;
 	
-/* 	pkt_process(pkt); */
+	pkt_process(&pkt);
+	rrc_dump();
+
 	/* process all shit */
 }
 
@@ -280,7 +252,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	for (i = 0; i < pkt->ancount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-		log_debug("==BEGIN AN RR==");
+/* 		log_debug("==BEGIN AN RR=="); */
 		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
 			log_debug("Can't parse RR");
 			free(rr);
@@ -288,14 +260,14 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		}
 		SIMPLEQ_INSERT_TAIL(&pkt->anlist, rr, s_entry);
 
-		log_debug("==END AN RR==");
+/* 		log_debug("==END AN RR=="); */
 
 	}
 	
 	for (i = 0; i < pkt->nscount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-		log_debug("==BEGIN NS RR==");
+/* 		log_debug("==BEGIN NS RR=="); */
 		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
 			log_debug("Can't parse RR");
 			free(rr);
@@ -303,14 +275,14 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		}
 		SIMPLEQ_INSERT_TAIL(&pkt->nslist, rr, s_entry);
 		
-		log_debug("==END NS RR==");
+/* 		log_debug("==END NS RR=="); */
 
 	}
 
 	for (i = 0; i < pkt->arcount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-		log_debug("==BEGIN AR RR==");
+/* 		log_debug("==BEGIN AR RR=="); */
 		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
 			log_debug("Can't parse RR");
 /* 			rr_free(rr); */
@@ -320,7 +292,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		
 		SIMPLEQ_INSERT_TAIL(&pkt->arlist, rr, s_entry);
 
-		log_debug("==END AR RR==");
+/* 		log_debug("==END AR RR=="); */
 
 	}
 
@@ -384,7 +356,6 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	
 	*pbuf += n;
 	*len  -= n;
-
 		
 	GETSHORT(mq->qtype, *pbuf);
 	*len -= INT16SZ;
@@ -481,14 +452,11 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 {
 	u_int16_t us;
 	ssize_t n;
-	int r = 0;
 
 	n = pkt_parse_dname(*pbuf, *len, rr->dname);
 	if (n == -1)
 		return -1;
 	
-	log_debug("dname: %s", rr->dname);
-/* 	log_debug("n = %zd", n); */
 	*pbuf += n;
 	*len  -= n;
 	
@@ -540,13 +508,13 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 		break;
 	case T_CNAME:
 		log_debug("CNAME record");
-		if (rr_parse_dname(rr, *pbuf, *len,
+		if (rr_parse_dname(*pbuf, *len,
 		    rr->rdata.CNAME) == -1)
 			return -1;
 		break;
 	case T_PTR:
 		log_debug("PTR record");
-		if (rr_parse_dname(rr, *pbuf, *len,
+		if (rr_parse_dname(*pbuf, *len,
 		    rr->rdata.PTR) == -1)
 			return -1;
 		break;
@@ -557,7 +525,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 		break;
 	case T_NS:
 		log_debug("NS record");
-		if (rr_parse_dname(rr, *pbuf, *len,
+		if (rr_parse_dname(*pbuf, *len,
 		    rr->rdata.NS) == -1)
 			return -1;
 		break;
@@ -576,14 +544,28 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 		break;
 	default:
 		log_debug("Unknown record type %u 0x%x", rr->type, rr->type);
-		r = -1;
+		return -1;
 		break;
 	}
 	
 	*len -= rr->rdlen;
 	*pbuf += rr->rdlen;
 	
-	return r;
+	return 0;
+}
+
+static int
+pkt_process(struct mdns_pkt *pkt)
+{
+	struct mdns_rr *rr;
+		
+	/* TODO: process question section */
+	log_debug("pkt_process");
+	rr = SIMPLEQ_FIRST(&pkt->anlist);
+	if (rr != NULL)
+		rrc_insert(rr);
+	
+	return 0;
 }
 
 static int
@@ -647,14 +629,14 @@ rr_parse_srv(struct mdns_rr *rr, u_int8_t *buf, uint16_t len)
 	len -= INT16SZ;
 	log_debug("SRV port: %u", rr->rdata.SRV.port);
 
-	if (rr_parse_dname(rr, buf, len, rr->rdata.SRV.dname) == -1)
+	if (rr_parse_dname(buf, len, rr->rdata.SRV.dname) == -1)
 		return -1;
 	
 	return 0;
 }
 
 static int
-rr_parse_dname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
+rr_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
 	if (pkt_parse_dname(buf, len, dname) == -1) {
 		log_debug("Invalid record");
@@ -664,8 +646,3 @@ rr_parse_dname(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len, char dname[MAXH
 	return 0;
 }
 
-
-/* int */
-/* rr_compare(struct mdns_rr *a, struct mdns_rr *b) */
-/* { */
-/* } */

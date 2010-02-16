@@ -16,6 +16,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -167,20 +170,6 @@ fatalx(const char *emsg)
 	fatal(emsg);
 }
 
-/* void */
-/* log_debug_mif(const char *msg, struct mif *mif) */
-/* { */
-/* 	if (msg) */
-/* 		log_debug(msg); */
-	
-/* 	LOG_DEBUG_STRUCT(mif, ifname, %s); */
-/* 	LOG_DEBUG_STRUCT(mif, ifindex, %d); */
-/* 	LOG_DEBUG_STRUCT(mif, flags, 0x%x); */
-/* 	LOG_DEBUG_STRUCT(mif, linkstate, %d); */
-/* 	LOG_DEBUG_STRUCT(mif, linktype, %d); */
-/* 	LOG_DEBUG_STRUCT(mif, media_type, %d); */
-/* } */
-
 const char *
 if_state_name(int state)
 {
@@ -203,4 +192,77 @@ log_debug_pkt(struct mdns_pkt *pkt)
 	LOG_DEBUG_STRUCT(pkt, qdcount, %u);
 	LOG_DEBUG_STRUCT(pkt, ancount, %u);
 	LOG_DEBUG_STRUCT(pkt, nscount, %u);
+}
+
+const char *
+rr_type_name(uint16_t type)
+{
+	switch(type) {
+	case T_A:
+		return "A";
+		break; 		/* NOTREACHED */
+	case T_HINFO:
+		return "HINFO";
+		break;		/* NOTREACHED */
+	case T_CNAME:
+		return "CNAME";
+		break;		/* NOTREACHED */
+	case T_PTR:
+		return "PTR";
+		break;		/* NOTREACHED */
+	case T_SRV:
+		return "SRV";
+		break;		/* NOTREACHED */
+	case T_TXT:
+		return "TXT";
+		break;		/* NOTREACHED */
+	case T_NS:
+		return "NS";
+		break;		/* NOTREACHED */
+	default:
+		log_debug("Unknown");
+		break;		/* NOTREACHED */
+	}
+	
+	return "Unknown";
+}
+
+void
+log_debug_rrdata(struct mdns_rr *rr)
+{
+	log_debug("-->%s record (%u)", rr_type_name(rr->type), rr->rdlen);
+
+	switch(rr->type) {
+	case T_A:
+		log_debug("\t %s", inet_ntoa(rr->rdata.A));
+		break;
+	case T_HINFO:
+		log_debug("\t cpu: %s", rr->rdata.HINFO.cpu);
+		log_debug("\t os: %s",  rr->rdata.HINFO.os);
+		break;
+	case T_CNAME:
+		log_debug("\t %s", rr->rdata.CNAME);
+		break;
+	case T_PTR:
+		log_debug("\t %s", rr->rdata.PTR);
+		break;
+	case T_SRV:
+		log_debug("\t dname: %s", rr->rdata.SRV.dname);
+		log_debug("\t priority: %u", rr->rdata.SRV.priority);
+		log_debug("\t weight: %u", rr->rdata.SRV.weight);
+		log_debug("\t port: %u", rr->rdata.SRV.port);
+		break;
+	case T_TXT:
+		log_debug("\t %s", rr->rdata.TXT);
+		break;
+	case T_NS:
+		log_debug("\t %s", rr->rdata.NS);
+		break;
+	case T_AAAA:
+		log_debug("\t implement me");
+		break;
+	default:
+		log_debug("log_debug_rrdata: Unknown rr type");
+		break;
+	}
 }

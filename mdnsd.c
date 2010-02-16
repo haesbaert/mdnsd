@@ -251,6 +251,9 @@ main(int argc, char *argv[])
 	signal_add(&ev_sighup, NULL);
 	signal(SIGPIPE, SIG_IGN);
 
+	/* init RR cache */
+	rrc_init();
+	
 	/* listen to kernel interface events */
 	kev_init();
 	
