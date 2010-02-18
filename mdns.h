@@ -40,16 +40,17 @@
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
 	
 struct mdns_question {
-	SIMPLEQ_ENTRY(mdns_question)	 entry;
+	LIST_ENTRY(mdns_question)	 entry;
 	
 	char		dname[MAXHOSTNAMELEN];
 	u_int16_t	qtype;
 	u_int16_t	qclass;
 	int		uniresp;
+	int 		probe;
 };
 
 struct mdns_rr {
-	SIMPLEQ_ENTRY(mdns_rr)	s_entry; /* used in packet queue */
+	LIST_ENTRY(mdns_rr)	s_entry; /* used in packet queue */
 	LIST_ENTRY(mdns_rr)	c_entry; /* used in cache */
 	
 	char			dname[MAXHOSTNAMELEN];
@@ -91,12 +92,14 @@ struct mdns_pkt {
 	u_int16_t	nscount;
 	u_int16_t	arcount;
 	
-	SIMPLEQ_HEAD(, mdns_question) qlist;
-	SIMPLEQ_HEAD(, mdns_rr) anlist;
-	SIMPLEQ_HEAD(, mdns_rr) nslist;
-	SIMPLEQ_HEAD(, mdns_rr) arlist;
+	LIST_HEAD(, mdns_question) qlist;
+	LIST_HEAD(, mdns_rr) anlist;
+	LIST_HEAD(, mdns_rr) nslist;
+	LIST_HEAD(, mdns_rr) arlist;
 };
 
+
+#define RR_UNIQ(rr) (rr->cacheflush)
 
 ssize_t	charstr(char [MDNS_MAX_CHARSTR], u_int8_t *, uint16_t);
 void	labelstr(char domain[MAXHOSTNAMELEN], u_char *l[], ssize_t nl);

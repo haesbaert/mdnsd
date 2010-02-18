@@ -213,12 +213,13 @@ static void
 pkt_init(struct mdns_pkt *pkt)
 {
 	bzero(pkt, sizeof(*pkt));
-	SIMPLEQ_INIT(&pkt->qlist);
-	SIMPLEQ_INIT(&pkt->anlist);
-	SIMPLEQ_INIT(&pkt->nslist);
-	SIMPLEQ_INIT(&pkt->arlist);
+	LIST_INIT(&pkt->qlist);
+	LIST_INIT(&pkt->anlist);
+	LIST_INIT(&pkt->nslist);
+	LIST_INIT(&pkt->arlist);
 }
 
+/* TODO: insert all sections at end, don't use LIST_INSERT_HEAD */
 static int
 pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 {
@@ -240,7 +241,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	
 	/* Question count sanity check */
 	i = 0;
-	SIMPLEQ_FOREACH(mq, &pkt->qlist, entry)
+	LIST_FOREACH(mq, &pkt->qlist, entry)
 		i++;
 
 	if (i != pkt->qdcount) {
@@ -258,7 +259,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 			free(rr);
 			return -1;
 		}
-		SIMPLEQ_INSERT_TAIL(&pkt->anlist, rr, s_entry);
+		LIST_INSERT_HEAD(&pkt->anlist, rr, s_entry);
 
 /* 		log_debug("==END AN RR=="); */
 
@@ -273,7 +274,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 			free(rr);
 			return -1;
 		}
-		SIMPLEQ_INSERT_TAIL(&pkt->nslist, rr, s_entry);
+		LIST_INSERT_HEAD(&pkt->nslist, rr, s_entry);
 		
 /* 		log_debug("==END NS RR=="); */
 
@@ -290,7 +291,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 			return -1;
 		}
 		
-		SIMPLEQ_INSERT_TAIL(&pkt->arlist, rr, s_entry);
+		LIST_INSERT_HEAD(&pkt->arlist, rr, s_entry);
 
 /* 		log_debug("==END AR RR=="); */
 
@@ -374,7 +375,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 		return -1;
 	}
 	
-	SIMPLEQ_INSERT_TAIL(&pkt->qlist, mq, entry);
+	LIST_INSERT_HEAD(&pkt->qlist, mq, entry);
 	
 	return 0;
 }
@@ -554,16 +555,50 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	return 0;
 }
 
+
+#define ANSWERS(q, rr)						\
+	(((q->qtype == T_ANY) || (q->qtype == rr->type))  &&	\
+	    q->qclass == rr->class                       &&	\
+	    strcmp(q->dname, rr->dname) == 0)
+
 static int
 pkt_process(struct mdns_pkt *pkt)
 {
 	struct mdns_rr *rr;
-		
-	/* TODO: process question section */
+	struct mdns_question *q;
+	
 	log_debug("pkt_process");
-	rr = SIMPLEQ_FIRST(&pkt->anlist);
-	if (rr != NULL)
-		rrc_insert(rr);
+	
+	/* mark all probe questions, so we don't try to answer them below */
+	LIST_FOREACH(rr, &pkt->nslist, s_entry) {
+		LIST_FOREACH(q, &pkt->qlist, entry) {
+			if (ANSWERS(q, rr)) {
+				log_debug("probe for %s", q->dname);
+				q->probe = 1;
+			}
+		}
+		LIST_REMOVE(rr, s_entry);
+		free(rr);
+	}
+	
+	/* process all questions */
+	while ((q = LIST_FIRST(&pkt->qlist)) != NULL) {
+		if (!q->probe)
+			log_debug("should try answer: %s (type %s)", q->dname,
+			    rr_type_name(q->qtype));
+		LIST_REMOVE(q, entry);
+		free(rr);
+		/* TODO: try to answer questions :-D */
+	}
+	
+	/* process all answers */
+	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
+		LIST_REMOVE(rr, s_entry);
+		rrc_process(rr);
+	}
+	
+	/* process additional section */
+	/* TODO */
 	
 	return 0;
 }

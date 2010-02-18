@@ -198,6 +198,9 @@ const char *
 rr_type_name(uint16_t type)
 {
 	switch(type) {
+	case T_ANY:
+		return "ANY";	/* NOTREACHED */
+		break;
 	case T_A:
 		return "A";
 		break; 		/* NOTREACHED */
@@ -230,7 +233,8 @@ rr_type_name(uint16_t type)
 void
 log_debug_rrdata(struct mdns_rr *rr)
 {
-	log_debug("-->%s record (%u)", rr_type_name(rr->type), rr->rdlen);
+	log_debug("-->%s record (%u) UNIQ: %s NAME: %s", rr_type_name(rr->type),
+	    rr->rdlen, RR_UNIQ(rr) ? "yes" : "no", rr->dname);
 
 	switch(rr->type) {
 	case T_A:

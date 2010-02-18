@@ -29,7 +29,9 @@ struct rrc_node {
 	LIST_HEAD(rr_head, mdns_rr) hrr; /* head rr */
 };
 
-static int	rrc_compare(struct rrc_node *, struct rrc_node *);
+static int		 rrc_compare(struct rrc_node *, struct rrc_node *);
+static int		 rrc_delete(struct mdns_rr *);
+static struct rrc_node	*rrc_lookup_node(char dname[], u_int16_t, u_int16_t);
 
 RB_HEAD(rrc_tree, rrc_node) rrt;
 RB_PROTOTYPE(rrc_tree, rrc_node, entry, rrc_compare);
@@ -44,19 +46,9 @@ rrc_init(void)
 struct rr_head *
 rrc_lookup_head(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
-	struct rrc_node	 		s, *tmp;
-	struct mdns_rr			rr;
+	struct rrc_node	*tmp;
 	
-	bzero(&s, sizeof(s));
-	rr.type	 = type;
-	rr.class = class;
-	strlcpy(rr.dname, (const char *)dname, MAXHOSTNAMELEN);
-
-	/* Yes, we use a dummy head to find the node */
-	LIST_INIT(&s.hrr);
-	LIST_INSERT_HEAD(&s.hrr, &rr, c_entry);
-	
-	tmp = RB_FIND(rrc_tree, &rrt, &s);
+	tmp = rrc_lookup_node(dname, type, class);
 	if (tmp == NULL)
 		return NULL;
 	
@@ -72,24 +64,49 @@ rrc_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	return LIST_FIRST(hrr);
 }
 
-/* This is FAR from finished */
 void
-rrc_insert(struct mdns_rr *rr)
+rrc_process(struct mdns_rr *rr)
 {
 	struct rr_head *hrr;
 	struct rrc_node *n;
+	struct mdns_rr *rraux;
 	
+	if (rr->ttl == 0) {
+		rrc_delete(rr);
+		return;
+	}
+		
 	hrr = rrc_lookup_head(rr->dname, rr->type, rr->class);
-	if (hrr != NULL) {
+	if (hrr == NULL) {
+		if ((n = calloc(1, sizeof(*n))) == NULL)
+			fatal("calloc");
+		LIST_INIT(&n->hrr);
+		LIST_INSERT_HEAD(&n->hrr, rr, c_entry);
+		RB_INSERT(rrc_tree, &rrt, n);
+		return;
+	}
+		
+	/* if an unique record, clean all previous and substitute */
+	if (RR_UNIQ(rr)) {
+		while ((rraux = LIST_FIRST(hrr)) != NULL) {
+			LIST_REMOVE(rraux, c_entry);
+			free(rraux);
+		}
 		LIST_INSERT_HEAD(hrr, rr, c_entry);
 		return;
 	}
 	
-	if ((n = calloc(1, sizeof(*n))) == NULL)
-		fatal("calloc");
-	LIST_INIT(&n->hrr);
-	LIST_INSERT_HEAD(&n->hrr, rr, c_entry);
-	RB_INSERT(rrc_tree, &rrt, n);
+	/* rr is not unique, see if this is a cache refresh */
+	while ((rraux = LIST_FIRST(hrr)) != NULL) {
+		if (memcmp(&rr->rdata, &rraux->rdata, rraux->rdlen) == 0) {
+			rraux->ttl = rr->ttl;
+			free(rr);
+			return;
+		}
+	}
+	
+	/* not a refresh, so add */
+	LIST_INSERT_HEAD(hrr, rr, c_entry);
 }
 	
 void
@@ -102,8 +119,6 @@ rrc_dump(void)
 	
 	RB_FOREACH(n, rrc_tree, &rrt) {
 		rr = LIST_FIRST(&n->hrr);
-/* 		log_debug("**node head** dname: %s, type: %u, class: %u", */
-/* 		    rr->dname, rr->type, rr->class); */
 		LIST_FOREACH(rr, &n->hrr, c_entry)
 		    log_debug_rrdata(rr);
 	}
@@ -129,3 +144,53 @@ rrc_compare(struct rrc_node *a, struct rrc_node *b)
 	return strcmp(rra->dname, rrb->dname);
 }
 
+static int
+rrc_delete(struct mdns_rr *rr)
+{
+	struct mdns_rr	*rraux;
+	struct rrc_node	 *s;
+	int n = 0;
+	
+	log_debug("rrc_delete %s data:", rr->dname);
+	log_debug_rrdata(rr);
+	s = rrc_lookup_node(rr->dname, rr->type, rr->class);
+	if (s == NULL)
+		return 0;
+	
+	while ((rraux = LIST_FIRST(&s->hrr)) != NULL) {
+		if (RR_UNIQ(rr) ||
+		    (memcmp(&rr->rdata, &rraux->rdata,
+		    rraux->rdlen) == 0)) {
+			LIST_REMOVE(rraux, c_entry);
+			free(rraux);
+			n++;
+		}
+	}
+
+	if (LIST_EMPTY(&s->hrr))
+		RB_REMOVE(rrc_tree, &rrt, s);
+	
+	return n;
+}
+	
+static struct rrc_node *
+rrc_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+{
+	struct rrc_node	 		s, *tmp;
+	struct mdns_rr			rr;
+	
+	bzero(&s, sizeof(s));
+	bzero(&rr, sizeof(rr));
+	rr.type	 = type;
+	rr.class = class;
+	strlcpy(rr.dname, (const char *)dname, MAXHOSTNAMELEN);
+
+	LIST_INIT(&s.hrr);
+	LIST_INSERT_HEAD(&s.hrr, &rr, c_entry);
+	
+	tmp = RB_FIND(rrc_tree, &rrt, &s);
+	if (tmp == NULL)
+		return NULL;
+	
+	return tmp;
+}

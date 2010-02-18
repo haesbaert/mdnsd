@@ -23,8 +23,9 @@ Code
   * Check interface types, make sure they are multicastable.
   
   
+** Do not take into account the following, I use it to reason.
 RIPD
-----------------
+-----------------
   Interfaces:
   1) A primeira tabela é inicia por kif_init que chama fetchifs, tudo
   ainda no processo pai, ele inicia a RB_TREE kit (kernel interfaces),
@@ -47,6 +48,23 @@ RIPD
   ?pq?. Fecha registrando um evento no fd do raw socket, onde o
   handler é kr_dispatch_msg.
   
-  
-  
+Dúvidas/Notas
+----------------
+  * Preciso de um exemplo de um shared record. Quando que o nome
+  seria igual ?
+  * A "uniqness" de um record é dado pelo cache flush bit:
+   The semantics of the cache flush bit are as follows: Normally when a
+   resource record appears in the Answer Section of the DNS Response, it
+   means, "This is an assertion that this information is true." When a
+   resource record appears in the Answer Section of the DNS Response
+   with the "cache flush" bit set, it means, "This is an assertion that
+   this information is the truth and the whole truth, and anything you
+   may have heard more than a second ago regarding records of this
+   name/rrtype/rrclass is no longer valid".
+
+  * Quando em known answer supression, NÃO aprender coisas do answer
+  section, NÃO é autoritativo.
+  * Identifico um probe quando a authority section responde a question
+  section.
+  * NSEC é usado para negative responses, ninguém parece implementar.
     
