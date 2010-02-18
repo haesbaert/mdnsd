@@ -1,5 +1,3 @@
-/*	$OpenBSD: interface.c,v 1.8 2009/09/26 18:24:58 michele Exp $ */
-
 /*
  * Copyright (c) 2006 Michele Marchetto <mydecay@openbeer.it>
  * Copyright (c) 2005 Claudio Jeker <claudio@openbsd.org>
