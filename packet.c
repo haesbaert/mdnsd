@@ -436,12 +436,18 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 			len -= lablen;
 
 	}
+	
+	
 
 	if (i == MDNS_MAX_LABELS) {
 		log_debug("max labels reached");
 		return -1;
 	}
 	
+	/* remove the trailling dot */
+	if (len > 0)
+		dname[strlen(dname) - 1] = '\0';
+
 /* 	log_debug("oldlen: %u, len: %u", oldlen, len); */
 	return oldlen - len;
 }

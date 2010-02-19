@@ -19,6 +19,10 @@ Code
   * Write a dummy README.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
+  * Implement serialization so we can start the responder.
+  * Implement control and API protocol.
+  * Hack libc resolv to resolv .local.
+  * Implement cache expiration machine. DONE
   * Import henning's log source. DONE
   * Code getopt. DONE
   * Import kif source remove route stuff ?. DONE
