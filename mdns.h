@@ -50,15 +50,13 @@ struct mdns_question {
 };
 
 struct mdns_rr {
-	LIST_ENTRY(mdns_rr)	s_entry; /* used in packet queue */
-	LIST_ENTRY(mdns_rr)	c_entry; /* used in cache */
-	
-	char			dname[MAXHOSTNAMELEN];
-	u_int16_t		type;
-	int			cacheflush;	
-	u_int16_t		class;
-	u_int32_t		ttl;
-	u_int16_t		rdlen;
+	LIST_ENTRY(mdns_rr)	entry;
+	char		dname[MAXHOSTNAMELEN];
+	u_int16_t	type;
+	int		cacheflush;	
+	u_int16_t	class;
+	u_int32_t	ttl;
+	u_int16_t	rdlen;
 	union {
 		struct in_addr	A;
 		char		CNAME[MAXHOSTNAMELEN];
@@ -74,11 +72,15 @@ struct mdns_rr {
 		} SRV;
 
 		struct {
-			char		cpu[MDNS_MAX_CHARSTR];
-			char		os[MDNS_MAX_CHARSTR];
+			char	cpu[MDNS_MAX_CHARSTR];
+			char	os[MDNS_MAX_CHARSTR];
 		} HINFO;
 
 	} rdata;
+	int		active; 	/* if active we'll try to renew cache */
+	int		revision;	/* at 80% of ttl, then 90% and 95% */
+	struct event 	rev_timer; 	/* cache revision timer */
+	
 };
 
 struct mdns_pkt {

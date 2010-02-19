@@ -1,26 +1,29 @@
 Read documentation
 ------------------
-  * Read mdns draft.
-  * Learn about ipv4 multicast (unp).
-  * Read dns-sd draft.
-  * Take a look at libc resolv code.
-  * Read more about DNS in general.
-  * Read more about dynamic DNS.
-  * Learn how to use libevent.
-  * Read ripd code.
+  * Read mdns draft. DONE
+  * Learn about ipv4 multicast (unp). DONE
+  * Read dns-sd draft. DONE
+  * Take a look at libc resolv code. DONE
+  * Read more about DNS in general. DONE
+  * Read more about dynamic DNS. DONE
+  * Learn how to use libevent. DONE
+  * Read ripd code. DONE
   
 Setup
 -----------------
-  * Get a linux box running avahi to test against.
-  * Make coding environment, github ? and so on...
+  * Get a linux box running avahi to test against. DONE
+  * Make coding environment, github ? and so on... DONE
   
 Code
 -----------------
-  * Import henning's log source.
-  * Code getopt.
-  * Import kif source remove route stuff ?.    
-  * fetch all interfaces.
-  * Check interface types, make sure they are multicastable.
+  * Write a dummy README.
+  * Check for possible overruns when parsing packets, specially in
+  name pointers.
+  * Import henning's log source. DONE
+  * Code getopt. DONE
+  * Import kif source remove route stuff ?. DONE
+  * fetch all interfaces. DONE
+  * Check interface types, make sure they are multicastable. DONE
   
   
 ** Do not take into account the following, I use it to reason.

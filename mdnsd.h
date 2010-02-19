@@ -130,7 +130,7 @@ int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
 	
 /* cache.c */
 void		 rrc_init(void);
-void		 rrc_process(struct mdns_rr *);
+int		 rrc_process(struct mdns_rr *);
 void		 rrc_dump(void);
 struct rr_head	*rrc_lookup_head(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 struct mdns_rr	*rrc_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);

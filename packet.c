@@ -181,7 +181,7 @@ recv_packet(int fd, short event, void *bula)
 		return;
 	
 	pkt_process(&pkt);
-	rrc_dump();
+/* 	rrc_dump(); */
 
 	/* process all shit */
 }
@@ -259,7 +259,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 			free(rr);
 			return -1;
 		}
-		LIST_INSERT_HEAD(&pkt->anlist, rr, s_entry);
+		LIST_INSERT_HEAD(&pkt->anlist, rr, entry);
 
 /* 		log_debug("==END AN RR=="); */
 
@@ -274,7 +274,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 			free(rr);
 			return -1;
 		}
-		LIST_INSERT_HEAD(&pkt->nslist, rr, s_entry);
+		LIST_INSERT_HEAD(&pkt->nslist, rr, entry);
 		
 /* 		log_debug("==END NS RR=="); */
 
@@ -291,7 +291,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 			return -1;
 		}
 		
-		LIST_INSERT_HEAD(&pkt->arlist, rr, s_entry);
+		LIST_INSERT_HEAD(&pkt->arlist, rr, entry);
 
 /* 		log_debug("==END AR RR=="); */
 
@@ -498,40 +498,40 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 
 	switch (rr->type) {
 	case T_A:
-		log_debug("A record");
+/* 		log_debug("A record"); */
 		if (rr_parse_a(rr, *pbuf) == -1)
 			return -1;
 		break;
 	case T_HINFO:
-		log_debug("HINFO record");
+/* 		log_debug("HINFO record"); */
 		if (rr_parse_hinfo(rr, *pbuf) == -1)
 			return -1;
 		break;
 	case T_CNAME:
-		log_debug("CNAME record");
+/* 		log_debug("CNAME record"); */
 		if (rr_parse_dname(*pbuf, *len,
 		    rr->rdata.CNAME) == -1)
 			return -1;
 		break;
 	case T_PTR:
-		log_debug("PTR record");
+/* 		log_debug("PTR record"); */
 		if (rr_parse_dname(*pbuf, *len,
 		    rr->rdata.PTR) == -1)
 			return -1;
 		break;
 	case T_TXT:
-		log_debug("TXT record");
+/* 		log_debug("TXT record"); */
 		if (rr_parse_txt(rr, *pbuf) == -1)
 			return -1;
 		break;
 	case T_NS:
-		log_debug("NS record");
+/* 		log_debug("NS record"); */
 		if (rr_parse_dname(*pbuf, *len,
 		    rr->rdata.NS) == -1)
 			return -1;
 		break;
 	case T_SRV:
-		log_debug("SRV record");
+/* 		log_debug("SRV record"); */
 /* 		if (rr->dname.nlabels < 3) { */
 /* 			log_debug("SRV record expects a dname with" */
 /* 			    "at least 3 labels, got %d", rr->dname.nlabels); */
@@ -541,7 +541,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 			return -1;
 		break;
 	case T_AAAA:
-		log_debug("got a AAAA record");
+/* 		log_debug("got a AAAA record"); */
 		break;
 	default:
 		log_debug("Unknown record type %u 0x%x", rr->type, rr->type);
@@ -567,25 +567,23 @@ pkt_process(struct mdns_pkt *pkt)
 	struct mdns_rr *rr;
 	struct mdns_question *q;
 	
-	log_debug("pkt_process");
-	
 	/* mark all probe questions, so we don't try to answer them below */
-	LIST_FOREACH(rr, &pkt->nslist, s_entry) {
+	LIST_FOREACH(rr, &pkt->nslist, entry) {
 		LIST_FOREACH(q, &pkt->qlist, entry) {
 			if (ANSWERS(q, rr)) {
-				log_debug("probe for %s", q->dname);
+/* 				log_debug("probe for %s", q->dname); */
 				q->probe = 1;
 			}
 		}
-		LIST_REMOVE(rr, s_entry);
+		LIST_REMOVE(rr, entry);
 		free(rr);
 	}
 	
 	/* process all questions */
 	while ((q = LIST_FIRST(&pkt->qlist)) != NULL) {
-		if (!q->probe)
-			log_debug("should try answer: %s (type %s)", q->dname,
-			    rr_type_name(q->qtype));
+/* 		if (!q->probe) */
+/* 			log_debug("should try answer: %s (type %s)", q->dname, */
+/* 			    rr_type_name(q->qtype)); */
 		LIST_REMOVE(q, entry);
 		free(rr);
 		/* TODO: try to answer questions :-D */
@@ -593,7 +591,7 @@ pkt_process(struct mdns_pkt *pkt)
 	
 	/* process all answers */
 	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
-		LIST_REMOVE(rr, s_entry);
+		LIST_REMOVE(rr, entry);
 		rrc_process(rr);
 	}
 	
@@ -610,11 +608,11 @@ rr_parse_hinfo(struct mdns_rr *rr, u_int8_t *buf)
 	
 	if ((n = charstr(rr->rdata.HINFO.cpu, buf, rr->rdlen)) == -1)
 		return -1;
-	log_debug("   cpu: %s", rr->rdata.HINFO.cpu);
+/* 	log_debug("   cpu: %s", rr->rdata.HINFO.cpu); */
 
 	if ((n = charstr(rr->rdata.HINFO.os, buf + n, rr->rdlen - n)) == -1)
 		return -1;
-	log_debug("   os: %s",  rr->rdata.HINFO.os);
+/* 	log_debug("   os: %s",  rr->rdata.HINFO.os); */
 	
 	return 0;
 }
@@ -632,7 +630,7 @@ rr_parse_a(struct mdns_rr *rr, u_int8_t *buf)
 	GETLONG(ul, buf);
 	rr->rdata.A.s_addr = htonl(ul);
 	
-	log_debug("A record: %s", inet_ntoa(rr->rdata.A));
+/* 	log_debug("A record: %s", inet_ntoa(rr->rdata.A)); */
 	return 0;
 	
 }
@@ -644,7 +642,7 @@ rr_parse_txt(struct mdns_rr *rr, u_int8_t *buf)
 	
 	if ((n = charstr(rr->rdata.TXT, buf, rr->rdlen)) == -1)
 		return -1;
-	log_debug("TXT: %s", rr->rdata.TXT);
+/* 	log_debug("TXT: %s", rr->rdata.TXT); */
 
 	return 0;
 }
@@ -654,15 +652,15 @@ rr_parse_srv(struct mdns_rr *rr, u_int8_t *buf, uint16_t len)
 {
 	GETSHORT(rr->rdata.SRV.priority, buf);
 	len -= INT16SZ;
-	log_debug("SRV priority: %u", rr->rdata.SRV.priority);
+/* 	log_debug("SRV priority: %u", rr->rdata.SRV.priority); */
 	
 	GETSHORT(rr->rdata.SRV.weight, buf);
 	len -= INT16SZ;
-	log_debug("SRV weight: %u", rr->rdata.SRV.weight);
+/* 	log_debug("SRV weight: %u", rr->rdata.SRV.weight); */
 
 	GETSHORT(rr->rdata.SRV.port, buf);
 	len -= INT16SZ;
-	log_debug("SRV port: %u", rr->rdata.SRV.port);
+/* 	log_debug("SRV port: %u", rr->rdata.SRV.port); */
 
 	if (rr_parse_dname(buf, len, rr->rdata.SRV.dname) == -1)
 		return -1;
