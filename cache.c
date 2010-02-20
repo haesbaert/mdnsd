@@ -195,9 +195,11 @@ rrc_delete(struct mdns_rr *rr)
 		}
 	}
 
-	if (LIST_EMPTY(&s->hrr))
+	if (LIST_EMPTY(&s->hrr)) {
 		RB_REMOVE(rrc_tree, &rrt, s);
-
+		free(s);
+	}
+	
 	return n;
 }
 	
