@@ -31,6 +31,13 @@
 #define RT_BUF_SIZE	16384
 #define MAX_RTSOCK_BUF	128 * 1024
 
+struct imsgev {
+	struct imsgbuf		 ibuf;
+	void			(*handler)(int, short, void *);
+	struct event		 ev;
+	void			*data;
+	short			 events;
+};
 
 /* kiface.c */
 struct kif {

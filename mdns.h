@@ -77,7 +77,6 @@ struct mdns_rr {
 		} HINFO;
 
 	} rdata;
-	int		active; 	/* if active we'll try to renew cache */
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
 	struct event 	rev_timer; 	/* cache revision timer */
 	

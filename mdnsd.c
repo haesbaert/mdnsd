@@ -32,6 +32,7 @@
 #include "mdnsd.h"
 #include "mdns.h"
 #include "log.h"
+/* #include "control.h" */
 
 __dead void	usage(void);
 void		mdnsd_sig_handler(int, short, void *);
@@ -93,13 +94,8 @@ mdnsd_sig_handler(int sig, short event, void *arg)
 	switch (sig) {
 	case SIGINT:
 	case SIGTERM:
-		log_debug("got SIGTERM/SIGINT");
-		
 		mdnsd_shutdown();
 		break;		/* NOTREACHED */
-	case SIGCHLD:
-		log_debug("got SIGCHLD");
-		break;
 	case SIGHUP:
 		log_debug("got SIGHUP");
 		/* reconfigure */
@@ -122,9 +118,8 @@ mdnsd_shutdown(void)
 	}
 	
 	kev_cleanup();
-	/* control_cleanup */
-	/* kiface_cleanup(); */
-	/* TODO FINISH ME */
+	kif_cleanup();
+/* 	control_cleanup(); */
 	free(conf);
 	
 	log_info("terminating");
@@ -175,7 +170,7 @@ main(int argc, char *argv[])
 	int		 debug = 0;	
 	struct passwd	*pw;
 	struct iface	*iface;
-	struct event	 ev_sigint, ev_sigterm, ev_sigchld, ev_sighup;
+	struct event	 ev_sigint, ev_sigterm, ev_sighup;
 
 	if ((conf = calloc(1, sizeof(*conf))) == NULL)
 		fatal("calloc");
@@ -243,11 +238,9 @@ main(int argc, char *argv[])
 	/* setup signals */
 	signal_set(&ev_sigint, SIGINT, mdnsd_sig_handler, NULL);
 	signal_set(&ev_sigterm, SIGTERM, mdnsd_sig_handler, NULL);
-	signal_set(&ev_sigchld, SIGCHLD, mdnsd_sig_handler, NULL);
 	signal_set(&ev_sighup, SIGHUP, mdnsd_sig_handler, NULL);
 	signal_add(&ev_sigint, NULL);
 	signal_add(&ev_sigterm, NULL);
-	signal_add(&ev_sigchld, NULL);
 	signal_add(&ev_sighup, NULL);
 	signal(SIGPIPE, SIG_IGN);
 

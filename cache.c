@@ -150,6 +150,7 @@ rrc_insert(struct mdns_rr *rr)
 		}
 		LIST_INSERT_HEAD(hrr, rr, entry);
 		rrc_sched_rev(rr);
+		
 		return 0;
 	}
 	
@@ -160,6 +161,7 @@ rrc_insert(struct mdns_rr *rr)
 			rraux->revision = 0;
 			rrc_sched_rev(rraux);
 			free(rr);
+			
 			return 0;
 		}
 	}
