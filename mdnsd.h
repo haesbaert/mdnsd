@@ -130,6 +130,9 @@ struct mdnsd_conf {
 	int 			mdns_sock;
 	struct event	 	ev_mdns;
 };
+void		 imsg_event_add(struct imsgev *);
+int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
+	pid_t, int, void *, u_int16_t);
 
 /* packet.c */
 void	recv_packet(int, short, void *); /* these don't belong here */
@@ -141,5 +144,8 @@ int		 rrc_process(struct mdns_rr *);
 void		 rrc_dump(void);
 struct rr_head	*rrc_lookup_head(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 struct mdns_rr	*rrc_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+
+/* control.c */
+TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 
 #endif /* _MDNSD_H_ */

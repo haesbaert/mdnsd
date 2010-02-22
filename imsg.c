@@ -1,6 +1,5 @@
-/*	$OpenBSD: imsg.c,v 1.8 2009/08/08 18:33:40 nicm Exp $	*/
-
 /*
+ * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -90,6 +89,61 @@ imsg_read(struct imsgbuf *ibuf)
 
 	return (n);
 }
+
+/* ssize_t */
+/* imsg_getcred(struct imsgbuf *ibuf, struct sockcred *cred) */
+/* { */
+/* 	struct msghdr		 msg; */
+/* 	struct cmsghdr		*cmsg; */
+/* 	union { */
+/* 		struct cmsghdr	 hdr; */
+/* 		char		 buf[CMSG_SPACE(sizeof(int) * 16)]; */
+/* 	} cmsgbuf; */
+/* 	struct sockcred		*pscred; */
+/* 	struct iovec		 iov; */
+/* 	ssize_t			 n; */
+/* 	int			 auth = 0; */
+
+/* 	bzero(&msg, sizeof(msg)); */
+
+/* 	iov.iov_base = ibuf->r.buf + ibuf->r.wpos; */
+/* 	iov.iov_len = sizeof(ibuf->r.buf) - ibuf->r.wpos; */
+/* 	msg.msg_iov = &iov; */
+/* 	msg.msg_iovlen = 1; */
+/* 	msg.msg_control = &cmsgbuf.buf; */
+/* 	msg.msg_controllen = sizeof(cmsgbuf.buf); */
+
+/* 	if ((n = recvmsg(ibuf->fd, &msg, 0)) == -1) { */
+/* 		if (errno != EINTR && errno != EAGAIN) { */
+/* 			return (-1); */
+/* 		} */
+/* 		return (-2); */
+/* 	} */
+
+/* 	ibuf->r.wpos += n; */
+
+/* 	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; */
+/* 	     cmsg = CMSG_NXTHDR(&msg, cmsg)) { */
+/* 		if (cmsg->cmsg_level == SOL_SOCKET && */
+/* 		    cmsg->cmsg_type == SCM_CREDS) { */
+/* 			auth = 1; */
+/* 			pscred = (struct sockcred *)CMSG_DATA(cmsg); */
+/* 			cred->sc_uid	    = pscred->sc_uid; */
+/* 			cred->sc_euid	    = pscred->sc_euid; */
+/* 			cred->sc_gid	    = pscred->sc_gid; */
+/* 			cred->sc_egid	    = pscred->sc_egid; */
+/* 			/\* XXX supplemental groups ignored *\/ */
+/* 			cred->sc_ngroups   = 0; */
+/* 			cred->sc_groups[0] = 0; */
+/* 		} */
+/* 		/\* we do not handle other ctl data level *\/ */
+/* 	} */
+
+/* 	if (auth) */
+/* 		return (n); */
+	
+/* 	return (-1); */
+/* } */
 
 ssize_t
 imsg_get(struct imsgbuf *ibuf, struct imsg *imsg)

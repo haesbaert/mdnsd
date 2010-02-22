@@ -32,7 +32,7 @@
 #include "mdnsd.h"
 #include "mdns.h"
 #include "log.h"
-/* #include "control.h" */
+#include "control.h"
 
 __dead void	usage(void);
 void		mdnsd_sig_handler(int, short, void *);
@@ -119,7 +119,7 @@ mdnsd_shutdown(void)
 	
 	kev_cleanup();
 	kif_cleanup();
-/* 	control_cleanup(); */
+	control_cleanup();
 	free(conf);
 	
 	log_info("terminating");
@@ -209,13 +209,11 @@ main(int argc, char *argv[])
 	if (!debug)
 		daemon(1, 0);
 	
-	/* no double running protection ? will fail in bind, ask henning */
-	
 	log_info("startup");
 	
 	/* init control before chroot */
-/* 	if (control_init() == -1) */
-/* 		fatalx("control socket setup failed"); */
+	if (control_init() == -1)
+		fatalx("control socket setup failed");
 
 	/* chroot */
 	if (chroot(pw->pw_dir) == -1)
@@ -266,8 +264,41 @@ main(int argc, char *argv[])
 			log_warnx("error starting interface %s", iface->name);
 	}
 	
+	/* listen on mdns control socket */
+	TAILQ_INIT(&ctl_conns);
+	control_listen();
+	
 	/* parent mainloop */
 	event_dispatch();
 	
 	return 0;
+}
+
+void
+imsg_event_add(struct imsgev *iev)
+{
+	if (iev->handler == NULL) {
+		imsg_flush(&iev->ibuf);
+		return;
+	}
+
+	iev->events = EV_READ;
+	if (iev->ibuf.w.queued)
+		iev->events |= EV_WRITE;
+
+	event_del(&iev->ev);
+	event_set(&iev->ev, iev->ibuf.fd, iev->events, iev->handler, iev);
+	event_add(&iev->ev, NULL);
+}
+
+int
+imsg_compose_event(struct imsgev *iev, u_int16_t type,
+    u_int32_t peerid, pid_t pid, int fd, void *data, u_int16_t datalen)
+{
+	int	ret;
+
+	if ((ret = imsg_compose(&iev->ibuf, type, peerid,
+	    pid, fd, data, datalen)) != -1)
+		imsg_event_add(iev);
+	return (ret);
 }

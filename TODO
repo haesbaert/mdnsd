@@ -75,3 +75,28 @@ Dúvidas/Notas
   section.
   * NSEC é usado para negative responses, ninguém parece implementar.
     
+Querier
+----------------
+  * Quando uma requisição simples chega no control socket:
+  	1 - Se está no cache, escreve resposta. Fim.
+        2 - Se não está no cache
+           - Adiciono req na lista de req pendentes.
+           - Faço um pacote com a pergunta e envio, timeout de 3
+             segundos.
+           	1 - Li uma resposta e adicionei no cache, verifico QUAIS
+                reqs pendentes são respondidas pela resposta, mando
+                resposta, Fim.
+                2 - Timeout, envio resposta de timeout. Fim.
+  * Quando uma requisição de browsing chega no control socket:
+  	- Adiciono req na lista de reqs pendentes como uma browsing req.
+  	- Envio tudo que está no cache, e marco todas as requisições
+        como active, para que o cache seja renovado.
+        - Envio um PTR, repito o envio dobrando o intervalo.
+        - Todo RR que chega deve ser checado pra ver se responde
+        alguma browsing query, se sim, deve ser marcado como ativo e
+        respondido.
+        - Todo RR que expira deve ser informado aos interessados.
+           
+                         
+                
+        	

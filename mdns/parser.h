@@ -1,7 +1,7 @@
-/*	$OpenBSD: control.h,v 1.2 2009/06/06 08:20:55 eric Exp $ */
-
 /*
  * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
+ * Copyright (c) 2006 Michele Marchetto <mydecay@openbeer.it>
+ * Copyright (c) 2004 Esben Norby <norby@openbsd.org>
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -17,36 +17,30 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _CONTROL_H_
-#define	_CONTROL_H_
+#ifndef _PARSER_H_
+#define _PARSER_H_
 
-#include <sys/queue.h>
-#include <sys/time.h>
-#include <event.h>
+#include <sys/param.h>
+#include <sys/types.h>
+#include <net/if.h>
+#include <netinet/in.h>
 
-struct {
-	struct event	ev;
-	int		fd;
-} control_state;
-
-enum blockmodes {
-	BM_NORMAL,
-	BM_NONBLOCK
+enum actions {
+	NONE,
+	LOOKUP
 };
 
-struct ctl_conn {
-	TAILQ_ENTRY(ctl_conn)	entry;
-	struct imsgev		iev;
-	struct sockcred		cred;
+struct parse_result {
+	struct in_addr	addr;
+	int		flags;
+	enum actions	action;
+	char		hostname[MAXHOSTNAMELEN];
 };
 
-int	control_init(void);
-int	control_listen(void);
-void	control_accept(int, short, void *);
-void	control_getcred(int, short, void *);
-void	control_dispatch_imsg(int, short, void *);
-void	control_cleanup(void);
+struct parse_result	*parse(int, char *[]);
+const struct token	*match_token(const char *, const struct token *);
+void			 show_valid_args(const struct token *);
+int			 parse_addr(const char *, struct in_addr *);
+int			 parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN]);
 
-void	session_socket_blockmode(int, enum blockmodes);
-
-#endif	/* _CONTROL_H_ */
+#endif	/* _PARSER_H_ */
