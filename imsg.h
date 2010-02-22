@@ -95,8 +95,6 @@ void		 msgbuf_drain(struct msgbuf *, size_t);
 /* imsg.c */
 void	 imsg_init(struct imsgbuf *, int);
 ssize_t	 imsg_read(struct imsgbuf *);
-/* ssize_t	 imsg_getcred(struct imsgbuf *, struct sockcred *); */
-
 ssize_t	 imsg_get(struct imsgbuf *, struct imsg *);
 int	 imsg_compose(struct imsgbuf *, u_int32_t, u_int32_t, pid_t,
 	    int, void *, u_int16_t);

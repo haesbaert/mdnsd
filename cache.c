@@ -65,7 +65,9 @@ rrc_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	struct rr_head	*hrr;
 	
 	hrr = rrc_lookup_head(dname, type, class);
-	return LIST_FIRST(hrr);
+	if (hrr)
+		return LIST_FIRST(hrr);
+	return NULL;
 }
 
 int
