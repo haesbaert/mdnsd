@@ -1,8 +1,5 @@
 /*
  * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
- * Copyright (c) 2006 Michele Marchetto <mydecay@openbeer.it>
- * Copyright (c) 2004 Esben Norby <norby@openbsd.org>
- * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -17,31 +14,19 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _PARSER_H_
-#define _PARSER_H_
+#ifndef _MDNS_API_H_
+#define	_MDNS_API_H_
 
-#include <sys/param.h>
-#include <sys/types.h>
-#include <net/if.h>
-#include <netinet/in.h>
+#include "mdnsd.h"
+#include "imsg.h"
 
-enum actions {
-	NONE,
-	LOOKUP,
-	LOOKUP_ADDR
+#define MDNS_API_TIMEOUT 3
+
+struct mdns_api_state {
+	struct imsgbuf ibuf;
 };
 
-struct parse_result {
-	struct in_addr	addr;
-	int		flags;
-	enum actions	action;
-	char		hostname[MAXHOSTNAMELEN];
-};
+int	mdns_api_lookup(const char *, struct in_addr *);
+int	mdns_api_lookup_addr(struct in_addr *, char *, size_t);
 
-struct parse_result	*parse(int, char *[]);
-const struct token	*match_token(const char *, const struct token *);
-void			 show_valid_args(const struct token *);
-int			 parse_addr(const char *, struct in_addr *);
-int			 parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN]);
-
-#endif	/* _PARSER_H_ */
+#endif	/* _MDNS_API_H_ */

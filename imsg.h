@@ -18,6 +18,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifndef _IMSG_H_
+#define	_IMSG_H_
+
 #include <sys/tree.h>
 
 #define READ_BUF_SIZE		65535
@@ -107,3 +110,5 @@ void	 imsg_close(struct imsgbuf *, struct buf *);
 void	 imsg_free(struct imsg *);
 int	 imsg_flush(struct imsgbuf *);
 void	 imsg_clear(struct imsgbuf *);
+
+#endif	/* _IMSG_H_ */

@@ -50,14 +50,21 @@ struct token {
 
 static const struct token t_main[];
 static const struct token t_lookup[];
+static const struct token t_lookupaddr[];
 
 static const struct token t_main[] = {
 	{KEYWORD,	"lookup",	LOOKUP,		t_lookup},
+	{KEYWORD,	"lookupaddr",	LOOKUP_ADDR,	t_lookupaddr},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
 static const struct token t_lookup[] = {
 	{ HOSTNAME,	"",		NONE,		NULL},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_lookupaddr[] = {
+	{ ADDRESS,	"",		NONE,		NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -112,8 +119,8 @@ match_token(const char *word, const struct token *table)
 			}
 			break;
 		case KEYWORD:
-			if (word != NULL && strncmp(word, table[i].keyword,
-			    strlen(word)) == 0) {
+			if (word != NULL && strcmp(word, table[i].keyword)
+			    == 0) {
 				match++;
 				t = &table[i];
 				if (t->value)
@@ -121,8 +128,7 @@ match_token(const char *word, const struct token *table)
 			}
 			break;
 		case FLAG:
-			if (word != NULL && strncmp(word, table[i].keyword,
-			    strlen(word)) == 0) {
+			if (word != NULL && strcmp(word, table[i].keyword) == 0) {
 				match++;
 				t = &table[i];
 				res.flags |= t->value;

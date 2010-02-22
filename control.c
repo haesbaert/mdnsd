@@ -40,7 +40,7 @@ struct ctl_conn	*control_connbypid(pid_t);
 void		 control_close(int);
 
 static void
-ctl_lookup_handler(struct ctl_conn *c, struct imsg *imsg)
+ctl_lookup(struct ctl_conn *c, struct imsg *imsg)
 {
 	struct mdns_rr *rr;
 	char hostname[MAXHOSTNAMELEN];
@@ -54,8 +54,30 @@ ctl_lookup_handler(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	
 	log_debug("hostname %s: %s", hostname, inet_ntoa(rr->rdata.A));
-/* 	mdnsd_imsg_compose_ctl(c, imsg->hdr.type, */
-/* 	    &rr->rdata.A, sizeof(rr->rdata.A)); */
+	mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
+	    &rr->rdata.A, sizeof(rr->rdata.A));
+}
+
+static void
+ctl_lookup_addr(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct mdns_rr *rr;
+	struct in_addr addr;
+	char name[MAXHOSTNAMELEN];
+	
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(struct in_addr))
+		return;
+
+	memcpy(&addr, imsg->data, imsg->hdr.len - IMSG_HEADER_SIZE);
+
+	reversstr(name, &addr);
+	log_debug("vi a reverse query para: %s (%s)", inet_ntoa(addr), name);
+	if ((rr = rrc_lookup(name, T_PTR, C_IN)) == NULL)
+		return;
+	
+	log_debug("PTR name %s: %s", rr->rdata.PTR, inet_ntoa(rr->rdata.A));
+	mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
+	    rr->rdata.PTR, sizeof(rr->rdata.PTR));
 }
 
 int
@@ -238,7 +260,10 @@ control_dispatch_imsg(int fd, short event, void *bula)
 
 		switch (imsg.hdr.type) {
 		case IMSG_CTL_LOOKUP:
-			ctl_lookup_handler(c, &imsg);
+			ctl_lookup(c, &imsg);
+			break;
+		case IMSG_CTL_LOOKUP_ADDR:
+			ctl_lookup_addr(c, &imsg);
 			break;
 		default:
 			log_debug("control_dispatch_imsg: "

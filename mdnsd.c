@@ -319,3 +319,13 @@ peersuser(int fd)
 		fatal("getpeereid");
 	return euid == 0;
 }
+
+void
+reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
+{
+	const u_char *uaddr = (const u_char *)addr;
+
+	(void) snprintf(str, MAXHOSTNAMELEN, "%u.%u.%u.%u.in-addr.arpa",
+	    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
+	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
+}
