@@ -292,6 +292,13 @@ imsg_event_add(struct imsgev *iev)
 }
 
 int
+mdnsd_imsg_compose_ctl(struct ctl_conn *c, u_int16_t type,
+    void *data, u_int16_t datalen)
+{
+	return (imsg_compose_event(&c->iev, type, 0, 0, -1, data, datalen));
+}
+
+int
 imsg_compose_event(struct imsgev *iev, u_int16_t type,
     u_int32_t peerid, pid_t pid, int fd, void *data, u_int16_t datalen)
 {
@@ -301,4 +308,14 @@ imsg_compose_event(struct imsgev *iev, u_int16_t type,
 	    pid, fd, data, datalen)) != -1)
 		imsg_event_add(iev);
 	return (ret);
+}
+
+int
+peersuser(int fd)
+{
+	uid_t	euid;
+	
+	if (getpeereid(fd, &euid, NULL) == -1)
+		fatal("getpeereid");
+	return euid == 0;
 }

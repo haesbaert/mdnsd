@@ -24,6 +24,8 @@
 #include <sys/time.h>
 #include <event.h>
 
+#include "mdnsd.h"
+
 struct {
 	struct event	ev;
 	int		fd;
@@ -34,16 +36,29 @@ enum blockmodes {
 	BM_NONBLOCK
 };
 
+struct imsgev {
+	struct imsgbuf		 ibuf;
+	void			(*handler)(int, short, void *);
+	struct event		 ev;
+	void			*data;
+	short			 events;
+};
+
+enum imsg_type {
+	IMSG_NONE,
+	IMSG_CTL_END,
+	IMSG_CTL_LOOKUP,
+	IMSG_DEMOTE
+};
+
 struct ctl_conn {
 	TAILQ_ENTRY(ctl_conn)	entry;
 	struct imsgev		iev;
-	struct sockcred		cred;
 };
 
 int	control_init(void);
 int	control_listen(void);
 void	control_accept(int, short, void *);
-void	control_getcred(int, short, void *);
 void	control_dispatch_imsg(int, short, void *);
 void	control_cleanup(void);
 

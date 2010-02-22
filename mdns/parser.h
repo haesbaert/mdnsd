@@ -27,7 +27,7 @@
 
 enum actions {
 	NONE,
-	LOOKUP
+	LOOKUP,
 };
 
 struct parse_result {

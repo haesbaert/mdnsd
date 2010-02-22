@@ -15,17 +15,21 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#include <mdnsd.h>
+#include "mdnsd.h"
 #include "log.h"
 #include "control.h"
 
@@ -34,6 +38,25 @@
 struct ctl_conn	*control_connbyfd(int);
 struct ctl_conn	*control_connbypid(pid_t);
 void		 control_close(int);
+
+static void
+ctl_lookup_handler(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct mdns_rr *rr;
+	char hostname[MAXHOSTNAMELEN];
+	
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(hostname))
+		return;
+
+	memcpy(hostname, imsg->data, sizeof(hostname));
+	log_debug("vi a query para: %s", hostname);
+	if ((rr = rrc_lookup(hostname, T_A, C_IN)) == NULL)
+		return;
+	
+	log_debug("hostname %s: %s", hostname, inet_ntoa(rr->rdata.A));
+/* 	mdnsd_imsg_compose_ctl(c, imsg->hdr.type, */
+/* 	    &rr->rdata.A, sizeof(rr->rdata.A)); */
+}
 
 int
 control_init(void)
@@ -128,8 +151,8 @@ control_accept(int listenfd, short event, void *bula)
 	}
 
 	imsg_init(&c->iev.ibuf, connfd);
-	c->iev.handler = control_getcred;
-	c->iev.events = EV_READ | EV_PERSIST;
+	c->iev.handler = control_dispatch_imsg;
+	c->iev.events = EV_READ;
 	event_set(&c->iev.ev, c->iev.ibuf.fd, c->iev.events,
 	    c->iev.handler, &c->iev);
 	event_add(&c->iev.ev, NULL);
@@ -180,131 +203,6 @@ control_close(int fd)
 }
 
 void
-control_getcred(int fd, short event, void *bula)
-{
-	struct ctl_conn		*c;
-	struct sockcred		*pscred;
-	struct msghdr		 msg;
-	struct cmsghdr		*cmsg;
-	union {
-		struct cmsghdr	 hdr;
-		char		 buf[CMSG_SPACE(sizeof(int) * 16)];
-	} cmsgbuf;
-	ssize_t			 n;
-	
-	if ((c = control_connbyfd(fd)) == NULL) {
-		log_warn("control_getcred: fd %d: not found", fd);
-		return;
-	}
-
-	if (!(event & EV_READ)) {
-		control_close(fd);
-		return;
-	}
-
-	bzero(&msg, sizeof(msg));
-
-	msg.msg_iov = NULL;
-	msg.msg_iovlen = 0;
-	msg.msg_control = &cmsgbuf.buf;
-	msg.msg_controllen = sizeof(cmsgbuf.buf);
-
-	if ((n = recvmsg(fd, &msg, 0)) == -1) {
-		if (errno != EINTR && errno != EAGAIN)
-			control_close(fd);
-		
-		return;
-	}
-
-	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL;
-	     cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-		if (cmsg->cmsg_level == SOL_SOCKET &&
-		    cmsg->cmsg_type == SCM_CREDS) {
-			pscred = (struct sockcred *)CMSG_DATA(cmsg);
-			c->cred.sc_uid	    = pscred->sc_uid;
-			c->cred.sc_euid	    = pscred->sc_euid;
-			c->cred.sc_gid	    = pscred->sc_gid;
-			c->cred.sc_egid	    = pscred->sc_egid;
-			/* XXX supplemental groups ignored */
-			c->cred.sc_ngroups   = 0;
-			c->cred.sc_groups[0] = 0;
-		}
-		/* we do not handle other ctl data level */
-	}
-	
-	log_debug("fd %d uid = %u", c->cred.sc_uid);
-	log_debug("fd %d euid = %u", c->cred.sc_euid);
-	log_debug("fd %d gid = %u", c->cred.sc_gid);
-	log_debug("fd %d egid = %u", c->cred.sc_egid);
-	
-	c->iev.handler = control_dispatch_imsg;
-	event_set(&c->iev.ev, c->iev.ibuf.fd, c->iev.events,
-	    c->iev.handler, &c->iev);
-}
-
-int
-control_sendcred(int fd)
-{
-	struct msghdr	 msg;
-	struct cmsghdr	*cmsg;
-	union {
-		struct cmsghdr	hdr;
-		char		buf[CMSG_SPACE(sizeof(int))];
-	} cmsgbuf;
-	ssize_t		 n;
-	
-	msg.msg_iov    = NULL;
-	msg.msg_iovlen = 0;
-	
-	msg.msg_control = (caddr_t)&cmsgbuf.buf;
-	msg.msg_controllen = sizeof(cmsgbuf.buf);
-	cmsg = CMSG_FIRSTHDR(&msg);
-	cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-	cmsg->cmsg_level = SOL_SOCKET;
-	cmsg->cmsg_type = SCM_CREDS;
-
-again:
-	if ((n = sendmsg(msgbuf->fd, &msg, 0)) == -1) {
-		if (errno == EAGAIN || errno == EINTR)
-			goto again;
-		else
-			return (-1);
-	}
-	
-	
-
-	return 0;
-}
-
-/* void */
-/* control_getcred(int fd, short event, void *bula) */
-/* { */
-/* 	struct ctl_conn *c; */
-/* 	ssize_t		 n; */
-	
-/* 	if ((c = control_connbyfd(fd)) == NULL) { */
-/* 		log_warn("control_dispatch_imsg: fd %d: not found", fd); */
-/* 		return; */
-/* 	} */
-
-/* 	if (event & EV_READ) { */
-/* 		if ((n = imsg_getcred(&c->iev.ibuf, &c->cred)) == -1 || n == 0) { */
-/* 			control_close(fd); */
-/* 			return; */
-/* 		} */
-/* 	} */
-
-/* 	log_debug("fd %d uid = %u", c->cred.sc_uid); */
-/* 	log_debug("fd %d euid = %u", c->cred.sc_euid); */
-/* 	log_debug("fd %d gid = %u", c->cred.sc_gid); */
-/* 	log_debug("fd %d egid = %u", c->cred.sc_egid); */
-	
-/* 	c->iev.handler = control_dispatch_imsg; */
-/* 	event_set(&c->iev.ev, c->iev.ibuf.fd, c->iev.events, */
-/* 	    c->iev.handler, &c->iev); */
-/* } */
-
-void
 control_dispatch_imsg(int fd, short event, void *bula)
 {
 	struct ctl_conn	*c;
@@ -339,7 +237,9 @@ control_dispatch_imsg(int fd, short event, void *bula)
 			break;
 
 		switch (imsg.hdr.type) {
-			/* TODO */
+		case IMSG_CTL_LOOKUP:
+			ctl_lookup_handler(c, &imsg);
+			break;
 		default:
 			log_debug("control_dispatch_imsg: "
 			    "error handling imsg %d", imsg.hdr.type);
@@ -367,3 +267,4 @@ session_socket_blockmode(int fd, enum blockmodes bm)
 	if ((flags = fcntl(fd, F_SETFL, flags)) == -1)
 		fatal("fcntl F_SETFL");
 }
+

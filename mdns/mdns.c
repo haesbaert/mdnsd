@@ -36,6 +36,7 @@
 #include "parser.h"
 
 __dead void	 usage(void);
+static int	 show_lookup_msg(struct imsg *);
 
 struct imsgbuf	*ibuf;
 
@@ -77,9 +78,6 @@ main(int argc, char *argv[])
 	imsg_init(ibuf, ctl_sock);
 	done = 0;
 	
-	/* send credentials */
-	control_sendcred(ctl_sock);
-	
 	/* process user request */
 	switch (res->action) {
 	case NONE:
@@ -87,8 +85,8 @@ main(int argc, char *argv[])
 		/* not reached */
 		break;
 	case LOOKUP:
-		imsg_compose(ibuf, IMSG_LOOKUP, 0, 0, -1,
-		    res->hostname);
+		imsg_compose(ibuf, IMSG_CTL_LOOKUP, 0, 0, -1,
+		    res->hostname, sizeof(res->hostname));
 		break;
 	}
 
@@ -110,6 +108,7 @@ main(int argc, char *argv[])
 			switch (res->action) {
 			case NONE:
 			case LOOKUP:
+				done = show_lookup_msg(&imsg);
 				break;
 			}
 			imsg_free(&imsg);
@@ -120,4 +119,16 @@ main(int argc, char *argv[])
 
 	return (0);
 }
+
+static int
+show_lookup_msg(struct imsg *imsg)
+{
+	struct in_addr *addr;
+	
+	addr = imsg->data;
+	
+	printf("address: %s", inet_ntoa(*addr));
+	return (1);
+}
+
 

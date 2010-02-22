@@ -25,19 +25,17 @@
 
 #include "imsg.h"
 #include "mdns.h"
+#include "control.h"
 
 #define	MDNSD_SOCKET	"/var/run/mdnsd.sock"
 #define	MDNSD_USER	"_mdnsd"
 #define RT_BUF_SIZE	16384
 #define MAX_RTSOCK_BUF	128 * 1024
 
-struct imsgev {
-	struct imsgbuf		 ibuf;
-	void			(*handler)(int, short, void *);
-	struct event		 ev;
-	void			*data;
-	short			 events;
-};
+/* mdnsd.c */
+int		 peersuser(int);
+int		 mdnsd_imsg_compose_ctl(struct ctl_conn *, u_int16_t,
+	void *, u_int16_t);
 
 /* kiface.c */
 struct kif {
@@ -135,8 +133,8 @@ int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
 	pid_t, int, void *, u_int16_t);
 
 /* packet.c */
-void	recv_packet(int, short, void *); /* these don't belong here */
-int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+void		 recv_packet(int, short, void *); /* these don't belong here */
+int		 send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
 	
 /* cache.c */
 void		 rrc_init(void);
