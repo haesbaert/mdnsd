@@ -90,7 +90,6 @@ rrc_dump(void)
 	struct rrc_node *n;
 
 	log_debug("rrc_dump");
-	
 	RB_FOREACH(n, rrc_tree, &rrt) {
 		rr = LIST_FIRST(&n->hrr);
 		LIST_FOREACH(rr, &n->hrr, entry)
@@ -135,9 +134,10 @@ rrc_insert(struct mdns_rr *rr)
 		
 		LIST_INIT(&n->hrr);
 		LIST_INSERT_HEAD(&n->hrr, rr, entry);
-		if (RB_INSERT(rrc_tree, &rrt, n) == NULL)
-			return -1;
+		if (RB_INSERT(rrc_tree, &rrt, n) != NULL)
+			fatal("rrc_insert: RB_INSERT");
 		rrc_sched_rev(rr);
+		query_notifyin(rr);
 		
 		return 0;
 	}
@@ -152,6 +152,8 @@ rrc_insert(struct mdns_rr *rr)
 		}
 		LIST_INSERT_HEAD(hrr, rr, entry);
 		rrc_sched_rev(rr);
+
+		query_notifyin(rr);
 		
 		return 0;
 	}
@@ -170,6 +172,7 @@ rrc_insert(struct mdns_rr *rr)
 	
 	/* not a refresh, so add */
 	LIST_INSERT_HEAD(hrr, rr, entry);
+	query_notifyin(rr);
 	
 	return 0;
 }

@@ -166,7 +166,7 @@ if_act_start(struct iface *iface)
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
 	case IF_TYPE_BROADCAST:
-		inet_aton(MDNS_MCAST_ADDR, &addr);
+		inet_aton(ALL_MDNS_DEVICES, &addr);
 		if (if_join_group(iface, &addr)) {
 			log_warn("if_act_start: error joining group %s, "
 			    "interface %s", inet_ntoa(addr), iface->name);
@@ -185,16 +185,12 @@ if_act_start(struct iface *iface)
 int
 if_act_reset(struct iface *iface)
 {
-/* 	struct nbr		*nbr = NULL; */
 	struct in_addr		 addr;
-
-/* 	if (iface->passive) */
-/* 		return (0); */
 
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
 	case IF_TYPE_BROADCAST:
-		inet_aton(MDNS_MCAST_ADDR, &addr);
+		inet_aton(ALL_MDNS_DEVICES, &addr);
 		if (if_leave_group(iface, &addr)) {
 		log_warn("if_act_reset: error leaving group %s, "
 		    "interface %s", inet_ntoa(addr), iface->name);
@@ -203,13 +199,6 @@ if_act_reset(struct iface *iface)
 	default:
 		fatalx("if_act_reset: unknown interface type");
 	}
-
-/* 	LIST_FOREACH(nbr, &iface->nbr_list, entry) { */
-/* 		if (nbr_fsm(nbr, NBR_EVT_KILL_NBR)) { */
-/* 			log_debug("if_act_reset: error killing neighbor %s", */
-/* 			    inet_ntoa(nbr->id)); */
-/* 		} */
-/* 	} */
 
 	return (0);
 }
@@ -367,10 +356,6 @@ if_new(struct kif *kif)
 		err(1, "if_new: calloc");
 
 	iface->state = IF_STA_DOWN;
-
-/* 	LIST_INIT(&iface->nbr_list); */
-/* 	TAILQ_INIT(&iface->rp_list); */
-/* 	TAILQ_INIT(&iface->rq_list); */
 
 	strlcpy(iface->name, kif->ifname, sizeof(iface->name));
 

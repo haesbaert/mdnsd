@@ -186,7 +186,6 @@ if_state_name(int state)
 void
 log_debug_pkt(struct mdns_pkt *pkt)
 {
-	LOG_DEBUG_STRUCT(pkt, id, %u);
 	LOG_DEBUG_STRUCT(pkt, qr, %u);
 	LOG_DEBUG_STRUCT(pkt, tc, %u);
 	LOG_DEBUG_STRUCT(pkt, qdcount, %u);

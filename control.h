@@ -53,8 +53,10 @@ enum imsg_type {
 };
 
 struct ctl_conn {
-	TAILQ_ENTRY(ctl_conn)	entry;
-	struct imsgev		iev;
+	TAILQ_ENTRY(ctl_conn)		entry;
+	struct imsgev			iev;
+	struct query *q;	/* pending query */
+	LIST_ENTRY(ctl_conn)		qentry;
 };
 
 int	control_init(void);

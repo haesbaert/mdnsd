@@ -38,46 +38,74 @@
 struct ctl_conn	*control_connbyfd(int);
 struct ctl_conn	*control_connbypid(pid_t);
 void		 control_close(int);
+static void	 control_lookup(struct ctl_conn *, struct imsg *);
+static void	 control_lookupaddr(struct ctl_conn *, struct imsg *);
+
 
 static void
-ctl_lookup(struct ctl_conn *c, struct imsg *imsg)
+control_lookup(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct mdns_rr *rr;
-	char hostname[MAXHOSTNAMELEN];
+	struct mdns_pkt		 pkt;
+	struct mdns_rr		*rr;
+	struct mdns_question 	*mq;
+	char			 hostname[MAXHOSTNAMELEN];
 	
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(hostname))
 		return;
 
 	memcpy(hostname, imsg->data, sizeof(hostname));
 	log_debug("vi a query para: %s", hostname);
-	if ((rr = rrc_lookup(hostname, T_A, C_IN)) == NULL)
+	rr = rrc_lookup(hostname, T_A, C_IN);
+	/* cache hit */
+	if (rr != NULL) {
+		log_debug("hostname %s: %s", hostname, inet_ntoa(rr->rdata.A));
+		mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
+		    &rr->rdata.A, sizeof(rr->rdata.A));
 		return;
-	
-	log_debug("hostname %s: %s", hostname, inet_ntoa(rr->rdata.A));
-	mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
-	    &rr->rdata.A, sizeof(rr->rdata.A));
+	}
+	/* cache miss */
+	if ((mq = calloc(1, sizeof(*mq))) == NULL)
+		fatal("calloc");
+	question_set(mq, hostname, T_A, C_IN, 0, 0);
+	pkt_init(&pkt);
+	pkt_add_question(&pkt, mq);
+	if (pkt_send_allif(&pkt) == -1)
+		log_debug("can't send packet to all interfaces");
+	c->q = query_place(QUERY_LOOKUP, mq, c);
 }
 
 static void
-ctl_lookup_addr(struct ctl_conn *c, struct imsg *imsg)
+control_lookupaddr(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct mdns_rr *rr;
-	struct in_addr addr;
-	char name[MAXHOSTNAMELEN];
+	struct mdns_rr		*rr;
+	struct mdns_pkt		 pkt;
+	struct mdns_question 	*mq;
+	struct in_addr		 addr;
+	char			 name[MAXHOSTNAMELEN];
 	
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(struct in_addr))
 		return;
 
 	memcpy(&addr, imsg->data, imsg->hdr.len - IMSG_HEADER_SIZE);
-
 	reversstr(name, &addr);
 	log_debug("vi a reverse query para: %s (%s)", inet_ntoa(addr), name);
-	if ((rr = rrc_lookup(name, T_PTR, C_IN)) == NULL)
+	rr = rrc_lookup(name, T_PTR, C_IN);
+	/* cache hit */
+	if (rr != NULL) {
+		log_debug("PTR name %s: %s", rr->rdata.PTR, inet_ntoa(rr->rdata.A));
+		mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
+		    &rr->rdata.A, sizeof(rr->rdata.A));
 		return;
-	
-	log_debug("PTR name %s: %s", rr->rdata.PTR, inet_ntoa(rr->rdata.A));
-	mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
-	    rr->rdata.PTR, sizeof(rr->rdata.PTR));
+	}
+	/* cache miss */
+	if ((mq = calloc(1, sizeof(*mq))) == NULL)
+		fatal("calloc");
+	question_set(mq, name, T_PTR, C_IN, 0, 0);
+	pkt_init(&pkt);
+	pkt_add_question(&pkt, mq);
+	if (pkt_send_allif(&pkt) == -1)
+		log_debug("can't send packet to all interfaces");
+	c->q = query_place(QUERY_LOOKUP_ADDR, mq, c);
 }
 
 int
@@ -210,17 +238,17 @@ void
 control_close(int fd)
 {
 	struct ctl_conn	*c;
-
+	
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_close: fd %d: not found", fd);
 		return;
 	}
-
 	msgbuf_clear(&c->iev.ibuf.w);
 	TAILQ_REMOVE(&ctl_conns, c, entry);
 
 	event_del(&c->iev.ev);
 	close(c->iev.ibuf.fd);
+	query_cleanbyconn(c);
 	free(c);
 }
 
@@ -260,10 +288,10 @@ control_dispatch_imsg(int fd, short event, void *bula)
 
 		switch (imsg.hdr.type) {
 		case IMSG_CTL_LOOKUP:
-			ctl_lookup(c, &imsg);
+			control_lookup(c, &imsg);
 			break;
 		case IMSG_CTL_LOOKUP_ADDR:
-			ctl_lookup_addr(c, &imsg);
+			control_lookupaddr(c, &imsg);
 			break;
 		default:
 			log_debug("control_dispatch_imsg: "

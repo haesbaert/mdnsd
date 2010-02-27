@@ -16,14 +16,17 @@
 #ifndef _MDNS_H_
 #define	_MDNS_H_
 
+#include <arpa/nameser.h>
 #include <netinet/in.h>
 
+#include <string.h>
+
 /* TODO REMOVE THE STUPID MDNS PREFIX */
+#define ALL_MDNS_DEVICES	"224.0.0.251"
 
 #define MDNS_QUERY_TTL		1
 #define MDNS_RESPONSE_TTL	255
 #define MDNS_PORT		5353
-#define MDNS_MCAST_ADDR		"224.0.0.251"
 #define MDNS_HDR_LEN		12	
 #define MDNS_MINQRY_LEN		6 /* 4 (qtype + qclass) +1 (null) + 1 (label len) */
 #define MDNS_HDR_QR_MASK	0x8000
@@ -36,6 +39,8 @@
 #define UNIRESP_MSK		0x8000
 #define NAMECOMP_MSK		0xc000
 #define NAMEADDR_MSK		~0xc000
+#define QR_MSK                 	0x8000
+#define TC_MSK                 	0x200
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
 	
@@ -77,6 +82,7 @@ struct mdns_rr {
 		} HINFO;
 
 	} rdata;
+	int		active;	   	/* should we try to renew this ? */
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
 	struct event 	rev_timer; 	/* cache revision timer */
 	
@@ -84,7 +90,6 @@ struct mdns_rr {
 
 struct mdns_pkt {
 	/* mdns header */
-	u_int16_t	id;
 	u_int8_t 	qr;
 	u_int8_t	tc;
 	
@@ -101,6 +106,14 @@ struct mdns_pkt {
 
 
 #define RR_UNIQ(rr) (rr->cacheflush)
+#define QEQUIV(qa, qb)					\
+	((qa->qtype  == qb->qtype)	&&		\
+	    (qb->qclass == qb->qclass)	&&		\
+	    (strcmp(qa->dname, qb->dname) == 0))
+#define ANSWERS(q, rr)						\
+	(((q->qtype == T_ANY) || (q->qtype == rr->type))  &&	\
+	    q->qclass == rr->class                        &&	\
+	    strcmp(q->dname, rr->dname) == 0)
 
 ssize_t	charstr(char [MDNS_MAX_CHARSTR], u_int8_t *, uint16_t);
 void	labelstr(char domain[MAXHOSTNAMELEN], u_char *l[], ssize_t nl);

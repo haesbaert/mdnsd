@@ -49,7 +49,6 @@ struct {
 
 static struct iface	*find_iface(unsigned int, struct in_addr);
 
-static void	pkt_init(struct mdns_pkt *);
 static int	pkt_parse(u_int8_t *, uint16_t, struct mdns_pkt *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
@@ -57,12 +56,17 @@ static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
 static int	pkt_process(struct mdns_pkt *);
+
+static ssize_t  serialize_dname(char [MAXHOSTNAMELEN], u_int8_t *, u_int16_t);
+static ssize_t	serialize_rr(struct mdns_rr *, u_int8_t *, u_int16_t);
+static ssize_t	serialize_question(struct mdns_question *, u_int8_t *,
+    u_int16_t);
+
 static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_txt(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_srv(struct mdns_rr *, u_int8_t *, uint16_t);
 static int	rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
-
 /* util */
 ssize_t
 charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
@@ -97,8 +101,8 @@ send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
 
 	if (sendto(iface->fd, pkt, len, 0,
 	    (struct sockaddr *)dst, sizeof(*dst)) == -1) {
-		log_warn("send_packet: error sending packet on interface %s",
-		    iface->name);
+		log_warn("send_packet: error sending packet on interface %s, len %zd",
+		    iface->name, len);
 		return (-1);
 	}
 
@@ -186,6 +190,104 @@ recv_packet(int fd, short event, void *bula)
 	/* process all shit */
 }
 
+int
+pkt_send_allif(struct mdns_pkt *pkt)
+{
+	struct sockaddr_in	 dst;
+	struct iface		*iface = NULL;
+	u_int8_t		 buf[MDNS_MAX_PACKET];
+	ssize_t			 n;
+	
+	inet_aton(ALL_MDNS_DEVICES, &dst.sin_addr);
+	dst.sin_port   = htons(MDNS_PORT);
+	dst.sin_family = AF_INET;
+	dst.sin_len    = sizeof(struct sockaddr_in);
+
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+			bzero(buf, sizeof(buf));
+			if ((n = pkt_serialize(pkt, buf, sizeof(buf))) == -1)
+				return -1;
+			if (send_packet(iface, buf, n, &dst) == -1)
+				return -1;
+	}
+	
+	return 0;
+}
+
+void
+pkt_init(struct mdns_pkt *pkt)
+{
+	bzero(pkt, sizeof(*pkt));
+	LIST_INIT(&pkt->qlist);
+	LIST_INIT(&pkt->anlist);
+	LIST_INIT(&pkt->nslist);
+	LIST_INIT(&pkt->arlist);
+}
+
+/* packet building */
+int
+pkt_add_question(struct mdns_pkt *pkt, struct mdns_question *mq)
+{
+	/* can't have questions and answers in the same packet */
+	if (pkt->ancount || pkt->nscount || pkt->arcount)
+		return -1;
+	LIST_INSERT_HEAD(&pkt->qlist, mq, entry);
+	pkt->qdcount++;
+	pkt->qr = 0;
+	
+	return 0;
+}
+
+int
+pkt_add_anrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
+{
+	if (pkt->qdcount)
+		return -1;
+	LIST_INSERT_HEAD(&pkt->anlist, rr, entry);
+	pkt->ancount++;
+	pkt->qr = 1;
+	
+	return 0;
+}
+
+int
+pkt_add_nsrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
+{
+	if (pkt->qdcount)
+		return -1;
+	LIST_INSERT_HEAD(&pkt->nslist, rr, entry);
+	pkt->nscount++;
+	pkt->qr = 1;
+	
+	return 0;
+}
+
+int
+pkt_add_arrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
+{
+	if (pkt->qdcount)
+		return -1;
+	LIST_INSERT_HEAD(&pkt->arlist, rr, entry);
+	pkt->arcount++;
+	pkt->qr = 1;
+	
+	return 0;
+}
+
+int
+question_set(struct mdns_question *mq, char dname[MAXHOSTNAMELEN],
+    u_int16_t qtype, u_int16_t qclass, int uniresp, int probe)
+{
+	if (qclass != C_IN)
+		return -1;
+	mq->qclass  = qclass;
+	mq->qtype   = qtype;
+	mq->uniresp = uniresp;
+	mq->probe   = probe;
+	strlcpy(mq->dname, dname, sizeof(mq->dname));
+	
+	return 0;
+}
 
 static struct iface *
 find_iface(unsigned int ifindex, struct in_addr src)
@@ -209,16 +311,6 @@ find_iface(unsigned int ifindex, struct in_addr src)
 	return (NULL);
 }
 
-static void
-pkt_init(struct mdns_pkt *pkt)
-{
-	bzero(pkt, sizeof(*pkt));
-	LIST_INIT(&pkt->qlist);
-	LIST_INIT(&pkt->anlist);
-	LIST_INIT(&pkt->nslist);
-	LIST_INIT(&pkt->arlist);
-}
-
 /* TODO: insert all sections at end, don't use LIST_INSERT_HEAD */
 static int
 pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
@@ -227,6 +319,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	struct mdns_question	*mq;
 	struct mdns_rr		*rr;
 	
+	/* don't use pkt_init here, this is fine */
 	pkt_init(pkt);
 	pktcomp.start = buf;
 	pktcomp.len = len;
@@ -319,7 +412,6 @@ pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	
 	qh = (HEADER *) buf;
 
-	pkt->id = ntohs(qh->id);
 	pkt->qr = qh->qr;
 	pkt->tc = qh->tc;
 	pkt->qdcount = ntohs(qh->qdcount);
@@ -561,12 +653,6 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	return 0;
 }
 
-
-#define ANSWERS(q, rr)						\
-	(((q->qtype == T_ANY) || (q->qtype == rr->type))  &&	\
-	    q->qclass == rr->class                       &&	\
-	    strcmp(q->dname, rr->dname) == 0)
-
 static int
 pkt_process(struct mdns_pkt *pkt)
 {
@@ -683,5 +769,142 @@ rr_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	}
 	
 	return 0;
+}
+
+/* TODO: make this static when done */
+int
+pkt_serialize(struct mdns_pkt *pkt, u_int8_t *buf, u_int16_t len)
+{
+	u_int16_t		 aux  = 0;
+	u_int8_t		*pbuf = buf;
+	struct mdns_question	*mq;
+	struct mdns_rr		*rr;
+	ssize_t			 n;
+	
+	if (len < MDNS_HDR_LEN) {
+		log_debug("pkt_serialize: len < MDNS_HDR_LEN");
+		return -1;
+	}
+	
+	PUTSHORT(aux, pbuf); 	/* id must be 0 */
+	if (pkt->qr)
+		aux |= QR_MSK;
+	if (pkt->tc)
+		aux |= TC_MSK;
+	PUTSHORT(aux, pbuf);
+	PUTSHORT(pkt->qdcount, pbuf);
+	PUTSHORT(pkt->ancount, pbuf);
+	PUTSHORT(pkt->nscount, pbuf);
+	PUTSHORT(pkt->arcount, pbuf);
+	
+	len -= pbuf - buf;
+	    
+/* 	log_debug("header serialized %zd bytes", pbuf - buf); */
+	
+	LIST_FOREACH(mq, &pkt->qlist, entry) {
+		n = serialize_question(mq, pbuf, len);
+		if (n == -1 || n > len)
+			return -1;
+		pbuf += n;
+		len  -= n;
+	}
+	
+	LIST_FOREACH(rr, &pkt->anlist, entry) {
+		n = serialize_rr(rr, pbuf, len);
+		if (n == -1 || n > len)
+			return -1;
+		pbuf += n;
+		len  -= n;
+	}
+
+	LIST_FOREACH(rr, &pkt->nslist, entry) {
+		n = serialize_rr(rr, pbuf, len);
+		if (n == -1 || n > len)
+			return -1;
+		pbuf += n;
+		len  -= n;
+	}
+
+	LIST_FOREACH(rr, &pkt->arlist, entry) {
+		n = serialize_rr(rr, pbuf, len);
+		if (n == -1 || n > len)
+			return -1;
+		pbuf += n;
+		len  -= n;
+	}
+
+	return pbuf - buf;
+}
+
+static ssize_t
+serialize_dname(char dname[MAXHOSTNAMELEN], u_int8_t *buf, u_int16_t len)
+{
+	char *end;
+	char *dbuf = dname;
+	u_int8_t tlen;
+	u_int8_t *pbuf = buf;
+	
+	do {
+		if ((end = strchr(dbuf, '.')) == NULL) {
+			if ((end = strchr(dbuf, '\0')) == NULL)
+				fatalx("serialize_dname: bad dname");
+		}
+
+		tlen = end - dbuf;
+		*pbuf++ = tlen;
+		if (tlen > len)
+			return -1;
+		memcpy(pbuf, dbuf, tlen);
+		len -= tlen;
+		pbuf += tlen;
+		dbuf = end + 1;
+	} while (*end != '\0');
+	
+	/* put null octet */
+	if (len == 0)
+		return -1;
+	
+	*pbuf++ = '\0';
+	len--;
+	return pbuf - buf;
+}
+
+static ssize_t
+serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
+{
+	u_int8_t *pbuf = buf;
+	ssize_t n;
+	
+	n = serialize_dname(rr->dname, pbuf, len);
+	if (n == -1 || n > len)
+		return -1;
+	pbuf += n;
+	len  -= n;
+	if (len < 10) 	/* must fit type, class, ttl and rdlength */
+		return -1;
+	PUTSHORT(rr->type, pbuf);
+	PUTSHORT(rr->class, pbuf);
+	PUTLONG(rr->ttl, pbuf);
+	
+	return pbuf - buf;
+}
+
+static ssize_t
+serialize_question(struct mdns_question *mq, u_int8_t *buf, u_int16_t len)
+{
+	u_int8_t *pbuf = buf;
+	ssize_t n;
+	
+	n = serialize_dname(mq->dname, pbuf, len);
+	if (n == -1 || n > len)
+		return -1;
+	pbuf += n;
+	len  -= n;
+	if (len < 4) 	/* must fit type, class */
+		return -1;
+	PUTSHORT(mq->qtype, pbuf);
+	PUTSHORT(mq->qclass, pbuf);
+	
+	return pbuf - buf;
 }
 

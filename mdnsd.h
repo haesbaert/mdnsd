@@ -135,7 +135,18 @@ int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
 
 /* packet.c */
 void		 recv_packet(int, short, void *); /* these don't belong here */
-int		 send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+int		 send_packet(struct iface *, void *, size_t,
+	struct sockaddr_in *);
+int		 pkt_send_allif(struct mdns_pkt *);
+void		 pkt_init(struct mdns_pkt *);
+int		 pkt_add_question(struct mdns_pkt *, struct mdns_question *);
+int 		 pkt_add_anrr(struct mdns_pkt *, struct mdns_rr *);
+int 		 pkt_add_nsrr(struct mdns_pkt *, struct mdns_rr *);
+int 		 pkt_add_arrr(struct mdns_pkt *, struct mdns_rr *);
+int 		 question_set(struct mdns_question *, char [MAXHOSTNAMELEN],
+    	u_int16_t, u_int16_t, int, int);
+/* TODO: make this static when done */
+int		 pkt_serialize(struct mdns_pkt *, u_int8_t *, u_int16_t);
 	
 /* cache.c */
 void		 rrc_init(void);
@@ -146,5 +157,26 @@ struct mdns_rr	*rrc_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
+
+/* query.c */
+enum query_type {
+	QUERY_LOOKUP,
+	QUERY_LOOKUP_ADDR,
+	QUERY_BROWSING,
+};
+
+struct query {
+	LIST_ENTRY(query)	entry;
+	LIST_HEAD(, ctl_conn)	ctl_list; /* interested controlers */
+	int			type; 	  /* enum query_type */
+	struct mdns_question	*mq;
+};
+
+void		 query_init(void);
+struct query *	 query_place(int, struct mdns_question *, struct ctl_conn *);
+int		 query_notifyin(struct mdns_rr *);
+int		 query_notifyout(struct mdns_rr *);
+int		 query_cleanbyconn(struct ctl_conn *);
+
 
 #endif /* _MDNSD_H_ */
