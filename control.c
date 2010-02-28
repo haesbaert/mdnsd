@@ -54,7 +54,6 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		return;
 
 	memcpy(hostname, imsg->data, sizeof(hostname));
-	log_debug("vi a query para: %s", hostname);
 	rr = rrc_lookup(hostname, T_A, C_IN);
 	/* cache hit */
 	if (rr != NULL) {

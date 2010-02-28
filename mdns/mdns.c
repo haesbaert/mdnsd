@@ -37,7 +37,6 @@
 #include "mdns_api.h"
 
 __dead void	 usage(void);
-static int	 show_lookup_msg(struct imsg *);
 
 __dead void
 usage(void)
@@ -71,12 +70,14 @@ main(int argc, char *argv[])
 		switch (r) {
 		case 0:
 			printf("Address not found.\n");
+			exit(1); /* NOTREACHED */
 			break;
 		case 1:
 			printf("Address: %s\n", inet_ntoa(addr));
-			break;
+			exit(0);
+			break;	/* NOTREACHED */
 		default:
-			warn("mdns_api_lookup");
+			err(1, "mdns_api_lookup");
 			break;
 		}
 		break;
@@ -86,16 +87,19 @@ main(int argc, char *argv[])
 		switch (r) {
 		case 0:
 			printf("Name not found.\n");
-			break;
+			exit(1);
+			break;	/* NOTREACHED */
 		case 1:
-			printf("Name: %s\n", hostname);
-			break;
+			printf("Hostname: %s\n", hostname);
+			exit(0);
+			break;	/* NOTREACHED */
 		default:
-			warn("mdns_api_lookup_addr");
+			err(1, "mdns_api_lookup_addr");
 			break;
 		}
 		break;
 	}
-	return (0);
+	
+	return (0);		/* NOTREACHED */
 }
 

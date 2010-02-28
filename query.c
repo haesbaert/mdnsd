@@ -34,12 +34,11 @@ query_place(int type, struct mdns_question *mq, struct ctl_conn *c)
 	struct query	*q;
 
 	/* avoid having two equivalent questions */
-	LIST_FOREACH(q, &qlist, entry) {
+	LIST_FOREACH(q, &qlist, entry)
 	    if (QEQUIV(mq, q->mq)) {
 		    LIST_INSERT_HEAD(&q->ctl_list, c, qentry);
 		    return q;
 	    }
-	}
 	
 	if ((q = calloc(1, sizeof(*q))) == NULL)
 		fatal("calloc");
