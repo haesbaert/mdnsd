@@ -23,55 +23,40 @@
 #include "mdns.h"
 #include "log.h"
 
-static int		 rrc_delete(struct mdns_rr *);
-static int		 rrc_insert(struct mdns_rr *rr);
-static void		 rrc_sched_rev(struct mdns_rr *);
-static void		 rrc_rev(int, short, void *);
-static struct rr_head	*rrc_lookup_head(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
-static struct rrt_node	*rrc_lookup_node(char dname[], u_int16_t, u_int16_t);
+static int		 rra_delete(struct mdns_rr *);
+static int		 rra_insert(struct mdns_rr *rr);
+static struct rrt_node	*rra_lookup_node(char dname[], u_int16_t, u_int16_t);
+static struct rr_head	*rra_lookup_head(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
-RB_HEAD(rrc_tree, rrt_node) rrc;
-RB_PROTOTYPE(rrc_tree, rrt_node, entry, rrt_compare);
-RB_GENERATE(rrc_tree, rrt_node, entry, rrt_compare);
+RB_HEAD(rra_tree, rrt_node) rra;
+RB_PROTOTYPE(rra_tree, rrt_node, entry, rrt_compare);
+RB_GENERATE(rra_tree, rrt_node, entry, rrt_compare);
 
 void
-rrc_init(void)
+rra_init(void)
 {
-	RB_INIT(&rrc);
+	RB_INIT(&rra);
 }
 
 struct mdns_rr *
-rrc_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+rra_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct rr_head	*hrr;
 	
-	hrr = rrc_lookup_head(dname, type, class);
+	hrr = rra_lookup_head(dname, type, class);
 	if (hrr)
 		return LIST_FIRST(hrr);
 	return NULL;
 }
 
-int
-rrc_process(struct mdns_rr *rr)
-{
-
-	evtimer_set(&rr->rev_timer, rrc_rev, rr);
-	if (rr->ttl == 0)
-		return rrc_delete(rr);
-	if (rrc_insert(rr) == -1)
-		return -1;
-	
-	return 0;
-}
-	
 void
-rrc_dump(void)
+rra_dump(void)
 {
 	struct mdns_rr	*rr;
 	struct rrt_node *n;
 
-	log_debug("rrc_dump");
-	RB_FOREACH(n, rrc_tree, &rrc) {
+	log_debug("rra_dump");
+	RB_FOREACH(n, rra_tree, &rra) {
 		rr = LIST_FIRST(&n->hrr);
 		LIST_FOREACH(rr, &n->hrr, entry)
 		    log_debug_rrdata(rr);
@@ -79,27 +64,24 @@ rrc_dump(void)
 }
 
 static int
-rrc_insert(struct mdns_rr *rr)
+rra_insert(struct mdns_rr *rr)
 {
 	struct rr_head	*hrr;
 	struct rrt_node *n;
 	struct mdns_rr	*rraux;
 	
-	log_debug("rrc_insert: type: %s name: %s", rr_type_name(rr->type),
+	log_debug("rra_insert: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
 	
-	hrr = rrc_lookup_head(rr->dname, rr->type, rr->class);
+	hrr = rra_lookup_head(rr->dname, rr->type, rr->class);
 	if (hrr == NULL) {
 		if ((n = calloc(1, sizeof(*n))) == NULL)
 			fatal("calloc");
 		
 		LIST_INIT(&n->hrr);
 		LIST_INSERT_HEAD(&n->hrr, rr, entry);
-		if (RB_INSERT(rrc_tree, &rrc, n) != NULL)
-			fatal("rrc_insert: RB_INSERT");
-		rrc_sched_rev(rr);
-		query_notifyin(rr);
-		
+		if (RB_INSERT(rra_tree, &rra, n) != NULL)
+			fatal("rra_insert: RB_INSERT");
 		return 0;
 	}
 		
@@ -112,8 +94,6 @@ rrc_insert(struct mdns_rr *rr)
 			free(rraux);
 		}
 		LIST_INSERT_HEAD(hrr, rr, entry);
-		rrc_sched_rev(rr);
-		query_notifyin(rr);
 		
 		return 0;
 	}
@@ -123,7 +103,6 @@ rrc_insert(struct mdns_rr *rr)
 		if (memcmp(&rr->rdata, &rraux->rdata, rraux->rdlen) == 0) {
 			rraux->ttl = rr->ttl;
 			rraux->revision = 0;
-			rrc_sched_rev(rraux);
 			free(rr);
 			
 			return 0;
@@ -132,21 +111,20 @@ rrc_insert(struct mdns_rr *rr)
 	
 	/* not a refresh, so add */
 	LIST_INSERT_HEAD(hrr, rr, entry);
-	query_notifyin(rr);
 	
 	return 0;
 }
 
 static int
-rrc_delete(struct mdns_rr *rr)
+rra_delete(struct mdns_rr *rr)
 {
 	struct mdns_rr	*rraux;
 	struct rrt_node	*s;
 	int		 n = 0;
 	
-	log_debug("rrc_delete: type: %s name: %s", rr_type_name(rr->type),
+	log_debug("rra_delete: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
-	s = rrc_lookup_node(rr->dname, rr->type, rr->class);
+	s = rra_lookup_node(rr->dname, rr->type, rr->class);
 	if (s == NULL)
 		return 0;
 	
@@ -163,7 +141,7 @@ rrc_delete(struct mdns_rr *rr)
 	}
 
 	if (LIST_EMPTY(&s->hrr)) {
-		RB_REMOVE(rrc_tree, &rrc, s);
+		RB_REMOVE(rra_tree, &rra, s);
 		free(s);
 	}
 	
@@ -171,7 +149,7 @@ rrc_delete(struct mdns_rr *rr)
 }
 	
 static struct rrt_node *
-rrc_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+rra_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct rrt_node	s, *tmp;
 	struct mdns_rr	rr;
@@ -185,7 +163,7 @@ rrc_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	LIST_INIT(&s.hrr);
 	LIST_INSERT_HEAD(&s.hrr, &rr, entry);
 	
-	tmp = RB_FIND(rrc_tree, &rrc, &s);
+	tmp = RB_FIND(rra_tree, &rra, &s);
 	if (tmp == NULL)
 		return NULL;
 	
@@ -193,60 +171,13 @@ rrc_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 }
 
 static struct rr_head *
-rrc_lookup_head(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+rra_lookup_head(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct rrt_node	*tmp;
 	
-	tmp = rrc_lookup_node(dname, type, class);
+	tmp = rra_lookup_node(dname, type, class);
 	if (tmp == NULL)
 		return NULL;
 	
 	return &tmp->hrr;
-}
-
-static void
-rrc_sched_rev(struct mdns_rr *rr)
-{
-	struct timeval tv;
-	
-	timerclear(&tv);
-	
-	switch (rr->revision) {
-	case 0: 		
-		tv.tv_sec = rr->ttl * 0.8;
-		break;
-	case 1:
-		tv.tv_sec = rr->ttl - (rr->ttl * 0.9);
-		break;
-	case 2:
-		tv.tv_sec = rr->ttl - (rr->ttl * 0.95);
-		break;
-	case 3:			/* expired, delete from cache in 1 sec */
-		tv.tv_sec = 1;
-		break;
-	}
-	
-	log_debug("schedule rr type: %s, name: %s (%d)",
-	    rr_type_name(rr->type), rr->dname, tv.tv_sec);
-
-	rr->revision++;
-	
-	if (evtimer_add(&rr->rev_timer, &tv) == -1)
-		fatal("rrc_sched_rev");
-}
-
-static void
-rrc_rev(int unused, short event, void *v_rr)
-{
-	struct mdns_rr *rr = v_rr;
-	
-	log_debug("timeout rr type: %s, name: %s (%u)",
-	    rr_type_name(rr->type), rr->dname, rr->ttl);
-	
-/* 	if (rr->active && rr->revision <= 3) */
-	if (rr->revision <= 3)
-		rrc_sched_rev(rr);
-	else
-		rrc_delete(rr);
-/* 	rrc_dump(); */
 }
