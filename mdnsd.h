@@ -55,6 +55,23 @@ struct kif	*kif_findname(char *);
 void		 kev_init(void);
 void		 kev_cleanup(void);
 
+/* rr_tree.c */
+struct rrt_node {
+	RB_ENTRY(rrt_node)	entry;
+	LIST_HEAD(rr_head, mdns_rr) hrr; /* head rr */
+};
+
+RB_HEAD(rrt_tree, rrt_node);
+RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_compare);
+
+void		 rrt_dump(struct rrt_tree *);
+struct mdns_rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
+    u_int16_t, u_int16_t);
+struct rr_head	*rrt_lookup_head(struct rrt_tree *, char [MAXHOSTNAMELEN],
+    u_int16_t, u_int16_t);
+struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [], u_int16_t,
+    u_int16_t);
+
 /* interface.c */
 /* interface states */
 #define IF_STA_DOWN		0x01
@@ -85,12 +102,11 @@ enum iface_type {
 
 struct iface {
 	LIST_ENTRY(iface)	 entry;
-
+	struct rrt_tree		 rrt;
 	char			 name[IF_NAMESIZE];
 	struct in_addr		 addr;
 	struct in_addr		 dst;
 	struct in_addr		 mask;
-
 	u_int64_t		 baudrate;
 	time_t			 uptime;
 	u_int			 mtu;
@@ -128,6 +144,8 @@ struct mdnsd_conf {
 	LIST_HEAD(, iface)	iface_list;
 	int 			mdns_sock;
 	struct event	 	ev_mdns;
+	struct hinfo		hi;
+	char 			myname[MAXHOSTNAMELEN];
 };
 void		 imsg_event_add(struct imsgev *);
 int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
@@ -148,23 +166,6 @@ int 		 question_set(struct mdns_question *, char [MAXHOSTNAMELEN],
 /* TODO: make this static when done */
 int		 pkt_serialize(struct mdns_pkt *, u_int8_t *, u_int16_t);
 	
-/* rr_tree.c */
-struct rrt_node {
-	RB_ENTRY(rrt_node)	entry;
-	LIST_HEAD(rr_head, mdns_rr) hrr; /* head rr */
-};
-
-RB_HEAD(rrt_tree, rrt_node);
-RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_compare);
-
-void		 rrt_dump(struct rrt_tree *);
-struct mdns_rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
-    u_int16_t, u_int16_t);
-struct rr_head	*rrt_lookup_head(struct rrt_tree *, char [MAXHOSTNAMELEN],
-    u_int16_t, u_int16_t);
-struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [], u_int16_t,
-    u_int16_t);
-
 /* cache.c */
 void		 cache_init(void);
 int		 cache_process(struct mdns_rr *);
@@ -192,6 +193,9 @@ struct query *	 query_place(int, struct mdns_question *, struct ctl_conn *);
 int		 query_notifyin(struct mdns_rr *);
 int		 query_notifyout(struct mdns_rr *);
 int		 query_cleanbyconn(struct ctl_conn *);
+
+/* publish.c */
+void		 publish_init(void);
 
 
 #endif /* _MDNSD_H_ */

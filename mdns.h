@@ -43,7 +43,11 @@
 #define TC_MSK                 	0x200
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
-	
+struct hinfo {
+	char	cpu[MDNS_MAX_CHARSTR];
+	char	os[MDNS_MAX_CHARSTR];
+};
+
 struct mdns_question {
 	LIST_ENTRY(mdns_question)	 entry;
 	
@@ -56,12 +60,12 @@ struct mdns_question {
 
 struct mdns_rr {
 	LIST_ENTRY(mdns_rr)	entry;
-	char		dname[MAXHOSTNAMELEN];
-	u_int16_t	type;
-	int		cacheflush;	
-	u_int16_t	class;
-	u_int32_t	ttl;
-	u_int16_t	rdlen;
+	char			dname[MAXHOSTNAMELEN];
+	u_int16_t		type;
+	int			cacheflush;	
+	u_int16_t		class;
+	u_int32_t		ttl;
+	u_int16_t		rdlen;
 	union {
 		struct in_addr	A;
 		char		CNAME[MAXHOSTNAMELEN];
@@ -75,11 +79,7 @@ struct mdns_rr {
 			uint16_t	port;
 			char		dname[MAXHOSTNAMELEN];
 		} SRV;
-
-		struct {
-			char	cpu[MDNS_MAX_CHARSTR];
-			char	os[MDNS_MAX_CHARSTR];
-		} HINFO;
+		struct hinfo 	HINFO;
 
 	} rdata;
 	int		active;	   	/* should we try to renew this ? */

@@ -17,6 +17,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/utsname.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -34,11 +35,13 @@
 #include "log.h"
 #include "control.h"
 
-__dead void	usage(void);
-void		mdnsd_sig_handler(int, short, void *);
-void		mdnsd_conf_init(int, char *[]);
-void		mdnsd_shutdown(void);
-int		mdns_sock(void);
+__dead void		 usage(void);
+static void		 mdnsd_sig_handler(int, short, void *);
+static void		 mdnsd_conf_init(int, char *[]);
+static void		 mdnsd_shutdown(void);
+static int		 mdns_sock(void);
+static void		 fetchmyname(char [MAXHOSTNAMELEN]);
+static void		 fetchhinfo(struct hinfo *);
 
 struct mdnsd_conf	*conf = NULL;
 
@@ -52,7 +55,7 @@ usage(void)
 	exit(1);
 }
 
-void
+static void
 mdnsd_conf_init(int argc, char *argv[])
 {
 	int		 found = 0;
@@ -73,18 +76,22 @@ mdnsd_conf_init(int argc, char *argv[])
 		
 		found++;
 		iface = if_new(k);
+		RB_INIT(&iface->rrt);
 		LIST_INSERT_HEAD(&conf->iface_list, iface, entry);
 	}
 	
 	if (!found)
 		fatal("Couldn't find any interface");
 	
+	fetchmyname(conf->myname);
+	fetchhinfo(&conf->hi);
+	
 	LIST_FOREACH(iface, &conf->iface_list, entry) 
 		log_debug("using iface %s index %u", iface->name, iface->ifindex);
 }
 
 /* ARGSUSED */
-void
+static void
 mdnsd_sig_handler(int sig, short event, void *arg)
 {
 	/*
@@ -107,7 +114,7 @@ mdnsd_sig_handler(int sig, short event, void *arg)
 	}
 }
 
-void
+static void
 mdnsd_shutdown(void)
 {
 	struct iface	*iface;
@@ -127,7 +134,7 @@ mdnsd_shutdown(void)
 }
 
 
-int
+static int
 mdns_sock(void)
 {
 	int sock;
@@ -161,6 +168,42 @@ mdns_sock(void)
 	    ntohs(addr.sin_port));
 	
 	return sock;
+}
+
+static void
+fetchmyname(char myname[MAXHOSTNAMELEN])
+{
+	char			*end;
+	
+	if (gethostname(myname, MAXHOSTNAMELEN) == -1)
+		fatal("gethostname");
+	end = strchr(myname, '.');
+	if (end != NULL)
+		*end = '\0';	/* use short hostnames */
+	if (strlen(myname) <= 6)
+		strlcat(myname, ".local", MAXHOSTNAMELEN);
+	else
+		if (strcmp(&myname[strlen(myname) - 6], ".local") != 0) {
+			strlcat(myname, ".local", MAXHOSTNAMELEN);
+			/* now check if name was truncated */
+			if (strcmp(&myname[strlen(myname) - 6], ".local") != 0) {
+				myname[strlen(myname) - 6] = '\0';
+				strlcat(myname, ".local", MAXHOSTNAMELEN);
+			}
+		}
+}
+
+static void
+fetchhinfo(struct hinfo *hi)
+{
+	struct utsname	utsname;
+	
+	if (uname(&utsname) == -1)
+		fatal("uname");
+	bzero(hi, sizeof(*hi));
+	strlcpy(hi->cpu, utsname.machine, sizeof(hi->cpu));
+	snprintf(hi->os, sizeof(hi->os), "%s %s", utsname.sysname,
+	    utsname.release);
 }
 
 int
@@ -248,6 +291,9 @@ main(int argc, char *argv[])
 	/* init RR cache */
 	cache_init();
 	
+	/* init publish */
+	publish_init();
+	
 	/* listen to kernel interface events */
 	kev_init();
 	
@@ -332,3 +378,4 @@ reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
 	    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
 	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
 }
+
