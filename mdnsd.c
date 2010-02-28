@@ -248,9 +248,6 @@ main(int argc, char *argv[])
 	/* init RR cache */
 	rrc_init();
 	
-	/* init authority RR */
-	rra_init();
-	
 	/* listen to kernel interface events */
 	kev_init();
 	
@@ -335,24 +332,3 @@ reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
 	    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
 	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
 }
-
-int
-rrt_compare(struct rrt_node *a, struct rrt_node *b)
-{
-	struct mdns_rr *rra, *rrb;
-	
-	rra = LIST_FIRST(&a->hrr);
-	rrb = LIST_FIRST(&b->hrr);
-	
-	if (rra->class < rrb->class)
-		return -1;
-	if (rra->class > rrb->class)
-		return 1;
-	if (rra->type < rrb->type)
-		return -1;
-	if (rra->type > rrb->type)
-		return 1;
-	
-	return strcmp(rra->dname, rrb->dname);
-}
-

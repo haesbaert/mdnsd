@@ -38,12 +38,6 @@ void		 reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 int		 mdnsd_imsg_compose_ctl(struct ctl_conn *, u_int16_t,
 	void *, u_int16_t);
 
-struct rrt_node {
-	RB_ENTRY(rrt_node)	    entry;
-	LIST_HEAD(rr_head, mdns_rr) hrr; /* head rr */
-};
-int		 rrt_compare(struct rrt_node *, struct rrt_node *);
-
 /* kiface.c */
 struct kif {
 	char		ifname[IF_NAMESIZE];
@@ -158,12 +152,8 @@ int		 pkt_serialize(struct mdns_pkt *, u_int8_t *, u_int16_t);
 void		 rrc_init(void);
 int		 rrc_process(struct mdns_rr *);
 void		 rrc_dump(void);
+struct rr_head	*rrc_lookup_head(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 struct mdns_rr	*rrc_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
-
-/* authority.c */
-void		 rra_init(void);
-void		 rra_dump(void);
-struct mdns_rr	*rra_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
