@@ -148,12 +148,27 @@ int 		 question_set(struct mdns_question *, char [MAXHOSTNAMELEN],
 /* TODO: make this static when done */
 int		 pkt_serialize(struct mdns_pkt *, u_int8_t *, u_int16_t);
 	
+/* rr_tree.c */
+struct rrt_node {
+	RB_ENTRY(rrt_node)	entry;
+	LIST_HEAD(rr_head, mdns_rr) hrr; /* head rr */
+};
+
+RB_HEAD(rrt_tree, rrt_node);
+RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_compare);
+
+void		 rrt_dump(struct rrt_tree *);
+struct mdns_rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
+    u_int16_t, u_int16_t);
+struct rr_head	*rrt_lookup_head(struct rrt_tree *, char [MAXHOSTNAMELEN],
+    u_int16_t, u_int16_t);
+struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [], u_int16_t,
+    u_int16_t);
+
 /* cache.c */
-void		 rrc_init(void);
-int		 rrc_process(struct mdns_rr *);
-void		 rrc_dump(void);
-struct rr_head	*rrc_lookup_head(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
-struct mdns_rr	*rrc_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+void		 cache_init(void);
+int		 cache_process(struct mdns_rr *);
+struct mdns_rr  *cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;

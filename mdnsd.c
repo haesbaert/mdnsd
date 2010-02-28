@@ -246,7 +246,7 @@ main(int argc, char *argv[])
 	query_init();
 	
 	/* init RR cache */
-	rrc_init();
+	cache_init();
 	
 	/* listen to kernel interface events */
 	kev_init();

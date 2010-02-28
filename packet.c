@@ -684,7 +684,7 @@ pkt_process(struct mdns_pkt *pkt)
 	/* process all answers */
 	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
 		LIST_REMOVE(rr, entry);
-		rrc_process(rr);
+		cache_process(rr);
 	}
 	
 	/* process additional section */
