@@ -1,6 +1,6 @@
 .PATH:		${.CURDIR}/../
 
-PROG=	mdns
+PROG=	mdnsctl
 SRCS=	buffer.c imsg.c log.c mdns.c parser.c mdns_api.c
 CFLAGS+= -g -Wall
 CFLAGS+= -Wstrict-prototypes -Wmissing-prototypes
