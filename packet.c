@@ -56,7 +56,6 @@ static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
 static int	pkt_process(struct mdns_pkt *);
-
 static ssize_t  serialize_dname(char [MAXHOSTNAMELEN], u_int8_t *, u_int16_t);
 static ssize_t	serialize_rr(struct mdns_rr *, u_int8_t *, u_int16_t);
 static ssize_t	serialize_question(struct mdns_question *, u_int8_t *,
@@ -253,8 +252,6 @@ pkt_add_anrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
 int
 pkt_add_nsrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
 {
-	if (pkt->qdcount)
-		return -1;
 	LIST_INSERT_HEAD(&pkt->nslist, rr, entry);
 	pkt->nscount++;
 	pkt->qr = 1;
@@ -278,6 +275,8 @@ int
 question_set(struct mdns_question *mq, char dname[MAXHOSTNAMELEN],
     u_int16_t qtype, u_int16_t qclass, int uniresp, int probe)
 {
+	bzero(mq, sizeof(*mq));
+	
 	if (qclass != C_IN)
 		return -1;
 	mq->qclass  = qclass;
@@ -285,6 +284,28 @@ question_set(struct mdns_question *mq, char dname[MAXHOSTNAMELEN],
 	mq->uniresp = uniresp;
 	mq->probe   = probe;
 	strlcpy(mq->dname, dname, sizeof(mq->dname));
+	
+	return 0;
+}
+
+int
+rr_set(struct mdns_rr *rr, char dname[MAXHOSTNAMELEN],
+    u_int16_t type, u_int16_t class, u_int32_t ttl,
+    int cacheflush, void *rdata, size_t rdlen)
+{
+	bzero(rr, sizeof(*rr));
+
+	rr->type = type;
+	rr->class = class;
+	rr->ttl = ttl;
+	rr->cacheflush = cacheflush;
+	if (rdlen > sizeof(rr->rdata)) {
+		log_debug("rr_set: Invalid rdlen %zd", rdlen);
+		return -1;
+	}
+	memcpy(&rr->rdata, rdata, rdlen);
+	rr->rdlen = rdlen;
+	strlcpy(rr->dname, dname, sizeof(rr->dname));
 	
 	return 0;
 }
@@ -860,32 +881,42 @@ serialize_dname(char dname[MAXHOSTNAMELEN], u_int8_t *buf, u_int16_t len)
 		dbuf = end + 1;
 	} while (*end != '\0');
 	
-	/* put null octet */
 	if (len == 0)
 		return -1;
 	
+	/* put null octet */
 	*pbuf++ = '\0';
 	len--;
+	
 	return pbuf - buf;
 }
 
 static ssize_t
 serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 {
-	u_int8_t *pbuf = buf;
-	ssize_t n;
-	
+	u_int8_t	*pbuf = buf;
+	u_int16_t	 us   = 0;
+	ssize_t		 n;
+ 
 	n = serialize_dname(rr->dname, pbuf, len);
 	if (n == -1 || n > len)
 		return -1;
 	pbuf += n;
 	len  -= n;
-	if (len < 10) 	/* must fit type, class, ttl and rdlength */
+	if (len < 10) /* must fit type, class, ttl and rdlength */
 		return -1;
 	PUTSHORT(rr->type, pbuf);
-	PUTSHORT(rr->class, pbuf);
+	us = rr->class;
+	if (rr->cacheflush)
+		us |= CACHEFLUSH_MSK;
+	PUTSHORT(us, pbuf);
 	PUTLONG(rr->ttl, pbuf);
-	
+	PUTSHORT(rr->rdlen, pbuf);
+	if (rr->rdlen > len)
+		return -1;
+	memcpy(pbuf, &rr->rdata, rr->rdlen);
+	pbuf += rr->rdlen;
+		
 	return pbuf - buf;
 }
 

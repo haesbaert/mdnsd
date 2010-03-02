@@ -163,6 +163,9 @@ int 		 pkt_add_nsrr(struct mdns_pkt *, struct mdns_rr *);
 int 		 pkt_add_arrr(struct mdns_pkt *, struct mdns_rr *);
 int 		 question_set(struct mdns_question *, char [MAXHOSTNAMELEN],
     	u_int16_t, u_int16_t, int, int);
+int 		 rr_set(struct mdns_rr *, char [MAXHOSTNAMELEN],
+    	u_int16_t, u_int16_t, u_int32_t, int, void *, size_t);
+
 /* TODO: make this static when done */
 int		 pkt_serialize(struct mdns_pkt *, u_int8_t *, u_int16_t);
 	
@@ -196,6 +199,11 @@ int		 query_cleanbyconn(struct ctl_conn *);
 
 /* publish.c */
 void		 publish_init(void);
+void		 publish_allrr(struct iface *);
+void		 publish_rr(struct iface *, struct mdns_rr *);
+int		 publish_insert(struct iface *, struct mdns_rr *);
+int		 publish_delete(struct iface *, struct mdns_rr *);
+
 
 
 #endif /* _MDNSD_H_ */

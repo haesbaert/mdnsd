@@ -267,10 +267,14 @@ kev_dispatch_msg(int fd, short event, void *bula)
 		case RTM_IFINFO:
 			log_debug("RTM_IFINFO");
 /* 			kev_ifinfo(&ifm.ifm_data, iface); */
+			if (LINK_STATE_IS_UP(ifm.ifm_data.ifi_link_state))
+				if_fsm(iface, IF_EVT_UP);
+			else
+				if_fsm(iface, IF_EVT_DOWN);
+			
 			break;
 		case RTM_IFANNOUNCE:
 			log_debug("RTM_IFANNOUNCE");
-/* 			if_announce(next); */
 			break;
 		case RTM_NEWADDR:
 			/* TODO */

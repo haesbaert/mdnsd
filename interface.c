@@ -145,12 +145,6 @@ if_act_start(struct iface *iface)
 	struct in_addr	 addr;
 	struct timeval	 now;
 
-/* 	if (iface->passive) { */
-/* 		log_debug("if_act_start: cannot start passive interface %s", */
-/* 		    iface->name); */
-/* 		return (0); */
-/* 	} */
-
 	if (!((iface->flags & IFF_UP) &&
 	    (LINK_STATE_IS_UP(iface->linkstate) ||
 	    (iface->linkstate == LINK_STATE_UNKNOWN &&
@@ -178,6 +172,9 @@ if_act_start(struct iface *iface)
 	default:
 		fatalx("if_act_start: unknown interface type");
 	}
+	
+	/* publish all records on this interface */
+	publish_allrr(iface);
 
 	return (0);
 }

@@ -33,6 +33,7 @@
 #define MDNS_MAX_PACKET		10000
 #define MDNS_MAX_LABELS		128
 #define MDNS_MAX_CHARSTR	256 /* we swap the length byter per the null byte */
+#define MDNS_TTL_HNAME		120
 
 #define CACHEFLUSH_MSK		0x8000
 #define CLASS_MSK		~0x8000
