@@ -52,7 +52,6 @@ int	kif_compare(struct kif_node *, struct kif_node *);
 int	kif_insert(struct kif_node *);
 int	fetchifs(int);
 void	kev_dispatch_msg(int, short, void *);
-void	kev_ifinfo(struct if_data *, struct iface *);
 
 struct {
 	int fd;
@@ -289,15 +288,6 @@ kev_dispatch_msg(int fd, short event, void *bula)
 			break;
 		}
 	}
-}
-
-void
-kev_ifinfo(struct if_data *ifd, struct iface *iface)
-{
-	if (LINK_STATE_IS_UP(ifd->ifi_link_state))
-		if_fsm(iface, IF_EVT_UP);
-	else
-		if_fsm(iface, IF_EVT_DOWN);
 }
 
 void
