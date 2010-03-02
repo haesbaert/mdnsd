@@ -200,10 +200,7 @@ int		 query_cleanbyconn(struct ctl_conn *);
 /* publish.c */
 void		 publish_init(void);
 void		 publish_allrr(struct iface *);
-void		 publish_rr(struct iface *, struct mdns_rr *);
 int		 publish_insert(struct iface *, struct mdns_rr *);
 int		 publish_delete(struct iface *, struct mdns_rr *);
-
-
 
 #endif /* _MDNSD_H_ */

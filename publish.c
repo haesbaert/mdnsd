@@ -179,48 +179,6 @@ publish_insert(struct iface *iface, struct mdns_rr *rr)
 	return 0;
 }
 
-/* void */
-/* publish_pub(struct iface *iface, struct publish *pub) */
-/* { */
-/* 	struct publish		*pub; */
-/* 	struct mdns_question	*mq; */
-/* 	struct mdns_rr		*rr; */
-/* 	struct timeval		 tv; */
-	
-/* 	/\* add resource records *\/ */
-
-/* } */
-
-void
-publish_rr(struct iface *iface, struct mdns_rr *rr)
-{
-	struct publish		*pub;
-	struct mdns_question	*mq;
-	struct timeval		 tv;
-	
-	/* add resource records */
-	if ((pub = calloc(1, sizeof(*pub))) == NULL)
-		fatal("calloc");
-	pub->state = PUB_INITIAL;
-
-	/* build up probe packet */
-	pkt_init(&pub->pkt);
-	if ((mq = calloc(1, sizeof(*mq))) == NULL)
-		fatal("calloc");
-	if (RR_UNIQ(rr))
-		question_set(mq, rr->dname, T_ANY, rr->class, 1, 1);
-	else
-		fatalx("publish_rr: Not implemented");
-	
-	pkt_add_question(&pub->pkt, mq);
-	pkt_add_nsrr(&pub->pkt, rr);
-	
-	timerclear(&tv);
-	tv.tv_usec = RANDOM_PROBETIME;
-	evtimer_set(&pub->timer, publish_fsm, pub);
-	evtimer_add(&pub->timer, &tv);
-}
-
 static void
 publish_fsm(int unused, short event, void *v_pub)
 {
