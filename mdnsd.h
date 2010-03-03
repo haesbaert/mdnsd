@@ -202,5 +202,6 @@ void		 publish_init(void);
 void		 publish_allrr(struct iface *);
 int		 publish_insert(struct iface *, struct mdns_rr *);
 int		 publish_delete(struct iface *, struct mdns_rr *);
+struct mdns_rr * publish_lookupall(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
 #endif /* _MDNSD_H_ */

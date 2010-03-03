@@ -111,11 +111,6 @@ if_fsm(struct iface *iface, enum iface_event event)
 	if (new_state != 0)
 		iface->state = new_state;
 
-/* 	if (old_state == IF_STA_ACTIVE && iface->state == IF_STA_DOWN) */
-/* 		ripe_demote_iface(iface, 0); */
-/* 	if (old_state & IF_STA_DOWN && iface->state == IF_STA_ACTIVE) */
-/* 		ripe_demote_iface(iface, 1); */
-
 	log_debug("if_fsm: event '%s' resulted in action '%s' and changing "
 	    "state for interface %s from '%s' to '%s'",
 	    if_event_name(event), if_action_name(iface_fsm[i].action),
@@ -412,51 +407,8 @@ if_new(struct kif *kif)
 void
 if_del(struct iface *iface)
 {
-/* 	struct nbr	*nbr; */
-
 	log_debug("if_del: interface %s", iface->name);
-
-	/* revert the demotion when the interface is deleted */
-/* 	if (iface->state == IF_STA_DOWN) */
-/* 		ripe_demote_iface(iface, 1); */
-
-	/* clear lists etc */
-/* 	while ((nbr = LIST_FIRST(&iface->nbr_list)) != NULL) */
-/* 		nbr_act_del(nbr); */
-
-	/* XXX rq_list, rp_list */
 
 	free(iface);
 }
 
-/* struct ctl_iface * */
-/* if_to_ctl(struct iface *iface) */
-/* { */
-/* 	static struct ctl_iface	 ictl; */
-/* 	struct timeval		 now; */
-
-/* 	memcpy(ictl.name, iface->name, sizeof(ictl.name)); */
-/* 	memcpy(&ictl.addr, &iface->addr, sizeof(ictl.addr)); */
-/* 	memcpy(&ictl.mask, &iface->mask, sizeof(ictl.mask)); */
-
-/* 	ictl.ifindex = iface->ifindex; */
-/* 	ictl.state = iface->state; */
-/* 	ictl.mtu = iface->mtu; */
-
-/* 	ictl.baudrate = iface->baudrate; */
-/* 	ictl.flags = iface->flags; */
-/* 	ictl.metric = iface->cost; */
-/* 	ictl.type = iface->type; */
-/* 	ictl.linkstate = iface->linkstate; */
-/* 	ictl.passive = iface->passive; */
-/* 	ictl.mediatype = iface->media_type; */
-
-/* 	gettimeofday(&now, NULL); */
-
-/* 	if (iface->state != IF_STA_DOWN) { */
-/* 		ictl.uptime = now.tv_sec - iface->uptime; */
-/* 	} else */
-/* 		ictl.uptime = 0; */
-
-/* 	return (&ictl); */
-/* } */

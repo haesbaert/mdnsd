@@ -202,8 +202,9 @@ fetchhinfo(struct hinfo *hi)
 		fatal("uname");
 	bzero(hi, sizeof(*hi));
 	strlcpy(hi->cpu, utsname.machine, sizeof(hi->cpu));
-	snprintf(hi->os, sizeof(hi->os), "%s %s", utsname.sysname,
-	    utsname.release);
+	strlcpy(hi->os, utsname.sysname, sizeof(hi->os));
+/* 	snprintf(hi->os, sizeof(hi->os), "%s %s", utsname.sysname, */
+/* 	    utsname.release); */
 }
 
 int

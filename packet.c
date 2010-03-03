@@ -56,11 +56,13 @@ static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
     struct mdns_rr *);
 static int	pkt_process(struct mdns_pkt *);
+static int	pkt_tryanswerq(struct mdns_pkt *);
+
 static ssize_t  serialize_dname(char [MAXHOSTNAMELEN], u_int8_t *, u_int16_t);
 static ssize_t	serialize_rr(struct mdns_rr *, u_int8_t *, u_int16_t);
 static ssize_t	serialize_question(struct mdns_question *, u_int8_t *,
     u_int16_t);
-
+static ssize_t	serialize_hinfo(struct mdns_rr *, u_int8_t *, u_int16_t);
 static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_txt(struct mdns_rr *, u_int8_t *);
@@ -177,15 +179,10 @@ recv_packet(int fd, short event, void *bula)
 	
 	srcport = ntohs(src.sin_port);
 	
-/* 	log_debug("buf is at %p", buf); */
-/* 	log_debug("###### PACKET %d #####", ++pktnum); */
-	
 	if (pkt_parse(buf, len, &pkt) == -1)
 		return;
 	
 	pkt_process(&pkt);
-/* 	rrc_dump(); */
-
 	/* process all shit */
 }
 
@@ -367,48 +364,35 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	for (i = 0; i < pkt->ancount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-/* 		log_debug("==BEGIN AN RR=="); */
 		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
 			log_debug("Can't parse RR");
 			free(rr);
 			return -1;
 		}
 		LIST_INSERT_HEAD(&pkt->anlist, rr, entry);
-
-/* 		log_debug("==END AN RR=="); */
-
 	}
 	
 	for (i = 0; i < pkt->nscount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-/* 		log_debug("==BEGIN NS RR=="); */
 		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
 			log_debug("Can't parse RR");
 			free(rr);
 			return -1;
 		}
 		LIST_INSERT_HEAD(&pkt->nslist, rr, entry);
-		
-/* 		log_debug("==END NS RR=="); */
-
 	}
 
 	for (i = 0; i < pkt->arcount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-/* 		log_debug("==BEGIN AR RR=="); */
 		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
 			log_debug("Can't parse RR");
-/* 			rr_free(rr); */
 			free(rr);
 			return -1;
 		}
 		
 		LIST_INSERT_HEAD(&pkt->arlist, rr, entry);
-
-/* 		log_debug("==END AR RR=="); */
-
 	}
 
 	if (len != 0) {
@@ -602,13 +586,8 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 
 	GETLONG(rr->ttl, *pbuf);
 	*len -= INT32SZ;
-/* 	log_debug("rr->ttl = %u 0x%x", rr->ttl, rr->ttl); */
-
-
 	GETSHORT(rr->rdlen, *pbuf);
 	*len -= INT16SZ;
-/* 	log_debug("rr->rdlen = %u", rr->rdlen); */
-	
 	if (*len < rr->rdlen) {
 		log_debug("Invalid rr data length, *len = %u, rdlen = %u",
 		    *len,rr->rdlen);
@@ -617,34 +596,28 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 
 	switch (rr->type) {
 	case T_A:
-/* 		log_debug("A record"); */
 		if (rr_parse_a(rr, *pbuf) == -1)
 			return -1;
 		break;
 	case T_HINFO:
-/* 		log_debug("HINFO record"); */
 		if (rr_parse_hinfo(rr, *pbuf) == -1)
 			return -1;
 		break;
 	case T_CNAME:
-/* 		log_debug("CNAME record"); */
 		if (rr_parse_dname(*pbuf, *len,
 		    rr->rdata.CNAME) == -1)
 			return -1;
 		break;
 	case T_PTR:
-/* 		log_debug("PTR record"); */
 		if (rr_parse_dname(*pbuf, *len,
 		    rr->rdata.PTR) == -1)
 			return -1;
 		break;
 	case T_TXT:
-/* 		log_debug("TXT record"); */
 		if (rr_parse_txt(rr, *pbuf) == -1)
 			return -1;
 		break;
 	case T_NS:
-/* 		log_debug("NS record"); */
 		if (rr_parse_dname(*pbuf, *len,
 		    rr->rdata.NS) == -1)
 			return -1;
@@ -660,7 +633,6 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 			return -1;
 		break;
 	case T_AAAA:
-/* 		log_debug("got a AAAA record"); */
 		break;
 	default:
 		log_debug("Unknown record type %u 0x%x", rr->type, rr->type);
@@ -681,26 +653,18 @@ pkt_process(struct mdns_pkt *pkt)
 	struct mdns_question *q;
 	
 	/* mark all probe questions, so we don't try to answer them below */
-	LIST_FOREACH(rr, &pkt->nslist, entry) {
+	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
 		LIST_FOREACH(q, &pkt->qlist, entry) {
-			if (ANSWERS(q, rr)) {
-/* 				log_debug("probe for %s", q->dname); */
+			if (ANSWERS(q, rr))
 				q->probe = 1;
-			}
 		}
 		LIST_REMOVE(rr, entry);
 		free(rr);
 	}
 	
 	/* process all questions */
-	while ((q = LIST_FIRST(&pkt->qlist)) != NULL) {
-/* 		if (!q->probe) */
-/* 			log_debug("should try answer: %s (type %s)", q->dname, */
-/* 			    rr_type_name(q->qtype)); */
-		LIST_REMOVE(q, entry);
-		free(rr);
-		/* TODO: try to answer questions :-D */
-	}
+	if (pkt_tryanswerq(pkt) == -1)
+		log_warn("pkt_tryanswerq: error");
 	
 	/* process all answers */
 	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
@@ -715,17 +679,47 @@ pkt_process(struct mdns_pkt *pkt)
 }
 
 static int
+pkt_tryanswerq(struct mdns_pkt *pkt)
+{
+	struct mdns_question	*q;
+	struct mdns_rr		*rr;
+	struct mdns_pkt		 sendpkt;
+	
+	pkt_init(&sendpkt);
+	/* arghhh the following is too fucking ugly, please correct me */
+	while ((q = LIST_FIRST(&pkt->qlist)) != NULL) {
+		if (!q->probe) {
+			log_debug("try answer: %s (type %s)", q->dname,
+			    rr_type_name(q->qtype));
+			/* look into published rr if we have it */
+			rr = publish_lookupall(q->dname, q->qtype, q->qclass);
+			if (rr != NULL && ANSWERS(q, rr)) {
+				if (pkt_add_anrr(&sendpkt, rr) == -1)
+					log_warn("Can't answer question for"
+					    "%s %s",
+					    q->dname, rr_type_name(q->qtype));
+				if (pkt_send_allif(&sendpkt) == -1)
+					log_debug("can't send packet to all interfaces");
+			}
+				
+		}
+		LIST_REMOVE(q, entry);
+		free(q);
+	}
+	
+
+	return 0;
+}
+
+static int
 rr_parse_hinfo(struct mdns_rr *rr, u_int8_t *buf)
 {
 	ssize_t n;
 	
 	if ((n = charstr(rr->rdata.HINFO.cpu, buf, rr->rdlen)) == -1)
 		return -1;
-/* 	log_debug("   cpu: %s", rr->rdata.HINFO.cpu); */
-
 	if ((n = charstr(rr->rdata.HINFO.os, buf + n, rr->rdlen - n)) == -1)
 		return -1;
-/* 	log_debug("   os: %s",  rr->rdata.HINFO.os); */
 	
 	return 0;
 }
@@ -743,7 +737,6 @@ rr_parse_a(struct mdns_rr *rr, u_int8_t *buf)
 	GETLONG(ul, buf);
 	rr->rdata.A.s_addr = htonl(ul);
 	
-/* 	log_debug("A record: %s", inet_ntoa(rr->rdata.A)); */
 	return 0;
 	
 }
@@ -755,7 +748,6 @@ rr_parse_txt(struct mdns_rr *rr, u_int8_t *buf)
 	
 	if ((n = charstr(rr->rdata.TXT, buf, rr->rdlen)) == -1)
 		return -1;
-/* 	log_debug("TXT: %s", rr->rdata.TXT); */
 
 	return 0;
 }
@@ -765,15 +757,10 @@ rr_parse_srv(struct mdns_rr *rr, u_int8_t *buf, uint16_t len)
 {
 	GETSHORT(rr->rdata.SRV.priority, buf);
 	len -= INT16SZ;
-/* 	log_debug("SRV priority: %u", rr->rdata.SRV.priority); */
-	
 	GETSHORT(rr->rdata.SRV.weight, buf);
 	len -= INT16SZ;
-/* 	log_debug("SRV weight: %u", rr->rdata.SRV.weight); */
-
 	GETSHORT(rr->rdata.SRV.port, buf);
 	len -= INT16SZ;
-/* 	log_debug("SRV port: %u", rr->rdata.SRV.port); */
 
 	if (rr_parse_dname(buf, len, rr->rdata.SRV.dname) == -1)
 		return -1;
@@ -820,8 +807,6 @@ pkt_serialize(struct mdns_pkt *pkt, u_int8_t *buf, u_int16_t len)
 	
 	len -= pbuf - buf;
 	    
-/* 	log_debug("header serialized %zd bytes", pbuf - buf); */
-	
 	LIST_FOREACH(mq, &pkt->qlist, entry) {
 		n = serialize_question(mq, pbuf, len);
 		if (n == -1 || n > len)
@@ -885,12 +870,48 @@ serialize_dname(char dname[MAXHOSTNAMELEN], u_int8_t *buf, u_int16_t len)
 		return -1;
 	
 	/* put null octet */
-	*pbuf++ = '\0';
-	len--;
+/* 	*pbuf++ = '\0'; */
+/* 	len--; */
 	
 	return pbuf - buf;
 }
 
+
+static ssize_t
+serialize_hinfo(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
+{
+	ssize_t		 n;
+	u_int8_t	*pbuf  = buf;
+	u_int8_t	 cpulen, oslen;
+	u_int16_t	 rdlen = 0;
+	char		 cpu[MAXHOSTNAMELEN];
+	char		 os[MAXHOSTNAMELEN];
+	
+	bzero(cpu, sizeof(cpu));
+	if ((n = serialize_dname(rr->rdata.HINFO.cpu, cpu, sizeof(cpu))) == -1)
+		return -1;
+	rdlen  += n;
+	cpulen	= n;
+	
+	bzero(os, sizeof(os));
+	if ((n = serialize_dname(rr->rdata.HINFO.os, os, sizeof(os))) == -1)
+		return -1;
+	rdlen += n;
+	oslen  = n;
+		
+	if (rdlen > len)
+		return -1;
+	PUTSHORT(rdlen, pbuf);
+	
+	memcpy(pbuf, cpu, cpulen);
+	pbuf += cpulen;
+	
+	memcpy(pbuf, os, oslen);
+	pbuf += oslen;
+
+	return pbuf - buf;
+}
+	
 static ssize_t
 serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 {
@@ -903,6 +924,11 @@ serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 		return -1;
 	pbuf += n;
 	len  -= n;
+	if (len == 0)
+		return -1;
+	*pbuf++ = '\0';		/* null terminate dname */
+	len--;
+
 	if (len < 10) /* must fit type, class, ttl and rdlength */
 		return -1;
 	PUTSHORT(rr->type, pbuf);
@@ -911,12 +937,22 @@ serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 		us |= CACHEFLUSH_MSK;
 	PUTSHORT(us, pbuf);
 	PUTLONG(rr->ttl, pbuf);
-	PUTSHORT(rr->rdlen, pbuf);
-	if (rr->rdlen > len)
-		return -1;
-	memcpy(pbuf, &rr->rdata, rr->rdlen);
-	pbuf += rr->rdlen;
-		
+	
+	/* by now only hinfo has a special treatment */
+	if (rr->type == T_HINFO) {
+		if ((n = serialize_hinfo(rr, pbuf, len)) == -1)
+			return -1;
+		pbuf += n;
+		len  -= n;
+	} else {
+		PUTSHORT(rr->rdlen, pbuf);
+		if (rr->rdlen > len)
+			return -1;
+		memcpy(pbuf, &rr->rdata, rr->rdlen);
+		pbuf += rr->rdlen;
+		len -= rr->rdlen;
+	}
+
 	return pbuf - buf;
 }
 
@@ -931,6 +967,11 @@ serialize_question(struct mdns_question *mq, u_int8_t *buf, u_int16_t len)
 		return -1;
 	pbuf += n;
 	len  -= n;
+	if (len == 0)
+		return -1;
+	*pbuf++ = '\0';		/* null terminate dname */
+	len--;
+
 	if (len < 4) 	/* must fit type, class */
 		return -1;
 	PUTSHORT(mq->qtype, pbuf);

@@ -62,14 +62,14 @@ publish_init(void)
 		if (publish_insert(iface, rr) == -1)
 			log_debug("publish_init: can't insert rr");
 		
-		/* TODO: fix hinfo serializer */
-/* 		if ((rr = calloc(1, sizeof(*rr))) == NULL) */
-/* 			fatal("calloc"); */
-/* 		rr_set(rr, conf->myname, T_HINFO, C_IN, MDNS_TTL_HNAME, 1, */
-/* 		    &conf->hi, sizeof(conf->hi)); */
-/* 		if (publish_insert(iface, rr) == -1) */
-/* 			log_debug("publish_init: can't insert rr"); */
-	}
+		/* publish hinfo */
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			fatal("calloc");
+		rr_set(rr, conf->myname, T_HINFO, C_IN, MDNS_TTL_HNAME, 1,
+		    &conf->hi, sizeof(conf->hi));
+		if (publish_insert(iface, rr) == -1)
+			log_debug("publish_init: can't insert rr");
+ 	}
 }
 
 void
@@ -81,7 +81,6 @@ publish_allrr(struct iface *iface)
 	struct rrt_node		*n;
 	struct timeval		 tv;
 	
-	log_debug("publish_allrr");
 	/* start a publish thingy */
 	if ((pub = calloc(1, sizeof(*pub))) == NULL)
 		fatal("calloc");
@@ -146,7 +145,7 @@ publish_insert(struct iface *iface, struct mdns_rr *rr)
 	struct rrt_node *n;
 	struct mdns_rr	*rraux;
 	
-	log_debug("cache_insert: type: %s name: %s", rr_type_name(rr->type),
+	log_debug("publish_insert: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
 	
 	hrr = rrt_lookup_head(&iface->rrt, rr->dname, rr->type, rr->class);
@@ -187,14 +186,12 @@ publish_fsm(int unused, short event, void *v_pub)
 	struct mdns_rr		*rr;
 	struct mdns_question	*mq;
 
-	log_debug("publish_fsm called");
-	
 	switch (pub->state) {
 	case PUB_INITIAL:	
-		log_debug("probing!!");  
 		pub->state = PUB_PROBE;
 		/* FALLTHROUGH */
 	case PUB_PROBE:
+		pub->pkt.qr = 0;
 		if (pkt_send_allif(&pub->pkt) == -1)
 			log_debug("can't send packet to all interfaces");
 		pub->sent++;
@@ -203,13 +200,13 @@ publish_fsm(int unused, short event, void *v_pub)
 			pub->sent   = 0;
 			pub->pkt.qr = 1;
 			/* remove questions */
-			LIST_FOREACH(mq, &pub->pkt.qlist, entry) {
+			while ((mq = (LIST_FIRST(&pub->pkt.qlist))) != NULL) {
 				LIST_REMOVE(mq, entry);
 				pub->pkt.qdcount--;
 				free(mq);
 			}
 			/* move all ns records to answer records */
-			LIST_FOREACH(rr, &pub->pkt.nslist, entry) {
+			while ((rr = (LIST_FIRST(&pub->pkt.nslist))) != NULL) {
 				LIST_REMOVE(rr, entry);
 				pub->pkt.nscount--;
 				if (pkt_add_anrr(&pub->pkt, rr) == -1)
@@ -238,22 +235,22 @@ publish_fsm(int unused, short event, void *v_pub)
 		publish_fsm(unused, event, pub);
 		break;
 	case PUB_DONE:
-		LIST_FOREACH(rr, &pub->pkt.anlist, entry) {
+		while ((rr = LIST_FIRST(&pub->pkt.anlist)) != NULL) {
 			LIST_REMOVE(rr, entry);
 			pub->pkt.ancount--;
 			free(rr);
 		}
-		LIST_FOREACH(rr, &pub->pkt.nslist, entry) {
+		while ((rr = LIST_FIRST(&pub->pkt.nslist)) != NULL) {
 			LIST_REMOVE(rr, entry);
 			pub->pkt.nscount--;
 			free(rr);
 		}
-		LIST_FOREACH(rr, &pub->pkt.arlist, entry) {
+		while ((rr = LIST_FIRST(&pub->pkt.arlist)) != NULL) {
 			LIST_REMOVE(rr, entry);
 			pub->pkt.arcount--;
 			free(rr);
 		}
-		LIST_FOREACH(mq, &pub->pkt.qlist, entry) {
+		while ((mq = LIST_FIRST(&pub->pkt.qlist)) != NULL) {
 			LIST_REMOVE(mq, entry);
 			pub->pkt.qdcount--;
 			free(mq);
@@ -264,4 +261,19 @@ publish_fsm(int unused, short event, void *v_pub)
 		fatalx("Unknown publish state, report this");
 		break;
 	}
+}
+
+struct mdns_rr *
+publish_lookupall(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+{
+	struct iface	*iface;
+	struct mdns_rr	*rr;
+	
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		rr = rrt_lookup(&iface->rrt, dname, type, class);
+		if (rr != NULL)
+			return rr;
+	}
+	
+	return NULL;
 }

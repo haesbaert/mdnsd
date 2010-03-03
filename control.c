@@ -87,7 +87,6 @@ control_lookupaddr(struct ctl_conn *c, struct imsg *imsg)
 
 	memcpy(&addr, imsg->data, imsg->hdr.len - IMSG_HEADER_SIZE);
 	reversstr(name, &addr);
-	log_debug("vi a reverse query para: %s (%s)", inet_ntoa(addr), name);
 	rr = cache_lookup(name, T_PTR, C_IN);
 	/* cache hit */
 	if (rr != NULL) {
