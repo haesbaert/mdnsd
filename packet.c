@@ -357,36 +357,33 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		log_debug("found less questions than advertised");
 		return -1;
 	}
-	
-	/* Answer count sanity check */
-	i = 0;
-	LIST_FOREACH(rr, &pkt->anlist, entry)
-	    i++;
-	if (i != pkt->ancount) {
-		log_debug("found less records in AN section"
-		    "than advertised");
-		return -1;
-	}
-
-	/* NS count sanity check */
-	i = 0;
-	LIST_FOREACH(rr, &pkt->nslist, entry)
-	    i++;
-	if (i != pkt->nscount) {
-		log_debug("found less records in NS section"
-		    "than advertised");
-		return -1;
-	}
-	
-	/* AR count sanity check */
-	i = 0;
-	LIST_FOREACH(rr, &pkt->arlist, entry)
-	    i++;
-	if (i != pkt->arcount) {
-		log_debug("found less records in AR section"
-		    "than advertised");
-		return -1;
-	}
+/* 	/\* Answer count sanity check *\/ */
+/* 	i = 0; */
+/* 	LIST_FOREACH(rr, &pkt->anlist, entry) */
+/* 	    i++; */
+/* 	if (i != pkt->ancount) { */
+/* 		log_debug("found less records in AN section " */
+/* 		    "than advertised ancount = %u, i = %d", pkt->ancount, i); */
+/* 		return -1; */
+/* 	} */
+/* 	/\* NS count sanity check *\/ */
+/* 	i = 0; */
+/* 	LIST_FOREACH(rr, &pkt->nslist, entry) */
+/* 	    i++; */
+/* 	if (i != pkt->nscount) { */
+/* 		log_debug("found less records in NS section " */
+/* 		    "than advertised nscount = %u, i = %d", pkt->nscount, i); */
+/* 		return -1; */
+/* 	} */
+/* 	/\* AR count sanity check *\/ */
+/* 	i = 0; */
+/* 	LIST_FOREACH(rr, &pkt->arlist, entry) */
+/* 	    i++; */
+/* 	if (i != pkt->arcount) { */
+/* 		log_debug("found less records in AR section " */
+/* 		    "than advertised, an = %u, i = %d", pkt->arcount, i); */
+/* 		return -1; */
+/* 	} */
 
 	/* Parse RR sections */
 	for (i = 0; i < pkt->ancount; i++) {
@@ -399,7 +396,6 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		}
 		LIST_INSERT_HEAD(&pkt->anlist, rr, entry);
 	}
-	
 	for (i = 0; i < pkt->nscount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
@@ -410,7 +406,6 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		}
 		LIST_INSERT_HEAD(&pkt->nslist, rr, entry);
 	}
-
 	for (i = 0; i < pkt->arcount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
@@ -599,7 +594,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
 	rr->cacheflush = !!(us & CACHEFLUSH_MSK);
-	rr->class = us & CLASS_MSK;
+	rr->class      = us & CLASS_MSK;
 	
 	if (rr->class != C_ANY && rr->class != C_IN) {
 		log_debug("pkt_parse_rr: Invalid packet class %u", rr->class);
@@ -662,7 +657,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 		break;
 	}
 	
-	*len -= rr->rdlen;
+	*len  -= rr->rdlen;
 	*pbuf += rr->rdlen;
 	
 	return 0;
@@ -878,26 +873,21 @@ serialize_dname(char dname[MAXHOSTNAMELEN], u_int8_t *buf, u_int16_t len)
 				fatalx("serialize_dname: bad dname");
 		}
 
-		tlen = end - dbuf;
+		tlen  = end - dbuf;
 		*pbuf++ = tlen;
 		if (tlen > len)
 			return -1;
 		memcpy(pbuf, dbuf, tlen);
-		len -= tlen;
+		len  -= tlen;
 		pbuf += tlen;
-		dbuf = end + 1;
+		dbuf  = end + 1;
 	} while (*end != '\0');
 	
 	if (len == 0)
 		return -1;
 	
-	/* put null octet */
-/* 	*pbuf++ = '\0'; */
-/* 	len--; */
-	
 	return pbuf - buf;
 }
-
 
 static ssize_t
 serialize_hinfo(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)

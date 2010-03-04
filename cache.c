@@ -97,7 +97,7 @@ cache_insert(struct mdns_rr *rr)
 	}
 	
 	/* rr is not unique, see if this is a cache refresh */
-	while ((rraux = LIST_FIRST(hrr)) != NULL) {
+	LIST_FOREACH(rraux, hrr, entry) {
 		if (memcmp(&rr->rdata, &rraux->rdata, rraux->rdlen) == 0) {
 			rraux->ttl = rr->ttl;
 			rraux->revision = 0;
@@ -118,7 +118,7 @@ cache_insert(struct mdns_rr *rr)
 static int
 cache_delete(struct mdns_rr *rr)
 {
-	struct mdns_rr	*rraux;
+	struct mdns_rr	*rraux, *next;
 	struct rrt_node	*s;
 	int		 n = 0;
 	
@@ -128,7 +128,8 @@ cache_delete(struct mdns_rr *rr)
 	if (s == NULL)
 		return 0;
 	
-	while ((rraux = LIST_FIRST(&s->hrr)) != NULL) {
+	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
+		next = LIST_NEXT(rraux, entry);
 		if (RR_UNIQ(rr) ||
 		    (memcmp(&rr->rdata, &rraux->rdata,
 		    rraux->rdlen) == 0)) {
