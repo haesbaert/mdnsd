@@ -531,11 +531,8 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 		buf += lablen;
 		if (!jumped)
 			len -= lablen;
-
 	}
 	
-	
-
 	if (i == MDNS_MAX_LABELS) {
 		log_debug("max labels reached");
 		return -1;

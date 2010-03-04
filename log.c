@@ -203,6 +203,9 @@ rr_type_name(uint16_t type)
 	case T_A:
 		return "A";
 		break; 		/* NOTREACHED */
+	case T_AAAA:
+		return "AAAA";
+		break; 		/* NOTREACHED */
 	case T_HINFO:
 		return "HINFO";
 		break;		/* NOTREACHED */
@@ -222,7 +225,7 @@ rr_type_name(uint16_t type)
 		return "NS";
 		break;		/* NOTREACHED */
 	default:
-		log_debug("Unknown");
+		log_debug("Unknown %d", type);
 		break;		/* NOTREACHED */
 	}
 	
