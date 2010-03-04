@@ -337,7 +337,6 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	struct mdns_question	*mq;
 	struct mdns_rr		*rr;
 	
-	/* don't use pkt_init here, this is fine */
 	pkt_init(pkt);
 	pktcomp.start = buf;
 	pktcomp.len = len;
@@ -354,12 +353,41 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	i = 0;
 	LIST_FOREACH(mq, &pkt->qlist, entry)
 		i++;
-
 	if (i != pkt->qdcount) {
 		log_debug("found less questions than advertised");
 		return -1;
 	}
 	
+	/* Answer count sanity check */
+	i = 0;
+	LIST_FOREACH(rr, &pkt->anlist, entry)
+	    i++;
+	if (i != pkt->ancount) {
+		log_debug("found less records in AN section"
+		    "than advertised");
+		return -1;
+	}
+
+	/* NS count sanity check */
+	i = 0;
+	LIST_FOREACH(rr, &pkt->nslist, entry)
+	    i++;
+	if (i != pkt->nscount) {
+		log_debug("found less records in NS section"
+		    "than advertised");
+		return -1;
+	}
+	
+	/* AR count sanity check */
+	i = 0;
+	LIST_FOREACH(rr, &pkt->arlist, entry)
+	    i++;
+	if (i != pkt->arcount) {
+		log_debug("found less records in AR section"
+		    "than advertised");
+		return -1;
+	}
+
 	/* Parse RR sections */
 	for (i = 0; i < pkt->ancount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
@@ -394,7 +422,6 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 		
 		LIST_INSERT_HEAD(&pkt->arlist, rr, entry);
 	}
-
 	if (len != 0) {
 		log_debug("Couldn't read all packet, %u bytes left", len);
 		return -1;
@@ -569,10 +596,8 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
 	
 	GETSHORT(rr->type, *pbuf);
 	*len -= INT16SZ;
-
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
-	
 	rr->cacheflush = !!(us & CACHEFLUSH_MSK);
 	rr->class = us & CLASS_MSK;
 	
