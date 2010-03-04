@@ -110,7 +110,7 @@ publish_allrr(struct iface *iface)
 int
 publish_delete(struct iface *iface, struct mdns_rr *rr)
 {
-	struct mdns_rr	*rraux;
+	struct mdns_rr	*rraux, *next;
 	struct rrt_node	*s;
 	int		 n = 0;
 	
@@ -120,7 +120,8 @@ publish_delete(struct iface *iface, struct mdns_rr *rr)
 	if (s == NULL)
 		return 0;
 	
-	while ((rraux = LIST_FIRST(&s->hrr)) != NULL) {
+	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
+		next = LIST_NEXT(rraux, entry);
 		if (RR_UNIQ(rr) ||
 		    (memcmp(&rr->rdata, &rraux->rdata,
 		    rraux->rdlen) == 0)) {
@@ -128,8 +129,8 @@ publish_delete(struct iface *iface, struct mdns_rr *rr)
 			free(rraux);
 			n++;
 		}
-	}
-
+	}	
+	
 	if (LIST_EMPTY(&s->hrr)) {
 		RB_REMOVE(rrt_tree, &iface->rrt, s);
 		free(s);
