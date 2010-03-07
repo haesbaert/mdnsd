@@ -47,11 +47,13 @@ extern struct mdnsd_conf *conf;
 
 #define RANDOM_PROBETIME (random() % 250000)
 
+/* TODO: Turn all the publishing types into functions */
 void
 publish_init(void)
 {
 	struct iface	*iface;
 	struct mdns_rr	*rr;
+	char		 revaddr[MAXHOSTNAMELEN];
 	
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		/* myname */
@@ -61,6 +63,16 @@ publish_init(void)
 		    &iface->addr, sizeof(iface->addr));
 		if (publish_insert(iface, rr) == -1)
 			log_debug("publish_init: can't insert rr");
+
+		/* publish reverse address */
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			fatal("calloc");
+		reversstr(revaddr, &iface->addr);
+		rr_set(rr, revaddr, T_PTR, C_IN, MDNS_TTL_HNAME, 1,
+		    conf->myname, sizeof(conf->myname));
+		if (publish_insert(iface, rr) == -1)
+			log_debug("publish_init: can't insert rr");
+		log_debug("ptr: %s", rr->rdata.PTR);
 		
 		/* publish hinfo */
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)

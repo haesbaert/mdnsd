@@ -58,10 +58,10 @@ static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
 static int	pkt_process(struct mdns_pkt *);
 static int	pkt_tryanswerq(struct mdns_pkt *);
 
-static ssize_t  serialize_dname(char [MAXHOSTNAMELEN], u_int8_t *, u_int16_t);
 static ssize_t	serialize_rr(struct mdns_rr *, u_int8_t *, u_int16_t);
 static ssize_t	serialize_question(struct mdns_question *, u_int8_t *,
     u_int16_t);
+static ssize_t	serialize_dname(char [MAXHOSTNAMELEN], u_int8_t *, u_int16_t);
 static ssize_t	serialize_hinfo(struct mdns_rr *, u_int8_t *, u_int16_t);
 static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
@@ -925,6 +925,27 @@ serialize_hinfo(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 }
 	
 static ssize_t
+serialize_ptr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
+{
+	ssize_t		 n;
+	u_int8_t	*pbuf  = buf;
+	char		 tmp[MAXHOSTNAMELEN];
+	
+	bzero(tmp, sizeof(tmp));
+	if ((n = serialize_dname(rr->rdata.PTR, tmp, sizeof(tmp))) == -1)
+		return -1;
+	tmp[n] = '\0';
+	n++;
+	if (n > len)
+		return -1;
+	PUTSHORT(n, pbuf);
+	memcpy(pbuf, tmp, n);
+	pbuf += n;
+	
+	return pbuf - buf;
+}
+
+static ssize_t
 serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t	*pbuf = buf;
@@ -950,19 +971,27 @@ serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 	PUTSHORT(us, pbuf);
 	PUTLONG(rr->ttl, pbuf);
 	
-	/* by now only hinfo has a special treatment */
-	if (rr->type == T_HINFO) {
+	switch(rr->type) {
+	case T_HINFO:
 		if ((n = serialize_hinfo(rr, pbuf, len)) == -1)
 			return -1;
 		pbuf += n;
 		len  -= n;
-	} else {
+		break;
+	case T_PTR:
+		if ((n = serialize_ptr(rr, pbuf, len)) == -1)
+			return -1;
+		pbuf += n;
+		len  -= n;
+		break;	
+	default:
 		PUTSHORT(rr->rdlen, pbuf);
 		if (rr->rdlen > len)
 			return -1;
 		memcpy(pbuf, &rr->rdata, rr->rdlen);
 		pbuf += rr->rdlen;
-		len -= rr->rdlen;
+		len  -= rr->rdlen;
+		break;
 	}
 
 	return pbuf - buf;
