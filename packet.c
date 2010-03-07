@@ -61,8 +61,8 @@ static int	pkt_tryanswerq(struct mdns_pkt *);
 static ssize_t	serialize_rr(struct mdns_rr *, u_int8_t *, u_int16_t);
 static ssize_t	serialize_question(struct mdns_question *, u_int8_t *,
     u_int16_t);
-static ssize_t	serialize_dname(char [MAXHOSTNAMELEN], u_int8_t *, u_int16_t);
-static ssize_t	serialize_hinfo(struct mdns_rr *, u_int8_t *, u_int16_t);
+static ssize_t	serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
+static ssize_t	serialize_rdata(struct mdns_rr *, u_int8_t *, u_int16_t);
 static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
 static int	rr_parse_txt(struct mdns_rr *, u_int8_t *);
@@ -716,7 +716,8 @@ pkt_tryanswerq(struct mdns_pkt *pkt)
 					    "%s %s",
 					    q->dname, rr_type_name(q->qtype));
 				if (pkt_send_allif(&sendpkt) == -1)
-					log_debug("can't send packet to all interfaces");
+					log_debug("can't send packet to"
+					    "all interfaces");
 			}
 				
 		}
@@ -860,7 +861,7 @@ pkt_serialize(struct mdns_pkt *pkt, u_int8_t *buf, u_int16_t len)
 }
 
 static ssize_t
-serialize_dname(char dname[MAXHOSTNAMELEN], u_int8_t *buf, u_int16_t len)
+serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
 	char *end;
 	char *dbuf = dname;
@@ -885,62 +886,77 @@ serialize_dname(char dname[MAXHOSTNAMELEN], u_int8_t *buf, u_int16_t len)
 	
 	if (len == 0)
 		return -1;
+	*pbuf++ = '\0';		/* null terminate dname */
+	len--;
 	
 	return pbuf - buf;
 }
 
 static ssize_t
-serialize_hinfo(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
+serialize_rdata(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 {
+	u_int8_t	*pbuf = buf;
 	ssize_t		 n;
-	u_int8_t	*pbuf  = buf;
-	u_int8_t	 cpulen, oslen;
 	u_int16_t	 rdlen = 0;
-	char		 cpu[MAXHOSTNAMELEN];
-	char		 os[MAXHOSTNAMELEN];
-	
-	bzero(cpu, sizeof(cpu));
-	if ((n = serialize_dname(rr->rdata.HINFO.cpu, cpu, sizeof(cpu))) == -1)
-		return -1;
-	rdlen  += n;
-	cpulen	= n;
-	
-	bzero(os, sizeof(os));
-	if ((n = serialize_dname(rr->rdata.HINFO.os, os, sizeof(os))) == -1)
-		return -1;
-	rdlen += n;
-	oslen  = n;
-		
-	if (rdlen > len)
-		return -1;
-	PUTSHORT(rdlen, pbuf);
-	
-	memcpy(pbuf, cpu, cpulen);
-	pbuf += cpulen;
-	
-	memcpy(pbuf, os, oslen);
-	pbuf += oslen;
-
-	return pbuf - buf;
-}
-	
-static ssize_t
-serialize_ptr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
-{
-	ssize_t		 n;
-	u_int8_t	*pbuf  = buf;
+	u_int8_t	 cpulen, oslen;
 	char		 tmp[MAXHOSTNAMELEN];
+		
 	
-	bzero(tmp, sizeof(tmp));
-	if ((n = serialize_dname(rr->rdata.PTR, tmp, sizeof(tmp))) == -1)
-		return -1;
-	tmp[n] = '\0';
-	n++;
-	if (n > len)
-		return -1;
-	PUTSHORT(n, pbuf);
-	memcpy(pbuf, tmp, n);
-	pbuf += n;
+	if (rr->type != T_PTR && rr->type != T_HINFO)
+		rdlen = rr->rdlen;
+	
+	switch (rr->type) {
+	case T_HINFO:
+		cpulen = strlen(rr->rdata.HINFO.cpu);
+		oslen = strlen(rr->rdata.HINFO.os);
+		    
+		rdlen = cpulen + oslen + 2;	/* 2 length octets */
+		
+		if (len < rdlen)
+			return -1;
+		
+		PUTSHORT(rdlen, pbuf);
+		len -= 2;
+		/* fill cpu */
+		*pbuf++ = cpulen;
+		len--;
+		memcpy(pbuf, rr->rdata.HINFO.cpu, cpulen);
+		pbuf += cpulen;
+		len  -= cpulen;
+		/* fill os */
+		*pbuf++ = oslen;
+		len--;
+		memcpy(pbuf, rr->rdata.HINFO.os, oslen);
+		pbuf += oslen;
+		len  -= oslen;
+
+		break;
+	case T_PTR:
+		bzero(tmp, sizeof(tmp));
+		if ((n = serialize_dname(tmp, sizeof(tmp),
+		    rr->rdata.PTR)) == -1)
+			return -1;
+		rdlen = n;
+		if (len < (rdlen + 2)) /* +2 is rdlen itself */
+			return -1;
+		PUTSHORT(rdlen, pbuf);
+		len -= 2;
+		memcpy(pbuf, tmp, rdlen);
+		pbuf += rdlen;
+		len  -= rdlen;
+		
+		break;
+	default:
+		if (len < (rdlen + 2)) /* +2 is rdlen itself */
+			return -1;
+		PUTSHORT(rdlen, pbuf);
+		len -= 2;
+		memcpy(pbuf, &rr->rdata, rdlen);
+		pbuf += rdlen;
+		len  -= rdlen;
+		
+		break;
+	}
 	
 	return pbuf - buf;
 }
@@ -952,17 +968,15 @@ serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 	u_int16_t	 us   = 0;
 	ssize_t		 n;
  
-	n = serialize_dname(rr->dname, pbuf, len);
+	n = serialize_dname(pbuf, len, rr->dname);
 	if (n == -1 || n > len)
 		return -1;
 	pbuf += n;
 	len  -= n;
 	if (len == 0)
 		return -1;
-	*pbuf++ = '\0';		/* null terminate dname */
-	len--;
 
-	if (len < 10) /* must fit type, class, ttl and rdlength */
+	if (len < 8) /* must fit type, class, ttl */
 		return -1;
 	PUTSHORT(rr->type, pbuf);
 	us = rr->class;
@@ -970,29 +984,13 @@ serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 		us |= CACHEFLUSH_MSK;
 	PUTSHORT(us, pbuf);
 	PUTLONG(rr->ttl, pbuf);
+	len -= 8;
 	
-	switch(rr->type) {
-	case T_HINFO:
-		if ((n = serialize_hinfo(rr, pbuf, len)) == -1)
-			return -1;
-		pbuf += n;
-		len  -= n;
-		break;
-	case T_PTR:
-		if ((n = serialize_ptr(rr, pbuf, len)) == -1)
-			return -1;
-		pbuf += n;
-		len  -= n;
-		break;	
-	default:
-		PUTSHORT(rr->rdlen, pbuf);
-		if (rr->rdlen > len)
-			return -1;
-		memcpy(pbuf, &rr->rdata, rr->rdlen);
-		pbuf += rr->rdlen;
-		len  -= rr->rdlen;
-		break;
-	}
+	n = serialize_rdata(rr, pbuf, len);
+	if (n == -1 || n > len)
+		return -1;
+	pbuf += n;
+	len  -= n;
 
 	return pbuf - buf;
 }
@@ -1003,15 +1001,13 @@ serialize_question(struct mdns_question *mq, u_int8_t *buf, u_int16_t len)
 	u_int8_t *pbuf = buf;
 	ssize_t n;
 	
-	n = serialize_dname(mq->dname, pbuf, len);
+	n = serialize_dname(pbuf, len, mq->dname);
 	if (n == -1 || n > len)
 		return -1;
 	pbuf += n;
 	len  -= n;
 	if (len == 0)
 		return -1;
-	*pbuf++ = '\0';		/* null terminate dname */
-	len--;
 
 	if (len < 4) 	/* must fit type, class */
 		return -1;
