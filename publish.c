@@ -238,7 +238,7 @@ publish_fsm(int unused, short event, void *v_pub)
 		pub->sent++;
 		if (pub->sent < 3) {
 			timerclear(&tv);
-			tv.tv_sec = 1;
+			tv.tv_sec = pub->sent; /* increse delay linearly */
 			evtimer_add(&pub->timer, &tv);
 			return;
 		}
