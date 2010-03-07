@@ -66,6 +66,9 @@ main(int argc, char *argv[])
 		/* not reached */
 		break;
 	case LOOKUP:
+		errx(1, "lookup host|addr|hinfo");
+		break;
+	case LOOKUP_HOST:
 		r = mdns_api_lookup(res->hostname, &addr);
 		switch (r) {
 		case 0:

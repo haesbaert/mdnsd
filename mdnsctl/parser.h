@@ -28,6 +28,7 @@
 enum actions {
 	NONE,
 	LOOKUP,
+	LOOKUP_HOST,
 	LOOKUP_ADDR
 };
 

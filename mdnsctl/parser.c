@@ -50,21 +50,25 @@ struct token {
 
 static const struct token t_main[];
 static const struct token t_lookup[];
-static const struct token t_lookupaddr[];
 
 static const struct token t_main[] = {
 	{KEYWORD,	"lookup",	LOOKUP,		t_lookup},
-	{KEYWORD,	"lookupaddr",	LOOKUP_ADDR,	t_lookupaddr},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_lookup[] = {
-	{ HOSTNAME,	"",		NONE,		NULL},
+static const struct token t_lookup_host[] = {
+	{ HOSTNAME,     "",             NONE,           NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_lookupaddr[] = {
-	{ ADDRESS,	"",		NONE,		NULL},
+static const struct token t_lookup_addr[] = {
+	{ ADDRESS,      "",             NONE,           NULL},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_lookup[] = {
+	{ KEYWORD,	"host",		LOOKUP_HOST,	t_lookup_host},
+	{ KEYWORD,	"addr",		LOOKUP_ADDR,	t_lookup_addr},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 

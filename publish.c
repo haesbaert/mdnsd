@@ -72,7 +72,6 @@ publish_init(void)
 		    conf->myname, sizeof(conf->myname));
 		if (publish_insert(iface, rr) == -1)
 			log_debug("publish_init: can't insert rr");
-		log_debug("ptr: %s", rr->rdata.PTR);
 		
 		/* publish hinfo */
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
