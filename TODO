@@ -16,87 +16,20 @@ Setup
   
 Code
 -----------------
+  * Conflict name resolution.
+  * Name compression.
+  * Publish commands in mdnsctl.
+  * Check if the signal handling code is correct.
+  * Think of a better syntax for mdnsctl (lookup -t HINFO foo.local).
   * Write a dummy README.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
-  * Implement serialization so we can start the responder.
-  * Implement control and API protocol.
   * Hack libc resolv to resolv .local.
+  * Implement control and API protocol. DONE
+  * Implement serialization so we can start the responder. DONE
   * Implement cache expiration machine. DONE
   * Import henning's log source. DONE
   * Code getopt. DONE
   * Import kif source remove route stuff ?. DONE
   * fetch all interfaces. DONE
   * Check interface types, make sure they are multicastable. DONE
-  
-  
-** Do not take into account the following, I use it to reason.
-RIPD
------------------
-  Interfaces:
-  1) A primeira tabela é inicia por kif_init que chama fetchifs, tudo
-  ainda no processo pai, ele inicia a RB_TREE kit (kernel interfaces),
-  tudo via sysctl, ainda não tem AF_ROUTE SOCK_RAW. obs: o dado
-  guardado é kif (kif_node).
-  
-  2) Parseia o arquivo de configuração e procura pelas interfaces
-  configuradas, quando ele acha INTERFACE if procura por if em
-  kif_findname, que procura naquela RB_TREE kit, quando achou ele
-  chama conf_get_if(kif), que retorna uma struct iface que é a
-  abstração de interface do ripd, essa interface é inserida em
-  ripd_conf->iface_list, nessa estrutura já tem um monte de coisa
-  relacionada ao protocolo.
-  
-  3) kr_init, inicia toda para do kernel route
-  (socket(AF_ROUTE,SOCK_RAW,0)), basicamente tudo em kr_state, tambem
-  inicia a RB_TREE krt (kernel route), fetchtable popula a krt, via
-  sysctl, ele deleta rotas com rtm_priority RTP_RIP ?pq?.
-  Depois ele força a adição de uma rota pro MULTICAST addr do rip
-  ?pq?. Fecha registrando um evento no fd do raw socket, onde o
-  handler é kr_dispatch_msg.
-  
-Dúvidas/Notas
-----------------
-  * Preciso de um exemplo de um shared record. Quando que o nome
-  seria igual ?
-  * A "uniqness" de um record é dado pelo cache flush bit:
-   The semantics of the cache flush bit are as follows: Normally when a
-   resource record appears in the Answer Section of the DNS Response, it
-   means, "This is an assertion that this information is true." When a
-   resource record appears in the Answer Section of the DNS Response
-   with the "cache flush" bit set, it means, "This is an assertion that
-   this information is the truth and the whole truth, and anything you
-   may have heard more than a second ago regarding records of this
-   name/rrtype/rrclass is no longer valid".
-
-  * Quando em known answer supression, NÃO aprender coisas do answer
-  section, NÃO é autoritativo.
-  * Identifico um probe quando a authority section responde a question
-  section.
-  * NSEC é usado para negative responses, ninguém parece implementar.
-    
-Querier
-----------------
-  * Quando uma requisição simples chega no control socket:
-  	1 - Se está no cache, escreve resposta. Fim.
-        2 - Se não está no cache
-           - Adiciono req na lista de req pendentes.
-           - Faço um pacote com a pergunta e envio, timeout de 3
-             segundos.
-           	1 - Li uma resposta e adicionei no cache, verifico QUAIS
-                reqs pendentes são respondidas pela resposta, mando
-                resposta, Fim.
-                2 - Timeout, envio resposta de timeout. Fim.
-  * Quando uma requisição de browsing chega no control socket:
-  	- Adiciono req na lista de reqs pendentes como uma browsing req.
-  	- Envio tudo que está no cache, e marco todas as requisições
-        como active, para que o cache seja renovado.
-        - Envio um PTR, repito o envio dobrando o intervalo.
-        - Todo RR que chega deve ser checado pra ver se responde
-        alguma browsing query, se sim, deve ser marcado como ativo e
-        respondido.
-        - Todo RR que expira deve ser informado aos interessados.
-           
-                         
-                
-        	
