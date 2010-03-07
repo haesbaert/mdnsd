@@ -16,6 +16,9 @@ Setup
   
 Code
 -----------------
+  * Too much duplicated code in control.c and mdns_api.c, hinfo and
+  hostname lookup can be merged.
+  * Remove api infix in mdns_api.c, it's plain lame.
   * Conflict name resolution.
   * Name compression.
   * Publish commands in mdnsctl.
