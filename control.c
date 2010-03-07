@@ -121,7 +121,6 @@ control_lookuphinfo(struct ctl_conn *c, struct imsg *imsg)
 	rr = cache_lookup(hostname, T_HINFO, C_IN);
 	/* cache hit */
 	if (rr != NULL) {
-		log_debug("hostname %s: %s", hostname, inet_ntoa(rr->rdata.A));
 		mdnsd_imsg_compose_ctl(c, IMSG_CTL_LOOKUP_HINFO,
 		    &rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
 		return;
