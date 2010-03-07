@@ -55,23 +55,6 @@ struct kif	*kif_findname(char *);
 void		 kev_init(void);
 void		 kev_cleanup(void);
 
-/* rr_tree.c */
-struct rrt_node {
-	RB_ENTRY(rrt_node)	entry;
-	LIST_HEAD(rr_head, mdns_rr) hrr; /* head rr */
-};
-
-RB_HEAD(rrt_tree, rrt_node);
-RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_compare);
-
-void		 rrt_dump(struct rrt_tree *);
-struct mdns_rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
-    u_int16_t, u_int16_t);
-struct rr_head	*rrt_lookup_head(struct rrt_tree *, char [MAXHOSTNAMELEN],
-    u_int16_t, u_int16_t);
-struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [], u_int16_t,
-    u_int16_t);
-
 /* interface.c */
 /* interface states */
 #define IF_STA_DOWN		0x01
@@ -99,6 +82,15 @@ enum iface_type {
 	IF_TYPE_NBMA,
 	IF_TYPE_POINTOMULTIPOINT
 };
+
+/* this shouldn't be here */
+struct rrt_node {
+	RB_ENTRY(rrt_node)      entry;
+	LIST_HEAD(rr_head, mdns_rr) hrr; /* head rr */
+};
+
+RB_HEAD(rrt_tree, rrt_node);
+RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_compare);
 
 struct iface {
 	LIST_ENTRY(iface)	 entry;
@@ -138,7 +130,6 @@ struct iface *	 if_new(struct kif *);
 void		 if_set_recvbuf(int);
 void		 if_del(struct iface *);
 
-
 /* mdnsd.c */
 struct mdnsd_conf {
 	LIST_HEAD(, iface)	iface_list;
@@ -169,15 +160,10 @@ int 		 rr_set(struct mdns_rr *, char [MAXHOSTNAMELEN],
 /* TODO: make this static when done */
 int		 pkt_serialize(struct mdns_pkt *, u_int8_t *, u_int16_t);
 	
-/* cache.c */
-void		 cache_init(void);
-int		 cache_process(struct mdns_rr *);
-struct mdns_rr  *cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
-
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 
-/* query.c */
+/* mdns.c */
 enum query_type {
 	QUERY_LOOKUP,
 	QUERY_LOOKUP_ADDR,
@@ -192,17 +178,18 @@ struct query {
 	struct mdns_question	*mq;
 };
 
-void		 query_init(void);
-struct query *	 query_place(int, struct mdns_question *, struct ctl_conn *);
-int		 query_notifyin(struct mdns_rr *);
-int		 query_notifyout(struct mdns_rr *);
-int		 query_cleanbyconn(struct ctl_conn *);
-
-/* publish.c */
 void		 publish_init(void);
 void		 publish_allrr(struct iface *);
 int		 publish_insert(struct iface *, struct mdns_rr *);
 int		 publish_delete(struct iface *, struct mdns_rr *);
 struct mdns_rr * publish_lookupall(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+void		 query_init(void);
+struct query *	 query_place(int, struct mdns_question *, struct ctl_conn *);
+int		 query_notifyin(struct mdns_rr *);
+int		 query_notifyout(struct mdns_rr *);
+int		 query_cleanbyconn(struct ctl_conn *);
+void		 cache_init(void);
+int		 cache_process(struct mdns_rr *);
+struct mdns_rr  *cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
 #endif /* _MDNSD_H_ */
