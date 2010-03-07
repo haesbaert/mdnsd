@@ -52,6 +52,7 @@ main(int argc, char *argv[])
 {
 	int			 r, done = 0;
 	struct in_addr		 addr;
+	struct hinfo		 hi;
 	struct parse_result	*res;
 	char			 hostname[MAXHOSTNAMELEN];
 	/* parse options */
@@ -101,6 +102,24 @@ main(int argc, char *argv[])
 			break;
 		}
 		break;
+	case LOOKUP_HINFO:
+		r = mdns_api_lookup_hinfo(res->hostname, &hi);
+		switch (r) {
+		case 0:
+			printf("Hinfo not found.\n");
+			exit(1); /* NOTREACHED */
+			break;
+		case 1:
+			printf("Cpu: %s\n", hi.cpu);
+			printf("Os: %s\n",  hi.os);
+			exit(0);
+			break;	/* NOTREACHED */
+		default:
+			err(1, "mdns_api_lookup_hinfo");
+			break;
+		}
+		break;
+
 	}
 	
 	return (0);		/* NOTREACHED */

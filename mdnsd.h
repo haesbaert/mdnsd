@@ -181,6 +181,7 @@ TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 enum query_type {
 	QUERY_LOOKUP,
 	QUERY_LOOKUP_ADDR,
+	QUERY_LOOKUP_HINFO,
 	QUERY_BROWSING,
 };
 

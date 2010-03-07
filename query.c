@@ -74,6 +74,11 @@ query_notifyin(struct mdns_rr *rr)
 			    mdnsd_imsg_compose_ctl(c, IMSG_CTL_LOOKUP_ADDR,
 				&rr->rdata.PTR, sizeof(rr->rdata.PTR));
 			break;
+		case QUERY_LOOKUP_HINFO:
+			LIST_FOREACH(c, &q->ctl_list, qentry)
+			    mdnsd_imsg_compose_ctl(c, IMSG_CTL_LOOKUP_HINFO,
+				&rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
+			break;
 		case QUERY_BROWSING:
 			rr->active = 1;
 			/* TODO: fill me with love */

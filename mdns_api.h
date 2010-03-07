@@ -28,5 +28,6 @@ struct mdns_api_state {
 
 int	mdns_api_lookup(const char *, struct in_addr *);
 int	mdns_api_lookup_addr(struct in_addr *, char *, size_t);
+int	mdns_api_lookup_hinfo(const char *, struct hinfo *);
 
 #endif	/* _MDNS_API_H_ */

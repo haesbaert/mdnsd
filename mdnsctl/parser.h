@@ -29,7 +29,8 @@ enum actions {
 	NONE,
 	LOOKUP,
 	LOOKUP_HOST,
-	LOOKUP_ADDR
+	LOOKUP_ADDR,
+	LOOKUP_HINFO,
 };
 
 struct parse_result {

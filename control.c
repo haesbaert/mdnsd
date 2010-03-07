@@ -40,7 +40,7 @@ struct ctl_conn	*control_connbypid(pid_t);
 void		 control_close(int);
 static void	 control_lookup(struct ctl_conn *, struct imsg *);
 static void	 control_lookupaddr(struct ctl_conn *, struct imsg *);
-
+static void	 control_lookuphinfo(struct ctl_conn *, struct imsg *);
 
 static void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
@@ -104,6 +104,37 @@ control_lookupaddr(struct ctl_conn *c, struct imsg *imsg)
 	if (pkt_send_allif(&pkt) == -1)
 		log_debug("can't send packet to all interfaces");
 	c->q = query_place(QUERY_LOOKUP_ADDR, mq, c);
+}
+
+static void
+control_lookuphinfo(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct mdns_pkt		 pkt;
+	struct mdns_rr		*rr;
+	struct mdns_question 	*mq;
+	char			 hostname[MAXHOSTNAMELEN];
+	
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(hostname))
+		return;
+
+	memcpy(hostname, imsg->data, sizeof(hostname));
+	rr = cache_lookup(hostname, T_HINFO, C_IN);
+	/* cache hit */
+	if (rr != NULL) {
+		log_debug("hostname %s: %s", hostname, inet_ntoa(rr->rdata.A));
+		mdnsd_imsg_compose_ctl(c, IMSG_CTL_LOOKUP_HINFO,
+		    &rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
+		return;
+	}
+	/* cache miss */
+	if ((mq = calloc(1, sizeof(*mq))) == NULL)
+		fatal("calloc");
+	question_set(mq, hostname, T_HINFO, C_IN, 0, 0);
+	pkt_init(&pkt);
+	pkt_add_question(&pkt, mq);
+	if (pkt_send_allif(&pkt) == -1)
+		log_debug("can't send packet to all interfaces");
+	c->q = query_place(QUERY_LOOKUP_HINFO, mq, c);
 }
 
 int
@@ -290,6 +321,9 @@ control_dispatch_imsg(int fd, short event, void *bula)
 			break;
 		case IMSG_CTL_LOOKUP_ADDR:
 			control_lookupaddr(c, &imsg);
+			break;
+		case IMSG_CTL_LOOKUP_HINFO:
+			control_lookuphinfo(c, &imsg);
 			break;
 		default:
 			log_debug("control_dispatch_imsg: "

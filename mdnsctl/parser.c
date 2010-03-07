@@ -69,6 +69,7 @@ static const struct token t_lookup_addr[] = {
 static const struct token t_lookup[] = {
 	{ KEYWORD,	"host",		LOOKUP_HOST,	t_lookup_host},
 	{ KEYWORD,	"addr",		LOOKUP_ADDR,	t_lookup_addr},
+	{ KEYWORD,	"hinfo",	LOOKUP_HINFO,	t_lookup_host},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
