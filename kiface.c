@@ -265,7 +265,6 @@ kev_dispatch_msg(int fd, short event, void *bula)
 		switch (rtm->rtm_type) {
 		case RTM_IFINFO:
 			log_debug("RTM_IFINFO");
-/* 			kev_ifinfo(&ifm.ifm_data, iface); */
 			if (LINK_STATE_IS_UP(ifm.ifm_data.ifi_link_state))
 				if_fsm(iface, IF_EVT_UP);
 			else

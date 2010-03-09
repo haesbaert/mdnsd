@@ -53,8 +53,7 @@ static int	pkt_parse(u_int8_t *, uint16_t, struct mdns_pkt *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct mdns_pkt *);
 static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
-static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_pkt *,
-    struct mdns_rr *);
+static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_rr *);
 static int	pkt_process(struct mdns_pkt *);
 static int	pkt_tryanswerq(struct mdns_pkt *);
 
@@ -389,7 +388,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	for (i = 0; i < pkt->ancount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
+		if (pkt_parse_rr(&buf, &len, rr) == -1) {
 			log_debug("Can't parse RR");
 			free(rr);
 			return -1;
@@ -399,7 +398,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	for (i = 0; i < pkt->nscount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
+		if (pkt_parse_rr(&buf, &len, rr) == -1) {
 			log_debug("Can't parse RR");
 			free(rr);
 			return -1;
@@ -409,7 +408,7 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 	for (i = 0; i < pkt->arcount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-		if (pkt_parse_rr(&buf, &len, pkt, rr) == -1) {
+		if (pkt_parse_rr(&buf, &len, rr) == -1) {
 			log_debug("Can't parse RR");
 			free(rr);
 			return -1;
@@ -570,8 +569,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 
 
 static int
-pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt,
-    struct mdns_rr *rr)
+pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_rr *rr)
 {
 	u_int16_t us;
 	ssize_t n;

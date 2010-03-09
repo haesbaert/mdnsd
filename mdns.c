@@ -26,7 +26,7 @@
 #include "mdnsd.h"
 #include "log.h"
 
-#define RANDOM_PROBETIME (random() % 250000)
+#define RANDOM_PROBETIME arc4random_uniform((u_int32_t) 250000)
 
 static void		 publish_fsm(int, short, void *_pub);
 static int		 cache_insert(struct mdns_rr *);
@@ -37,9 +37,8 @@ static int		 rrt_compare(struct rrt_node *, struct rrt_node *);
 void			 rrt_dump(struct rrt_tree *);
 static struct mdns_rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
     u_int16_t, u_int16_t);
-static struct rr_head	*rrt_lookup_head(struct rrt_tree *, char
-[MAXHOSTNAMELEN],
-    u_int16_t, u_int16_t);
+static struct rr_head	*rrt_lookup_head(struct rrt_tree *,
+    char [MAXHOSTNAMELEN],  u_int16_t, u_int16_t);
 static struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [],
     u_int16_t, u_int16_t);
 
