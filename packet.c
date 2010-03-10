@@ -190,7 +190,7 @@ pkt_send_allif(struct mdns_pkt *pkt)
 {
 	struct sockaddr_in	 dst;
 	struct iface		*iface = NULL;
-	u_int8_t		 buf[MDNS_MAX_PACKET];
+	u_int8_t		*buf;
 	ssize_t			 n;
 	
 	inet_aton(ALL_MDNS_DEVICES, &dst.sin_addr);
@@ -199,11 +199,17 @@ pkt_send_allif(struct mdns_pkt *pkt)
 	dst.sin_len    = sizeof(struct sockaddr_in);
 
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		bzero(buf, sizeof(buf));
-		if ((n = pkt_serialize(pkt, buf, sizeof(buf))) == -1)
+		buf = calloc(1, (size_t) iface->mtu);
+		if ((n = pkt_serialize(pkt, buf, (u_int16_t) iface->mtu))
+		    == -1) {
+			free(buf);
 			return -1;
-		if (send_packet(iface, buf, n, &dst) == -1)
+		}
+		if (send_packet(iface, buf, n, &dst) == -1) {
+			free(buf);
 			return -1;
+		}
+		free(buf);
 	}
 	
 	return 0;
