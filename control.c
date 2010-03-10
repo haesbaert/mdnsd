@@ -92,7 +92,7 @@ control_lookupaddr(struct ctl_conn *c, struct imsg *imsg)
 	if (rr != NULL) {
 		log_debug("PTR name %s: %s", rr->rdata.PTR, inet_ntoa(rr->rdata.A));
 		mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
-		    &rr->rdata.A, sizeof(rr->rdata.A));
+		    &rr->rdata.PTR, sizeof(rr->rdata.PTR));
 		return;
 	}
 	/* cache miss */
