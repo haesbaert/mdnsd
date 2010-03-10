@@ -39,10 +39,9 @@
 #include "log.h"
 
 extern struct mdnsd_conf *conf;
-/* struct mdnsd_conf *conf; */
 
 /* used in name compression */
-struct {
+static struct {
 	u_int8_t *start;
 	u_int16_t len;
 } pktcomp;
