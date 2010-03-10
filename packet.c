@@ -199,11 +199,11 @@ pkt_send_allif(struct mdns_pkt *pkt)
 	dst.sin_len    = sizeof(struct sockaddr_in);
 
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
-			bzero(buf, sizeof(buf));
-			if ((n = pkt_serialize(pkt, buf, sizeof(buf))) == -1)
-				return -1;
-			if (send_packet(iface, buf, n, &dst) == -1)
-				return -1;
+		bzero(buf, sizeof(buf));
+		if ((n = pkt_serialize(pkt, buf, sizeof(buf))) == -1)
+			return -1;
+		if (send_packet(iface, buf, n, &dst) == -1)
+			return -1;
 	}
 	
 	return 0;
