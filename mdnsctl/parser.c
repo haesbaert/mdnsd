@@ -21,6 +21,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <err.h>
 #include <errno.h>
 #include <limits.h>
@@ -38,7 +39,6 @@ enum token_type {
 	KEYWORD,
 	ADDRESS,
 	HOSTNAME,
-	FLAG,
 };
 
 struct token {
@@ -49,29 +49,26 @@ struct token {
 };
 
 static const struct token t_main[];
-static const struct token t_lookup[];
+static const struct token t_lkup[];
+static const struct token t_lkup_hinfo[];
 
 static const struct token t_main[] = {
-	{KEYWORD,	"lookup",	LOOKUP,		t_lookup},
+	{KEYWORD,	"lkup",		NONE,		t_lkup},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_lookup_host[] = {
-	{ HOSTNAME,     "",             NONE,           NULL},
+static const struct token t_lkup[] = {
+	{ ADDRESS,	"",		LOOKUP_ADDR,	NULL},
+	{ HOSTNAME,     "",             LOOKUP_HOST,    NULL},
+	{ KEYWORD,	"-h",		NONE,		t_lkup_hinfo},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_lookup_addr[] = {
-	{ ADDRESS,      "",             NONE,           NULL},
-	{ ENDTOKEN,	"",		NONE,		NULL}
+static const struct token t_lkup_hinfo[] = {
+	{HOSTNAME,	"",		LOOKUP_HINFO,	NULL},
+	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_lookup[] = {
-	{ KEYWORD,	"host",		LOOKUP_HOST,	t_lookup_host},
-	{ KEYWORD,	"addr",		LOOKUP_ADDR,	t_lookup_addr},
-	{ KEYWORD,	"hinfo",	LOOKUP_HINFO,	t_lookup_host},
-	{ ENDTOKEN,	"",		NONE,		NULL}
-};
 
 static struct parse_result	res;
 
@@ -132,13 +129,6 @@ match_token(const char *word, const struct token *table)
 					res.action = t->value;
 			}
 			break;
-		case FLAG:
-			if (word != NULL && strcmp(word, table[i].keyword) == 0) {
-				match++;
-				t = &table[i];
-				res.flags |= t->value;
-			}
-			break;
 		case ADDRESS:
 			if (parse_addr(word, &res.addr)) {
 				match++;
@@ -184,7 +174,6 @@ show_valid_args(const struct token *table)
 			fprintf(stderr, "  <cr>\n");
 			break;
 		case KEYWORD:
-		case FLAG:
 			fprintf(stderr, "  %s\n", table[i].keyword);
 			break;
 		case ADDRESS:
@@ -203,13 +192,12 @@ int
 parse_addr(const char *word, struct in_addr *addr)
 {
 	struct in_addr	ina;
-
-	if (word == NULL)
+	
+	if (word == NULL || !isdigit(*word))
 		return (0);
 
 	bzero(addr, sizeof(struct in_addr));
 	bzero(&ina, sizeof(ina));
-
 	if (inet_pton(AF_INET, word, &ina)) {
 		addr->s_addr = ina.s_addr;
 		return (1);
@@ -221,14 +209,13 @@ parse_addr(const char *word, struct in_addr *addr)
 int
 parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN])
 {
-	if (word == NULL)
+	if (word == NULL || !isalpha(*word))
 		return (0);
 	
 	if (strcmp(&word[strlen(word) - 6], ".local") != 0) {
 		fprintf(stderr, "Invalid domain, must be .local\n");
 		return (0);
 	}
-	
 	strlcpy(hostname, word, MAXHOSTNAMELEN);
 		
 	return (1);
