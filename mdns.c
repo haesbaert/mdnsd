@@ -29,13 +29,13 @@
 #define RANDOM_PROBETIME arc4random_uniform((u_int32_t) 250000)
 
 static void		 publish_fsm(int, short, void *_pub);
-static int		 cache_insert(struct mdns_rr *);
-static int		 cache_delete(struct mdns_rr *);
-static void		 cache_schedrev(struct mdns_rr *);
+static int		 cache_insert(struct rr *);
+static int		 cache_delete(struct rr *);
+static void		 cache_schedrev(struct rr *);
 static void		 cache_rev(int, short, void *);
 static int		 rrt_compare(struct rrt_node *, struct rrt_node *);
 void			 rrt_dump(struct rrt_tree *);
-static struct mdns_rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
+static struct rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
     u_int16_t, u_int16_t);
 static struct rr_head	*rrt_lookup_head(struct rrt_tree *,
     char [MAXHOSTNAMELEN],  u_int16_t, u_int16_t);
@@ -50,7 +50,7 @@ enum publish_state {
 };
 
 struct publish {
-	struct mdns_pkt	 pkt;
+	struct pkt	 pkt;
 	struct event	 timer;	/* used in probe and announce */
 	struct iface	*iface;
 	int		 state;	/* enum publish state */
@@ -68,14 +68,14 @@ void
 publish_init(void)
 {
 	struct iface	*iface;
-	struct mdns_rr	*rr;
+	struct rr	*rr;
 	char		 revaddr[MAXHOSTNAMELEN];
 	
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		/* myname */
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-		rr_set(rr, conf->myname, T_A, C_IN, MDNS_TTL_HNAME, 1,
+		rr_set(rr, conf->myname, T_A, C_IN, TTL_HNAME, 1,
 		    &iface->addr, sizeof(iface->addr));
 		if (publish_insert(iface, rr) == -1)
 			log_debug("publish_init: can't insert rr");
@@ -84,7 +84,7 @@ publish_init(void)
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		reversstr(revaddr, &iface->addr);
-		rr_set(rr, revaddr, T_PTR, C_IN, MDNS_TTL_HNAME, 1,
+		rr_set(rr, revaddr, T_PTR, C_IN, TTL_HNAME, 1,
 		    conf->myname, sizeof(conf->myname));
 		if (publish_insert(iface, rr) == -1)
 			log_debug("publish_init: can't insert rr");
@@ -92,7 +92,7 @@ publish_init(void)
 		/* publish hinfo */
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
-		rr_set(rr, conf->myname, T_HINFO, C_IN, MDNS_TTL_HNAME, 1,
+		rr_set(rr, conf->myname, T_HINFO, C_IN, TTL_HNAME, 1,
 		    &conf->hi, sizeof(conf->hi));
 		if (publish_insert(iface, rr) == -1)
 			log_debug("publish_init: can't insert rr");
@@ -102,8 +102,8 @@ publish_init(void)
 void
 publish_allrr(struct iface *iface)
 {
-	struct mdns_question	*mq;
-	struct mdns_rr		*rr, *rrcopy;
+	struct question	*mq;
+	struct rr		*rr, *rrcopy;
 	struct publish		*pub;
 	struct rrt_node		*n;
 	struct timeval		 tv;
@@ -121,9 +121,9 @@ publish_allrr(struct iface *iface)
 	RB_FOREACH(n, rrt_tree, &iface->rrt) {
 		/* now go through all our rr and add to the same packet */
 		LIST_FOREACH(rr, &n->hrr, entry) {
-			if ((rrcopy = calloc(1, sizeof(struct mdns_rr))) == NULL)
+			if ((rrcopy = calloc(1, sizeof(struct rr))) == NULL)
 				fatal("calloc");
-			memcpy(rrcopy, rr, sizeof(struct mdns_rr));
+			memcpy(rrcopy, rr, sizeof(struct rr));
 			pkt_add_nsrr(&pub->pkt, rrcopy);
 		}
 	}
@@ -135,9 +135,9 @@ publish_allrr(struct iface *iface)
 }
 
 int
-publish_delete(struct iface *iface, struct mdns_rr *rr)
+publish_delete(struct iface *iface, struct rr *rr)
 {
-	struct mdns_rr	*rraux, *next;
+	struct rr	*rraux, *next;
 	struct rrt_node	*s;
 	int		 n = 0;
 	
@@ -167,11 +167,11 @@ publish_delete(struct iface *iface, struct mdns_rr *rr)
 }
 
 int
-publish_insert(struct iface *iface, struct mdns_rr *rr)
+publish_insert(struct iface *iface, struct rr *rr)
 {
 	struct rr_head	*hrr;
 	struct rrt_node *n;
-	struct mdns_rr	*rraux;
+	struct rr	*rraux;
 	
 	log_debug("publish_insert: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
@@ -206,11 +206,11 @@ publish_insert(struct iface *iface, struct mdns_rr *rr)
 	return 0;
 }
 
-struct mdns_rr *
+struct rr *
 publish_lookupall(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct iface	*iface;
-	struct mdns_rr	*rr;
+	struct rr	*rr;
 	
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		rr = rrt_lookup(&iface->rrt, dname, type, class);
@@ -226,8 +226,8 @@ publish_fsm(int unused, short event, void *v_pub)
 {
 	struct publish		*pub = v_pub;
 	struct timeval		 tv;
-	struct mdns_rr		*rr;
-	struct mdns_question	*mq;
+	struct rr		*rr;
+	struct question	*mq;
 
 	switch (pub->state) {
 	case PUB_INITIAL:	
@@ -314,7 +314,7 @@ query_init(void)
 }
 
 struct query *
-query_place(int type, struct mdns_question *mq, struct ctl_conn *c)
+query_place(int type, struct question *mq, struct ctl_conn *c)
 {
 	struct query	*q;
 
@@ -339,7 +339,7 @@ query_place(int type, struct mdns_question *mq, struct ctl_conn *c)
 
 /* notify about this new rr to all interested peers */
 int
-query_notifyin(struct mdns_rr *rr)
+query_notifyin(struct rr *rr)
 {
 	struct query	*q;
 	struct ctl_conn *c;
@@ -378,7 +378,7 @@ query_notifyin(struct mdns_rr *rr)
 }
 
 int
-query_notifyout(struct mdns_rr *rr)
+query_notifyout(struct rr *rr)
 {
 	struct query	*q;
 	int		 match = 0;
@@ -439,7 +439,7 @@ cache_init(void)
 }
 
 int
-cache_process(struct mdns_rr *rr)
+cache_process(struct rr *rr)
 {
 
 	evtimer_set(&rr->rev_timer, cache_rev, rr);
@@ -451,18 +451,18 @@ cache_process(struct mdns_rr *rr)
 	return 0;
 }
 	
-struct mdns_rr *
+struct rr *
 cache_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	return rrt_lookup(&rrt_cache, dname, type, class);
 }
 
 static int
-cache_insert(struct mdns_rr *rr)
+cache_insert(struct rr *rr)
 {
 	struct rr_head	*hrr;
 	struct rrt_node *n;
-	struct mdns_rr	*rraux;
+	struct rr	*rraux;
 	
 	log_debug("cache_insert: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
@@ -517,9 +517,9 @@ cache_insert(struct mdns_rr *rr)
 }
 
 static int
-cache_delete(struct mdns_rr *rr)
+cache_delete(struct rr *rr)
 {
-	struct mdns_rr	*rraux, *next;
+	struct rr	*rraux, *next;
 	struct rrt_node	*s;
 	int		 n = 0;
 	
@@ -551,7 +551,7 @@ cache_delete(struct mdns_rr *rr)
 }
 
 static void
-cache_schedrev(struct mdns_rr *rr)
+cache_schedrev(struct rr *rr)
 {
 	struct timeval tv;
 	
@@ -584,7 +584,7 @@ cache_schedrev(struct mdns_rr *rr)
 static void
 cache_rev(int unused, short event, void *v_rr)
 {
-	struct mdns_rr *rr = v_rr;
+	struct rr *rr = v_rr;
 	
 	log_debug("cache_rev: timeout rr type: %s, name: %s (%u)",
 	    rr_type_name(rr->type), rr->dname, rr->ttl);
@@ -601,7 +601,7 @@ cache_rev(int unused, short event, void *v_rr)
 void
 rrt_dump(struct rrt_tree *rrt)
 {
-	struct mdns_rr	*rr;
+	struct rr	*rr;
 	struct rrt_node *n;
 
 	log_debug("rrt_dump");
@@ -625,7 +625,7 @@ rrt_lookup_head(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN],
 	return &tmp->hrr;
 }
 
-static struct mdns_rr *
+static struct rr *
 rrt_lookup(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct rr_head	*hrr;
@@ -640,7 +640,7 @@ static struct rrt_node *
 rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct rrt_node	s, *tmp;
-	struct mdns_rr	rr;
+	struct rr	rr;
 	
 	bzero(&s, sizeof(s));
 	bzero(&rr, sizeof(rr));
@@ -661,7 +661,7 @@ rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type
 static int
 rrt_compare(struct rrt_node *a, struct rrt_node *b)
 {
-	struct mdns_rr *rra, *rrb;
+	struct rr *rra, *rrb;
 	
 	rra = LIST_FIRST(&a->hrr);
 	rrb = LIST_FIRST(&b->hrr);

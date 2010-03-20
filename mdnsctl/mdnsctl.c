@@ -34,7 +34,7 @@
 
 #include "mdnsd.h"
 #include "parser.h"
-#include "mdns_api.h"
+#include "mdns.h"
 
 __dead void	 usage(void);
 
@@ -67,7 +67,7 @@ main(int argc, char *argv[])
 		/* not reached */
 		break;
 	case LOOKUP_HOST:
-		r = mdns_api_lookup(res->hostname, &addr);
+		r = mdns_lkup(res->hostname, &addr);
 		switch (r) {
 		case 0:
 			printf("Address not found.\n");
@@ -78,12 +78,12 @@ main(int argc, char *argv[])
 			exit(0);
 			break;	/* NOTREACHED */
 		default:
-			err(1, "mdns_api_lookup");
+			err(1, "mdns_lkup");
 			break;
 		}
 		break;
 	case LOOKUP_ADDR:
-		r = mdns_api_lookup_addr(&res->addr, hostname,
+		r = mdns_lkup_addr(&res->addr, hostname,
 		    sizeof(hostname));
 		switch (r) {
 		case 0:
@@ -95,12 +95,12 @@ main(int argc, char *argv[])
 			exit(0);
 			break;	/* NOTREACHED */
 		default:
-			err(1, "mdns_api_lookup_addr");
+			err(1, "mdns_lkup_addr");
 			break;
 		}
 		break;
 	case LOOKUP_HINFO:
-		r = mdns_api_lookup_hinfo(res->hostname, &hi);
+		r = mdns_lkup_hinfo(res->hostname, &hi);
 		switch (r) {
 		case 0:
 			printf("Hinfo not found.\n");
@@ -112,7 +112,7 @@ main(int argc, char *argv[])
 			exit(0);
 			break;	/* NOTREACHED */
 		default:
-			err(1, "mdns_api_lookup_hinfo");
+			err(1, "mdns_lkup_hinfo");
 			break;
 		}
 		break;

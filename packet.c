@@ -48,27 +48,27 @@ static struct {
 
 static struct iface	*find_iface(unsigned int, struct in_addr);
 
-static int	pkt_parse(u_int8_t *, uint16_t, struct mdns_pkt *);
-static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct mdns_pkt *);
+static int	pkt_parse(u_int8_t *, uint16_t, struct pkt *);
+static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
-static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct mdns_pkt *);
-static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct mdns_rr *);
-static int	pkt_process(struct mdns_pkt *);
-static int	pkt_tryanswerq(struct mdns_pkt *);
-
-static ssize_t	serialize_rr(struct mdns_rr *, u_int8_t *, u_int16_t);
-static ssize_t	serialize_question(struct mdns_question *, u_int8_t *,
+static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
+static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
+static int	pkt_process(struct pkt *);
+static int	pkt_tryanswerq(struct pkt *);
+static int	pkt_serialize(struct pkt *, u_int8_t *, u_int16_t);
+static ssize_t	serialize_rr(struct rr *, u_int8_t *, u_int16_t);
+static ssize_t	serialize_question(struct question *, u_int8_t *,
     u_int16_t);
 static ssize_t	serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
-static ssize_t	serialize_rdata(struct mdns_rr *, u_int8_t *, u_int16_t);
-static int	rr_parse_hinfo(struct mdns_rr *, u_int8_t *);
-static int	rr_parse_a(struct mdns_rr *, u_int8_t *);
-static int	rr_parse_txt(struct mdns_rr *, u_int8_t *);
-static int	rr_parse_srv(struct mdns_rr *, u_int8_t *, uint16_t);
+static ssize_t	serialize_rdata(struct rr *, u_int8_t *, u_int16_t);
+static int	rr_parse_hinfo(struct rr *, u_int8_t *);
+static int	rr_parse_a(struct rr *, u_int8_t *);
+static int	rr_parse_txt(struct rr *, u_int8_t *);
+static int	rr_parse_srv(struct rr *, u_int8_t *, uint16_t);
 static int	rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 /* util */
 ssize_t
-charstr(char dest[MDNS_MAX_CHARSTR], u_int8_t *buf, uint16_t len)
+charstr(char dest[MAX_CHARSTR], u_int8_t *buf, uint16_t len)
 {
 	u_int8_t tocpy;
 	
@@ -121,8 +121,8 @@ recv_packet(int fd, short event, void *bula)
 	struct cmsghdr		*cmsg;
 	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
-	struct mdns_pkt		 pkt;
-	static u_int8_t		 buf[MDNS_MAX_PACKET];
+	struct pkt		 pkt;
+	static u_int8_t		 buf[MAX_PACKET];
 	ssize_t			 r;
 	u_int16_t		 len, srcport;
 /* 	static int pktnum = 0; */
@@ -134,7 +134,7 @@ recv_packet(int fd, short event, void *bula)
 	bzero(buf, sizeof(buf));
 
 	iov.iov_base = buf;
-	iov.iov_len = MDNS_MAX_PACKET;
+	iov.iov_len = MAX_PACKET;
 	msg.msg_name = &src;
 	msg.msg_namelen = sizeof(src);
 	msg.msg_iov = &iov;
@@ -185,7 +185,7 @@ recv_packet(int fd, short event, void *bula)
 }
 
 int
-pkt_send_allif(struct mdns_pkt *pkt)
+pkt_send_allif(struct pkt *pkt)
 {
 	struct sockaddr_in	 dst;
 	struct iface		*iface = NULL;
@@ -215,7 +215,7 @@ pkt_send_allif(struct mdns_pkt *pkt)
 }
 
 void
-pkt_init(struct mdns_pkt *pkt)
+pkt_init(struct pkt *pkt)
 {
 	bzero(pkt, sizeof(*pkt));
 	LIST_INIT(&pkt->qlist);
@@ -226,7 +226,7 @@ pkt_init(struct mdns_pkt *pkt)
 
 /* packet building */
 int
-pkt_add_question(struct mdns_pkt *pkt, struct mdns_question *mq)
+pkt_add_question(struct pkt *pkt, struct question *mq)
 {
 	/* can't have questions and answers in the same packet */
 	if (pkt->ancount || pkt->nscount || pkt->arcount)
@@ -239,7 +239,7 @@ pkt_add_question(struct mdns_pkt *pkt, struct mdns_question *mq)
 }
 
 int
-pkt_add_anrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
+pkt_add_anrr(struct pkt *pkt, struct rr *rr)
 {
 	if (pkt->qdcount)
 		return -1;
@@ -251,7 +251,7 @@ pkt_add_anrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
 }
 
 int
-pkt_add_nsrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
+pkt_add_nsrr(struct pkt *pkt, struct rr *rr)
 {
 	LIST_INSERT_HEAD(&pkt->nslist, rr, entry);
 	pkt->nscount++;
@@ -261,7 +261,7 @@ pkt_add_nsrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
 }
 
 int
-pkt_add_arrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
+pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 {
 	if (pkt->qdcount)
 		return -1;
@@ -273,7 +273,7 @@ pkt_add_arrr(struct mdns_pkt *pkt, struct mdns_rr *rr)
 }
 
 int
-question_set(struct mdns_question *mq, char dname[MAXHOSTNAMELEN],
+question_set(struct question *mq, char dname[MAXHOSTNAMELEN],
     u_int16_t qtype, u_int16_t qclass, int uniresp, int probe)
 {
 	bzero(mq, sizeof(*mq));
@@ -290,7 +290,7 @@ question_set(struct mdns_question *mq, char dname[MAXHOSTNAMELEN],
 }
 
 int
-rr_set(struct mdns_rr *rr, char dname[MAXHOSTNAMELEN],
+rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
     u_int16_t type, u_int16_t class, u_int32_t ttl,
     int cacheflush, void *rdata, size_t rdlen)
 {
@@ -335,11 +335,11 @@ find_iface(unsigned int ifindex, struct in_addr src)
 
 /* TODO: insert all sections at end, don't use LIST_INSERT_HEAD */
 static int
-pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
+pkt_parse(u_int8_t *buf, uint16_t len, struct pkt *pkt)
 {
 	u_int16_t		 i;
-	struct mdns_question	*mq;
-	struct mdns_rr		*rr;
+	struct question	*mq;
+	struct rr		*rr;
 	
 	pkt_init(pkt);
 	pktcomp.start = buf;
@@ -430,13 +430,13 @@ pkt_parse(u_int8_t *buf, uint16_t len, struct mdns_pkt *pkt)
 }
 
 static int
-pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
+pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 {
 	HEADER *qh;
 	u_int8_t *buf = *pbuf;
 	
 	/* MDNS header sanity check */
-	if (*len < MDNS_HDR_LEN) {
+	if (*len < HDR_LEN) {
 		log_debug("recv_packet: bad packet size %u", len);
 		return -1;
 	}
@@ -450,21 +450,21 @@ pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
 	pkt->nscount = ntohs(qh->nscount);
 	pkt->arcount = ntohs(qh->arcount);
 	
-	*len -= MDNS_HDR_LEN;
-	*pbuf += MDNS_HDR_LEN;
+	*len -= HDR_LEN;
+	*pbuf += HDR_LEN;
 	
 	return 0;
 }
 
 static int
-pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct mdns_pkt *pkt)
+pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 {
 	u_int16_t us;
-	struct mdns_question *mq;
+	struct question *mq;
 	ssize_t n;
 	
 	/* MDNS question sanity check */
-	if (*len < MDNS_MINQRY_LEN) {
+	if (*len < MINQRY_LEN) {
 		log_debug("pkt_parse_question: bad query packet size %u", *len);
 		return -1;
 	}
@@ -515,7 +515,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	/* be extra safe */
 	bzero(dname, MAXHOSTNAMELEN);
 	
-	for (i = 0; i < MDNS_MAX_LABELS; i++) {
+	for (i = 0; i < MAX_LABELS; i++) {
 		/* check if head is a pointer */
 		if (*buf & 0xc0) {
 			u_int16_t us;
@@ -559,7 +559,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 			len -= lablen;
 	}
 	
-	if (i == MDNS_MAX_LABELS) {
+	if (i == MAX_LABELS) {
 		log_debug("max labels reached");
 		return -1;
 	}
@@ -574,7 +574,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 
 
 static int
-pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_rr *rr)
+pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 {
 	u_int16_t us;
 	ssize_t n;
@@ -667,10 +667,10 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct mdns_rr *rr)
 }
 
 static int
-pkt_process(struct mdns_pkt *pkt)
+pkt_process(struct pkt *pkt)
 {
-	struct mdns_rr *rr;
-	struct mdns_question *q;
+	struct rr *rr;
+	struct question *q;
 	
 	/* mark all probe questions, so we don't try to answer them below */
 	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
@@ -699,11 +699,11 @@ pkt_process(struct mdns_pkt *pkt)
 }
 
 static int
-pkt_tryanswerq(struct mdns_pkt *pkt)
+pkt_tryanswerq(struct pkt *pkt)
 {
-	struct mdns_question	*q;
-	struct mdns_rr		*rr;
-	struct mdns_pkt		 sendpkt;
+	struct question	*q;
+	struct rr		*rr;
+	struct pkt		 sendpkt;
 	
 	pkt_init(&sendpkt);
 	/* arghhh the following is too fucking ugly, please correct me */
@@ -733,7 +733,7 @@ pkt_tryanswerq(struct mdns_pkt *pkt)
 }
 
 static int
-rr_parse_hinfo(struct mdns_rr *rr, u_int8_t *buf)
+rr_parse_hinfo(struct rr *rr, u_int8_t *buf)
 {
 	ssize_t n;
 	
@@ -746,7 +746,7 @@ rr_parse_hinfo(struct mdns_rr *rr, u_int8_t *buf)
 }
 	
 static int
-rr_parse_a(struct mdns_rr *rr, u_int8_t *buf)
+rr_parse_a(struct rr *rr, u_int8_t *buf)
 {
 	u_int32_t ul;
 	
@@ -763,7 +763,7 @@ rr_parse_a(struct mdns_rr *rr, u_int8_t *buf)
 }
 
 static int
-rr_parse_txt(struct mdns_rr *rr, u_int8_t *buf)
+rr_parse_txt(struct rr *rr, u_int8_t *buf)
 {
 	ssize_t n;
 	
@@ -774,7 +774,7 @@ rr_parse_txt(struct mdns_rr *rr, u_int8_t *buf)
 }
 
 static int
-rr_parse_srv(struct mdns_rr *rr, u_int8_t *buf, uint16_t len)
+rr_parse_srv(struct rr *rr, u_int8_t *buf, uint16_t len)
 {
 	GETSHORT(rr->rdata.SRV.priority, buf);
 	len -= INT16SZ;
@@ -800,18 +800,17 @@ rr_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	return 0;
 }
 
-/* TODO: make this static when done */
-int
-pkt_serialize(struct mdns_pkt *pkt, u_int8_t *buf, u_int16_t len)
+static int
+pkt_serialize(struct pkt *pkt, u_int8_t *buf, u_int16_t len)
 {
 	u_int16_t		 aux  = 0;
 	u_int8_t		*pbuf = buf;
-	struct mdns_question	*mq;
-	struct mdns_rr		*rr;
+	struct question	*mq;
+	struct rr		*rr;
 	ssize_t			 n;
 	
-	if (len < MDNS_HDR_LEN) {
-		log_debug("pkt_serialize: len < MDNS_HDR_LEN");
+	if (len < HDR_LEN) {
+		log_debug("pkt_serialize: len < HDR_LEN");
 		return -1;
 	}
 	
@@ -896,7 +895,7 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 }
 
 static ssize_t
-serialize_rdata(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
+serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t	*pbuf = buf;
 	ssize_t		 n;
@@ -965,7 +964,7 @@ serialize_rdata(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 }
 
 static ssize_t
-serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
+serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t	*pbuf = buf;
 	u_int16_t	 us   = 0;
@@ -999,7 +998,7 @@ serialize_rr(struct mdns_rr *rr, u_int8_t *buf, u_int16_t len)
 }
 
 static ssize_t
-serialize_question(struct mdns_question *mq, u_int8_t *buf, u_int16_t len)
+serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t *pbuf = buf;
 	ssize_t n;

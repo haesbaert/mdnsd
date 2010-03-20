@@ -23,18 +23,25 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "mdns_api.h"
+#include "mdns.h"
+#include "imsg.h"	/* XXX this shouldn't be here */
 
-static int	mdns_api_connect(struct mdns_api_state *);
-static void	mdns_api_finish(struct mdns_api_state *);
-static int	mdns_api_read_imsg(struct mdns_api_state *, struct imsg *);
-static int	mdns_api_send_imsg(struct mdns_api_state *, u_int32_t,
+#define MDNS_TIMEOUT 3
+
+struct mdns_state {
+	struct imsgbuf ibuf;
+};
+
+static int	mdns_connect(struct mdns_state *);
+static void	mdns_finish(struct mdns_state *);
+static int	mdns_read_imsg(struct mdns_state *, struct imsg *);
+static int	mdns_send_imsg(struct mdns_state *, u_int32_t,
     void *, u_int16_t);
 
 int
-mdns_api_lookup(const char *hostname, struct in_addr *addr)
+mdns_lkup(const char *hostname, struct in_addr *addr)
 {
-	struct mdns_api_state mst;
+	struct mdns_state mst;
 	struct imsg imsg;
 	char hname[MAXHOSTNAMELEN];
 	int err;
@@ -44,74 +51,74 @@ mdns_api_lookup(const char *hostname, struct in_addr *addr)
 		return (-1);
 	}
 	
-	if (mdns_api_connect(&mst) == -1)
+	if (mdns_connect(&mst) == -1)
 		return (-1);
 	
 	strlcpy(hname, hostname, sizeof(hname));
-	if (mdns_api_send_imsg(&mst, IMSG_CTL_LOOKUP,
+	if (mdns_send_imsg(&mst, IMSG_CTL_LOOKUP,
 	    hname, sizeof(hname)) == -1) {
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		return (-1);
 	}
 
-	if (mdns_api_read_imsg(&mst, &imsg) == -1) {
+	if (mdns_read_imsg(&mst, &imsg) == -1) {
 		err = errno;
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		if (err == ETIMEDOUT) 
 			return (0);
 		return (-1);
 	}
 	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
 		errno = EMSGSIZE; /* think of a better errno */
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		imsg_free(&imsg);
 		return (-1);
 	}
 	if (imsg.hdr.len - IMSG_HEADER_SIZE !=
 	    sizeof(struct in_addr)) {
 		errno = EMSGSIZE;
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		imsg_free(&imsg);
 		return (-1);
 	}
 	memcpy(addr, imsg.data, imsg.hdr.len - IMSG_HEADER_SIZE);
-	mdns_api_finish(&mst);
+	mdns_finish(&mst);
 	imsg_free(&imsg);
 	
 	return (1);
 }
 
 int
-mdns_api_lookup_addr(struct in_addr *addr, char *hostname, size_t len)
+mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
 {
-	struct mdns_api_state mst;
+	struct mdns_state mst;
 	struct imsg imsg;
 	int err;
 	
-	if (mdns_api_connect(&mst) == -1)
+	if (mdns_connect(&mst) == -1)
 		return (-1);
 	
-	if (mdns_api_send_imsg(&mst, IMSG_CTL_LOOKUP_ADDR,
+	if (mdns_send_imsg(&mst, IMSG_CTL_LOOKUP_ADDR,
 	    addr, sizeof(struct in_addr)) == -1) {
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		return (-1);
 	}
-	if (mdns_api_read_imsg(&mst, &imsg) == -1) {
+	if (mdns_read_imsg(&mst, &imsg) == -1) {
 		err = errno;
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		if (err == ETIMEDOUT)
 			return (0);
 		return (-1);
 	}
 	if (imsg.hdr.type != IMSG_CTL_LOOKUP_ADDR) {
 		errno = EMSGSIZE; /* think of a better errno */
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		imsg_free(&imsg);
 		    return (-1);
 	}
 	if (imsg.hdr.len - IMSG_HEADER_SIZE != MAXHOSTNAMELEN) {
 		errno = EMSGSIZE;
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		imsg_free(&imsg);
 		    return (-1);
 	}
@@ -119,15 +126,15 @@ mdns_api_lookup_addr(struct in_addr *addr, char *hostname, size_t len)
 		len = MAXHOSTNAMELEN;
 	strlcpy(hostname, imsg.data, len);
 	imsg_free(&imsg);
-	mdns_api_finish(&mst);
+	mdns_finish(&mst);
 	
 	return (1);
 }
 
 int
-mdns_api_lookup_hinfo(const char *hostname, struct hinfo *h)
+mdns_lkup_hinfo(const char *hostname, struct hinfo *h)
 {
-	struct mdns_api_state mst;
+	struct mdns_state mst;
 	struct imsg imsg;
 	char hname[MAXHOSTNAMELEN];
 	int err;
@@ -137,50 +144,50 @@ mdns_api_lookup_hinfo(const char *hostname, struct hinfo *h)
 		return (-1);
 	}
 	
-	if (mdns_api_connect(&mst) == -1)
+	if (mdns_connect(&mst) == -1)
 		return (-1);
 	
 	strlcpy(hname, hostname, sizeof(hname));
-	if (mdns_api_send_imsg(&mst, IMSG_CTL_LOOKUP_HINFO,
+	if (mdns_send_imsg(&mst, IMSG_CTL_LOOKUP_HINFO,
 	    hname, sizeof(hname)) == -1) {
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		return (-1);
 	}
 
-	if (mdns_api_read_imsg(&mst, &imsg) == -1) {
+	if (mdns_read_imsg(&mst, &imsg) == -1) {
 		err = errno;
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		if (err == ETIMEDOUT) 
 			return (0);
 		return (-1);
 	}
 	if (imsg.hdr.type != IMSG_CTL_LOOKUP_HINFO) {
 		errno = EMSGSIZE; /* think of a better errno */
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		imsg_free(&imsg);
 		return (-1);
 	}
 	if (imsg.hdr.len - IMSG_HEADER_SIZE !=
 	    sizeof(struct hinfo)) {
 		errno = EMSGSIZE;
-		mdns_api_finish(&mst);
+		mdns_finish(&mst);
 		imsg_free(&imsg);
 		return (-1);
 	}
 	memcpy(h, imsg.data, imsg.hdr.len - IMSG_HEADER_SIZE);
-	mdns_api_finish(&mst);
+	mdns_finish(&mst);
 	imsg_free(&imsg);
 	
 	return (1);
 }
 
 static int
-mdns_api_connect(struct mdns_api_state *mst)
+mdns_connect(struct mdns_state *mst)
 {
 	struct sockaddr_un	sun;
 	int			sockfd;
 	
-	bzero(mst, sizeof(struct mdns_api_state));
+	bzero(mst, sizeof(struct mdns_state));
 	bzero(&sun, sizeof(sun));
 	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
 		return (-1);
@@ -195,13 +202,13 @@ mdns_api_connect(struct mdns_api_state *mst)
 }
 
 static void
-mdns_api_finish(struct mdns_api_state *mst)
+mdns_finish(struct mdns_state *mst)
 {
 	imsg_clear(&mst->ibuf);
 }
 
 static int
-mdns_api_send_imsg(struct mdns_api_state *mst, u_int32_t type,
+mdns_send_imsg(struct mdns_state *mst, u_int32_t type,
     void *data, u_int16_t datalen)
 {
 	struct buf	*wbuf;
@@ -224,7 +231,7 @@ mdns_api_send_imsg(struct mdns_api_state *mst, u_int32_t type,
 }
 
 static int
-mdns_api_read_imsg(struct mdns_api_state *mst, 	struct imsg *imsg)
+mdns_read_imsg(struct mdns_state *mst, 	struct imsg *imsg)
 {
 	ssize_t		 n;
 	struct timeval	 tv;
@@ -237,7 +244,7 @@ mdns_api_read_imsg(struct mdns_api_state *mst, 	struct imsg *imsg)
 		FD_ZERO(&rset);
 		FD_SET(mst->ibuf.fd, &rset);
 		timerclear(&tv);
-		tv.tv_sec = MDNS_API_TIMEOUT;
+		tv.tv_sec = MDNS_TIMEOUT;
 		
 		r = select(mst->ibuf.fd + 1, &rset, NULL, NULL, &tv);
 

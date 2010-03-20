@@ -27,7 +27,6 @@
 #include "mdns.h"
 #include "control.h"
 
-#define	MDNSD_SOCKET	"/var/run/mdnsd.sock"
 #define	MDNSD_USER	"_mdnsd"
 #define RT_BUF_SIZE	16384
 #define MAX_RTSOCK_BUF	128 * 1024
@@ -86,7 +85,7 @@ enum iface_type {
 /* this shouldn't be here */
 struct rrt_node {
 	RB_ENTRY(rrt_node)      entry;
-	LIST_HEAD(rr_head, mdns_rr) hrr; /* head rr */
+	LIST_HEAD(rr_head, rr) hrr; /* head rr */
 };
 
 RB_HEAD(rrt_tree, rrt_node);
@@ -146,20 +145,17 @@ int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
 void		 recv_packet(int, short, void *); /* these don't belong here */
 int		 send_packet(struct iface *, void *, size_t,
 	struct sockaddr_in *);
-int		 pkt_send_allif(struct mdns_pkt *);
-void		 pkt_init(struct mdns_pkt *);
-int		 pkt_add_question(struct mdns_pkt *, struct mdns_question *);
-int 		 pkt_add_anrr(struct mdns_pkt *, struct mdns_rr *);
-int 		 pkt_add_nsrr(struct mdns_pkt *, struct mdns_rr *);
-int 		 pkt_add_arrr(struct mdns_pkt *, struct mdns_rr *);
-int 		 question_set(struct mdns_question *, char [MAXHOSTNAMELEN],
+int		 pkt_send_allif(struct pkt *);
+void		 pkt_init(struct pkt *);
+int		 pkt_add_question(struct pkt *, struct question *);
+int 		 pkt_add_anrr(struct pkt *, struct rr *);
+int 		 pkt_add_nsrr(struct pkt *, struct rr *);
+int 		 pkt_add_arrr(struct pkt *, struct rr *);
+int 		 question_set(struct question *, char [MAXHOSTNAMELEN],
     	u_int16_t, u_int16_t, int, int);
-int 		 rr_set(struct mdns_rr *, char [MAXHOSTNAMELEN],
+int 		 rr_set(struct rr *, char [MAXHOSTNAMELEN],
     	u_int16_t, u_int16_t, u_int32_t, int, void *, size_t);
 
-/* TODO: make this static when done */
-int		 pkt_serialize(struct mdns_pkt *, u_int8_t *, u_int16_t);
-	
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 
@@ -175,21 +171,21 @@ struct query {
 	LIST_ENTRY(query)	entry;
 	LIST_HEAD(, ctl_conn)	ctl_list; /* interested controlers */
 	int			type; 	  /* enum query_type */
-	struct mdns_question	*mq;
+	struct question	*mq;
 };
 
 void		 publish_init(void);
 void		 publish_allrr(struct iface *);
-int		 publish_insert(struct iface *, struct mdns_rr *);
-int		 publish_delete(struct iface *, struct mdns_rr *);
-struct mdns_rr * publish_lookupall(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+int		 publish_insert(struct iface *, struct rr *);
+int		 publish_delete(struct iface *, struct rr *);
+struct rr *	 publish_lookupall(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 void		 query_init(void);
-struct query *	 query_place(int, struct mdns_question *, struct ctl_conn *);
-int		 query_notifyin(struct mdns_rr *);
-int		 query_notifyout(struct mdns_rr *);
+struct query *	 query_place(int, struct question *, struct ctl_conn *);
+int		 query_notifyin(struct rr *);
+int		 query_notifyout(struct rr *);
 int		 query_cleanbyconn(struct ctl_conn *);
 void		 cache_init(void);
-int		 cache_process(struct mdns_rr *);
-struct mdns_rr  *cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+int		 cache_process(struct rr *);
+struct rr	*cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
 #endif /* _MDNSD_H_ */

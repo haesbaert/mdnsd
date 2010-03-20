@@ -16,21 +16,23 @@ Setup
   
 Code
 -----------------
+  * Hack libc resolv to resolv .local.
+  * Implement cache dump.
+  * Publish commands in mdnsctl.
   * Maximum packet size should be base on current iface mtu not 9k as
   it is now (jumbo frame). We could use the smaller mtu between our
   ifaces or have it per iface. Done on the client side.
   * Too much duplicated code in control.c and mdns_api.c, hinfo and
   hostname lookup can be merged.
-  * Remove api infix in mdns_api.c, it's plain lame, gotta split the
-  library first.
   * Conflict name resolution.
   * Name compression.
-  * Publish commands in mdnsctl.
+  * Rename mdnsctl to mdns (yes, again).
   * Check if the signal handling code is correct.
   * Write a dummy README.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
-  * Hack libc resolv to resolv .local.
+  * Remove api infix in mdns_api.c, it's plain lame, gotta split the
+    library first. DONE.
   * Think of a better syntax for mdnsctl (lookup -t HINFO foo.local). DONE
   * Implement control and API protocol. DONE
   * Implement serialization so we can start the responder. DONE

@@ -44,15 +44,6 @@ struct imsgev {
 	short			 events;
 };
 
-enum imsg_type {
-	IMSG_NONE,
-	IMSG_CTL_END,
-	IMSG_CTL_LOOKUP,
-	IMSG_CTL_LOOKUP_ADDR,
-	IMSG_CTL_LOOKUP_HINFO,
-	IMSG_DEMOTE
-};
-
 struct ctl_conn {
 	TAILQ_ENTRY(ctl_conn)		entry;
 	struct imsgev			iev;

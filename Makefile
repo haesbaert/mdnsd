@@ -1,6 +1,6 @@
 PROG=	mdnsd
 SRCS=	log.c mdnsd.c kiface.c interface.c packet.c \
-	control.c imsg.c buffer.c mdns_api.c mdns.c 
+	control.c imsg.c buffer.c mdns.c 
 
 #MAN=	mdnsd.8
 

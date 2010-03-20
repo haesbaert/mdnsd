@@ -45,9 +45,9 @@ static void	 control_lookuphinfo(struct ctl_conn *, struct imsg *);
 static void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct mdns_pkt		 pkt;
-	struct mdns_rr		*rr;
-	struct mdns_question 	*mq;
+	struct pkt		 pkt;
+	struct rr		*rr;
+	struct question 	*mq;
 	char			 hostname[MAXHOSTNAMELEN];
 	
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(hostname))
@@ -76,9 +76,9 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 static void
 control_lookupaddr(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct mdns_rr		*rr;
-	struct mdns_pkt		 pkt;
-	struct mdns_question 	*mq;
+	struct rr		*rr;
+	struct pkt		 pkt;
+	struct question 	*mq;
 	struct in_addr		 addr;
 	char			 name[MAXHOSTNAMELEN];
 	
@@ -109,9 +109,9 @@ control_lookupaddr(struct ctl_conn *c, struct imsg *imsg)
 static void
 control_lookuphinfo(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct mdns_pkt		 pkt;
-	struct mdns_rr		*rr;
-	struct mdns_question 	*mq;
+	struct pkt		 pkt;
+	struct rr		*rr;
+	struct question 	*mq;
 	char			 hostname[MAXHOSTNAMELEN];
 	
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(hostname))
