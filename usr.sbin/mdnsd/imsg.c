@@ -87,7 +87,6 @@ imsg_read(struct imsgbuf *ibuf)
 		}
 		/* we do not handle other ctl data level */
 	}
-
 	return (n);
 }
 

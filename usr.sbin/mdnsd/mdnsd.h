@@ -22,14 +22,79 @@
 #include <netinet/in.h>
 #include <net/if.h>
 #include <event.h>
+#include <mdns.h>
 
 #include "imsg.h"
-#include "mdns.h"
 #include "control.h"
 
-#define	MDNSD_USER	"_mdnsd"
-#define RT_BUF_SIZE	16384
-#define MAX_RTSOCK_BUF	128 * 1024
+#define	MDNSD_USER		"_mdnsd"
+#define RT_BUF_SIZE		16384
+#define MAX_RTSOCK_BUF		128 * 1024
+#define QUERY_TTL		1
+#define RESPONSE_TTL		255
+#define MDNS_PORT		5353
+#define HDR_LEN			12	
+#define MINQRY_LEN		6 /* 4 (qtype + qclass) +1 (null) + 1 (label len) */
+#define HDR_QR_MASK		0x8000
+#define MAX_PACKET		10000
+#define MAX_LABELS		128
+#define TTL_HNAME		120
+#define CACHEFLUSH_MSK		0x8000
+#define CLASS_MSK		~0x8000
+#define UNIRESP_MSK		0x8000
+#define NAMECOMP_MSK		0xc000
+#define NAMEADDR_MSK		~0xc000
+#define QR_MSK                 	0x8000
+#define TC_MSK                 	0x200
+
+struct rr {
+	LIST_ENTRY(rr)		entry;
+	char			dname[MAXHOSTNAMELEN];
+	u_int16_t		type;
+	int			cacheflush;	
+	u_int16_t		class;
+	u_int32_t		ttl;
+	u_int16_t		rdlen;
+	union {
+		struct in_addr	A;
+		char		CNAME[MAXHOSTNAMELEN];
+		char		PTR[MAXHOSTNAMELEN];
+		char		NS[MAXHOSTNAMELEN];
+		char		TXT[MAX_CHARSTR];
+		
+		struct {
+			uint16_t	priority;
+			uint16_t	weight;
+			uint16_t	port;
+			char		dname[MAXHOSTNAMELEN];
+		} SRV;
+		struct hinfo 	HINFO;
+
+	} rdata;
+	int		active;	   	/* should we try to renew this ? */
+	int		revision;	/* at 80% of ttl, then 90% and 95% */
+	struct event 	rev_timer; 	/* cache revision timer */
+	
+};
+
+struct question {
+	LIST_ENTRY(question)	entry;
+	char			dname[MAXHOSTNAMELEN];
+	u_int16_t		qtype;
+	u_int16_t		qclass;
+	int			uniresp;
+	int 			probe;
+};
+
+#define RR_UNIQ(rr) (rr->cacheflush)
+#define QEQUIV(qa, qb)						\
+	((qa->qtype  == qb->qtype)	&&			\
+	    (qb->qclass == qb->qclass)	&&			\
+	    (strcmp(qa->dname, qb->dname) == 0))
+#define ANSWERS(q, rr)						\
+	(((q->qtype == T_ANY) || (q->qtype == rr->type))  &&	\
+	    q->qclass == rr->class                        &&	\
+	    strcmp(q->dname, rr->dname) == 0)
 
 /* mdnsd.c */
 int		 peersuser(int);
@@ -142,6 +207,22 @@ int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
 	pid_t, int, void *, u_int16_t);
 
 /* packet.c */
+struct pkt {
+	/* mdns header */
+	u_int8_t 	qr;
+	u_int8_t	tc;
+	
+	u_int16_t	qdcount;
+	u_int16_t	ancount;
+	u_int16_t	nscount;
+	u_int16_t	arcount;
+	
+	LIST_HEAD(, question) qlist;
+	LIST_HEAD(, rr)       anlist;
+	LIST_HEAD(, rr)       nslist;
+	LIST_HEAD(, rr)       arlist;
+};
+
 void		 recv_packet(int, short, void *); /* these don't belong here */
 int		 send_packet(struct iface *, void *, size_t,
 	struct sockaddr_in *);

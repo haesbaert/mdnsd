@@ -35,7 +35,6 @@
 #include <string.h>
 
 #include "mdnsd.h"
-#include "mdns.h"
 #include "log.h"
 
 extern struct mdnsd_conf *conf;
@@ -66,8 +65,10 @@ static int	rr_parse_a(struct rr *, u_int8_t *);
 static int	rr_parse_txt(struct rr *, u_int8_t *);
 static int	rr_parse_srv(struct rr *, u_int8_t *, uint16_t);
 static int	rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
+static ssize_t  charstr(char [MAX_CHARSTR], u_int8_t *, uint16_t);
+
 /* util */
-ssize_t
+static ssize_t
 charstr(char dest[MAX_CHARSTR], u_int8_t *buf, uint16_t len)
 {
 	u_int8_t tocpy;

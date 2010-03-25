@@ -28,7 +28,6 @@
 #include <unistd.h>
 
 #include "log.h"
-#include "mdns.h"
 #include "mdnsd.h"
 
 int	debug;

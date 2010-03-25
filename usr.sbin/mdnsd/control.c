@@ -54,6 +54,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		return;
 
 	memcpy(hostname, imsg->data, sizeof(hostname));
+	log_debug("looking up %s (A)", hostname);
 	rr = cache_lookup(hostname, T_A, C_IN);
 	/* cache hit */
 	if (rr != NULL) {
@@ -287,6 +288,7 @@ control_dispatch_imsg(int fd, short event, void *bula)
 	struct imsg	 imsg;
 	ssize_t		 n;
 	
+	log_debug("control_dispatch_imsg");
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_dispatch_imsg: fd %d: not found", fd);
 		return;

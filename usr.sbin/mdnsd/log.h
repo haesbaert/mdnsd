@@ -22,7 +22,6 @@
 #include <stdarg.h>
 
 #include "mdnsd.h"
-#include "mdns.h"
 
 void		log_init(int);
 void		log_verbose(int);

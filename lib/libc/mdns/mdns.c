@@ -26,8 +26,6 @@
 #include "mdns.h"
 #include "imsg.h"	/* XXX this shouldn't be here */
 
-#define MDNS_TIMEOUT 3
-
 struct mdns_state {
 	struct imsgbuf ibuf;
 };
@@ -71,19 +69,19 @@ mdns_lkup(const char *hostname, struct in_addr *addr)
 	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
 		errno = EMSGSIZE; /* think of a better errno */
 		mdns_finish(&mst);
-		imsg_free(&imsg);
+		_m_imsg_free(&imsg);
 		return (-1);
 	}
 	if (imsg.hdr.len - IMSG_HEADER_SIZE !=
 	    sizeof(struct in_addr)) {
 		errno = EMSGSIZE;
 		mdns_finish(&mst);
-		imsg_free(&imsg);
+		_m_imsg_free(&imsg);
 		return (-1);
 	}
 	memcpy(addr, imsg.data, imsg.hdr.len - IMSG_HEADER_SIZE);
 	mdns_finish(&mst);
-	imsg_free(&imsg);
+	_m_imsg_free(&imsg);
 	
 	return (1);
 }
@@ -113,19 +111,19 @@ mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
 	if (imsg.hdr.type != IMSG_CTL_LOOKUP_ADDR) {
 		errno = EMSGSIZE; /* think of a better errno */
 		mdns_finish(&mst);
-		imsg_free(&imsg);
+		_m_imsg_free(&imsg);
 		    return (-1);
 	}
 	if (imsg.hdr.len - IMSG_HEADER_SIZE != MAXHOSTNAMELEN) {
 		errno = EMSGSIZE;
 		mdns_finish(&mst);
-		imsg_free(&imsg);
+		_m_imsg_free(&imsg);
 		    return (-1);
 	}
 	if (len > MAXHOSTNAMELEN)
 		len = MAXHOSTNAMELEN;
 	strlcpy(hostname, imsg.data, len);
-	imsg_free(&imsg);
+	_m_imsg_free(&imsg);
 	mdns_finish(&mst);
 	
 	return (1);
@@ -164,19 +162,19 @@ mdns_lkup_hinfo(const char *hostname, struct hinfo *h)
 	if (imsg.hdr.type != IMSG_CTL_LOOKUP_HINFO) {
 		errno = EMSGSIZE; /* think of a better errno */
 		mdns_finish(&mst);
-		imsg_free(&imsg);
+		_m_imsg_free(&imsg);
 		return (-1);
 	}
 	if (imsg.hdr.len - IMSG_HEADER_SIZE !=
 	    sizeof(struct hinfo)) {
 		errno = EMSGSIZE;
 		mdns_finish(&mst);
-		imsg_free(&imsg);
+		_m_imsg_free(&imsg);
 		return (-1);
 	}
 	memcpy(h, imsg.data, imsg.hdr.len - IMSG_HEADER_SIZE);
 	mdns_finish(&mst);
-	imsg_free(&imsg);
+	_m_imsg_free(&imsg);
 	
 	return (1);
 }
@@ -193,10 +191,13 @@ mdns_connect(struct mdns_state *mst)
 		return (-1);
 	sun.sun_family = AF_UNIX;
 	strlcpy(sun.sun_path, MDNSD_SOCKET, sizeof(sun.sun_path));
-	if (connect(sockfd, (struct sockaddr *)&sun, sizeof(sun)) == -1)
+	if (connect(sockfd, (struct sockaddr *)&sun, sizeof(sun)) == -1) {
+		if (errno == ENOENT)
+			errno = ECONNREFUSED;
 		return (-1);
+	}
 	
-	imsg_init(&mst->ibuf, sockfd);
+	_m_imsg_init(&mst->ibuf, sockfd);
 	
 	return (0);
 }
@@ -204,7 +205,7 @@ mdns_connect(struct mdns_state *mst)
 static void
 mdns_finish(struct mdns_state *mst)
 {
-	imsg_clear(&mst->ibuf);
+	_m_imsg_clear(&mst->ibuf);
 }
 
 static int
@@ -213,18 +214,18 @@ mdns_send_imsg(struct mdns_state *mst, u_int32_t type,
 {
 	struct buf	*wbuf;
 
-	if ((wbuf = imsg_create(&mst->ibuf, type, 0,
+	if ((wbuf = _m_imsg_create(&mst->ibuf, type, 0,
 	    0, datalen)) == NULL)
 		return (-1);
 
-	if (imsg_add(wbuf, data, datalen) == -1)
+	if (_m_imsg_add(wbuf, data, datalen) == -1)
 		return (-1);
 
 	wbuf->fd = -1;
 
-	imsg_close(&mst->ibuf, wbuf);
+	_m_imsg_close(&mst->ibuf, wbuf);
 	
-	if (msgbuf_write(&mst->ibuf.w))
+	if (_m_msgbuf_write(&mst->ibuf.w))
 		return (-1);
 
 	return (0);
@@ -238,7 +239,7 @@ mdns_read_imsg(struct mdns_state *mst, 	struct imsg *imsg)
 	int		 r;
 	fd_set		 rset;
 
-	if ((n = imsg_get(&mst->ibuf, imsg)) == -1)
+	if ((n = _m_imsg_get(&mst->ibuf, imsg)) == -1)
 		return (-1);
 	if (n == 0) {
 		FD_ZERO(&rset);
@@ -254,11 +255,11 @@ mdns_read_imsg(struct mdns_state *mst, 	struct imsg *imsg)
 			errno = ETIMEDOUT;
 			return (-1);
 		}
-		if ((n = imsg_read(&mst->ibuf)) == -1)
+		if ((n = _m_imsg_read(&mst->ibuf)) == -1)
 			return (-1);
 	}
 	
-	if ((n = imsg_get(&mst->ibuf, imsg)) <= 0)
+	if ((n = _m_imsg_get(&mst->ibuf, imsg)) <= 0)
 		return (-1);
 	
 	return (0);

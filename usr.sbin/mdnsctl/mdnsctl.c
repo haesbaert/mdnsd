@@ -27,14 +27,13 @@
 #include <net/if_types.h>
 
 #include <err.h>
+#include <mdns.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#include "mdnsd.h"
 #include "parser.h"
-#include "mdns.h"
 
 __dead void	 usage(void);
 

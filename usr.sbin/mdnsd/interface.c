@@ -33,7 +33,6 @@
 #include <event.h>
 
 #include "mdnsd.h"
-#include "mdns.h"
 #include "log.h"
 
 extern struct mdnsd_conf *conf;
