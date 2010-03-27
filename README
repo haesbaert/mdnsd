@@ -101,6 +101,6 @@ How do I use this thing ?
      Make sure you have proper multicast setup (man 7 netstart), or
      just add a route to lo0:
           route delete 224/4
-          route add 224/4 lo0
+          route add 224/4 127.0.0.1
      
      Play with mdnsctl :). 
