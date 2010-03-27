@@ -117,7 +117,7 @@ How do I use this thing ?
 -------------------------
      Get the freaking sources from http://github.com/haesbaert/mdnsd .
      
-     Copy include/mdns.h tu /usr/include
+     Copy include/mdns.h to /usr/include
      
      Copy lib/libc/mdns to /usr/src/lib/libc/mdns
      
