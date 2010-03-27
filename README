@@ -18,8 +18,7 @@ Why not Avahi ? Well because:
     1 - No BSD License (GPL).
     2 - Overcomplex API.
     3 - Not OpenBSD-like
-    4 - Real complex API.
-    5 - DBUS and lots of dependencies.
+    4 - DBUS and lots of dependencies.
 
 My goal is to first provide a solid mdns framework without the
 service-discovery capabilities which are much more complex. When that

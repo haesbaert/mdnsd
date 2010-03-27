@@ -16,6 +16,7 @@ Setup
   
 Code
 -----------------
+  * Integrate getaddrinfo.
   * Write manual pages
   * Implement cache dump.
   * Publish commands in mdnsctl.
@@ -26,11 +27,10 @@ Code
   hostname lookup can be merged.
   * Conflict name resolution.
   * Name compression.
-  * Rename mdnsctl to mdns (yes, again, really ?).
   * Check if the signal handling code is correct.
-  * Write a dummy README.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
+  * Write a dummy README. DONE
   * Put prefix in mdns symbols. DONE
   * Hack libc resolv to resolv .local. DONE
   * Remove api infix in mdns_api.c, it's plain lame, gotta split the
