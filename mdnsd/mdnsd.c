@@ -63,6 +63,8 @@ mdnsd_conf_init(int argc, char *argv[])
 	struct kif	*k;
 	struct iface	*iface;
 	
+	LIST_INIT(&conf->iface_list);
+	
 	/* fetch all kernel interfaces and match argv */
 	if (kif_init() != 0)
 		fatal("Can't get kernel interfaces");

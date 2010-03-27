@@ -16,6 +16,7 @@ Setup
   
 Code
 -----------------
+  * Fetchmyname should use the return of strlcat to check truncation.
   * Write manual pages
   * Implement cache dump.
   * Publish commands in mdnsctl.
