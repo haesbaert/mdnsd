@@ -22,9 +22,8 @@ Why not Avahi ? Well because:
 
 My goal is to first provide a solid mdns framework without the
 service-discovery capabilities which are much more complex. When that
-is fully integrated and working properly, work on service-discovery
-will begin, the architecture was designed in order to support it. So
-goals:
+is working properly, work on service-discovery will begin, the
+architecture was designed in order to support it. So goals:
         * Have a mdns responder/querier as a user process (mdnsd).
         * Have integration with libc's resolver, read: make
         gethostbyname and friends resolve names through mdns.
@@ -71,41 +70,21 @@ So the basic data flow is:
 
 LIBMDNS Design (API)
 --------------------
-I'm still not sure about this, I need feedback from devs to see how
-this could fit better into the project. The library must provide the
-following:
-     * Means for looking up names.
+Libmdns is a shared library in which programs can link to have mdns
+capabilities, like publishing services, browsing the network and so
+on, by now the only thing it does is to resolve mdns names, no service
+capabilities yet. All the library does is sending and receiving
+messages to mdnsd through the imsg framework.
+The library should provide in the near future:
+     * Means for looking up names. (DONE)
      * Means for publishing names.
      * Means for browsing services (dns-service-discovery).
      * Means for publishing services.
-From the above requirements, libc should be interested only in the
-first one, to resolve hostnames by mdns, but the problem rises when we
-have no nss-switch functionality, so we hack the resolver to have an
-extra "mdns" keyword in /etc/resolv.conf lookup list. My main doubt
-is, how to integrate libc with the library ? I need to make libc call
-mdns_lkup in some way, so my options were:
-     1 - Embed all libmdns inside libc, so no libmdns, something like
-     what we have for yp.
-     Pros: Everything works out of the box, less code to maintain.
-     Cons: It's plain fucking weird and ugly.
-     2 - Make libmdns a shared library and having the user to link
-     against it everytime he uses a gethostbyname and/or friends.
-     Pros: Looks neat, less bloat into libc, proper job separation.
-     Cons: It doesn't work, imagine compiling any single program and
-     having it linking against mdns.
-     3 - Make libmdns a shared library and use dlopen inside libc to
-     retrieve mdns_lkup symbol:
-     Pros: All from number 2.
-     Cons: It doesn't work for static architectures and other stuff
-     compiled statically, dlopen fails (I guess it's because it simply
-     doesn't use the dynamic linker).
-     4 - Make a very stripped down libmdns and embed into libc, and
-     also have the libmdns library, which would be a superset.
-     Pros: It works, proper job separation, less bloat into libc.
-     Cons: Hard to maintain, duplicated "different" code.
-     
-     I've implemented option 1, but 4 seems to be the best way around
-     it, I'm still not sure what to do, so please give me input !
+
+On libc integration:
+After a chat with nicm@ we have decided not to worry about libc right
+now, maybe never, so I'm making libmdns a shared library with no libc
+integration. See the README file on mdns-libc branch if you're curious.
      
 MDNSCTL
 -------
@@ -116,21 +95,9 @@ MDNSCTL
 How do I use this thing ?
 -------------------------
      Get the freaking sources from http://github.com/haesbaert/mdnsd .
-     
-     Copy include/mdns.h to /usr/include
-     
-     Copy lib/libc/mdns to /usr/src/lib/libc/mdns
-     
-     Apply lib/libc/libc.diff to /usr/src/lib/libc with:
-          cd /usr/src/lib/libc && patch -p0 < libc.diff
-          
-     Recompile and install libc (make && make install)
-     
-     Copy (don't link it !) usr.sbin/mdnsd and usr.sbin/mdnsctl to
-     /usr/src. Compile and install them.
-     
-     Add mdns to /etc/resolv.conf under lookup keyword.
-     
+     Install includes with "make includes" in libmdns directory.
+     Compile and install libmdns
+     Compile and install mdnsd and mdnsctl
      Make sure you have proper multicast setup (man 7 netstart), or
      just add a route to lo0:
           route delete 224/4
