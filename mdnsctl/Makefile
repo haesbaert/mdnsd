@@ -6,9 +6,9 @@ CFLAGS+= -Wmissing-declarations
 CFLAGS+= -Wshadow -Wpointer-arith -Wcast-qual
 CFLAGS+= -Wsign-compare
 CFLAGS+= -I${.CURDIR} -I${.CURDIR}/../
-# LDADD+= -lmdns
-# DPADD+= ${LIBMDNS}
+LDADD+= -lmdns
+DPADD+= ${LIBMDNS}
 
-#MAN=	mdns.8
+#MAN=	mdnsctl.8
 
 .include <bsd.prog.mk>
