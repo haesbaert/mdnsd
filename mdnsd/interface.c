@@ -402,12 +402,3 @@ if_new(struct kif *kif)
 
 	return (iface);
 }
-
-void
-if_del(struct iface *iface)
-{
-	log_debug("if_del: interface %s", iface->name);
-
-	free(iface);
-}
-

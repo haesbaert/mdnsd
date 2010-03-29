@@ -42,21 +42,6 @@ static struct rr_head	*rrt_lookup_head(struct rrt_tree *,
 static struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [],
     u_int16_t, u_int16_t);
 
-enum publish_state {
-	PUB_INITIAL,
-	PUB_PROBE,
-	PUB_ANNOUNCE,
-	PUB_DONE
-};
-
-struct publish {
-	struct pkt	 pkt;
-	struct event	 timer;	/* used in probe and announce */
-	struct iface	*iface;
-	int		 state;	/* enum publish state */
-	int		 sent;
-};
-
 LIST_HEAD(, query)		 qlist;
 RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_compare);
 extern struct mdnsd_conf	*conf;
@@ -71,6 +56,10 @@ publish_init(void)
 	struct rr	*rr;
 	char		 revaddr[MAXHOSTNAMELEN];
 	
+	/* init publishing list used in name conflicts */
+	LIST_INIT(&publishing_list);
+	
+	/* insert default records in all our interfaces */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		/* myname */
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
@@ -227,11 +216,16 @@ publish_fsm(int unused, short event, void *v_pub)
 	struct publish		*pub = v_pub;
 	struct timeval		 tv;
 	struct rr		*rr;
-	struct question	*mq;
+	struct question		*mq;
+	static unsigned long	pubid;
 
 	switch (pub->state) {
 	case PUB_INITIAL:	
 		pub->state = PUB_PROBE;
+		pub->id = ++pubid;
+		/* Register probing in our probing lists so we can deal with
+		 * name conflicts */
+		LIST_INSERT_HEAD(&publishing_list, pub, entry);
 		/* FALLTHROUGH */
 	case PUB_PROBE:
 		pub->pkt.qr = 0;
@@ -239,6 +233,9 @@ publish_fsm(int unused, short event, void *v_pub)
 			log_debug("can't send packet to all interfaces");
 		pub->sent++;
 		if (pub->sent == 3) { /* enough probing, start announcing */
+			/* cool, so now that we're done, remove it from
+			 * publishing lists, now the record is ours. */
+			LIST_REMOVE(pub, entry);
 			pub->state  = PUB_ANNOUNCE;
 			pub->sent   = 0;
 			pub->pkt.qr = 1;

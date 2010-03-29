@@ -126,7 +126,6 @@ recv_packet(int fd, short event, void *bula)
 	static u_int8_t		 buf[MAX_PACKET];
 	ssize_t			 r;
 	u_int16_t		 len, srcport;
-/* 	static int pktnum = 0; */
 	
 	if (event != EV_READ)
 		return;
@@ -670,8 +669,9 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 static int
 pkt_process(struct pkt *pkt)
 {
-	struct rr *rr;
+	struct rr	*rr;
 	struct question *q;
+	struct publish *pub;
 	
 	/* mark all probe questions, so we don't try to answer them below */
 	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
@@ -683,6 +683,21 @@ pkt_process(struct pkt *pkt)
 		free(rr);
 	}
 	
+	/* check for a conflicting response, that is any response that answers
+	 * our probe queries, if any of them answers, give up our name and
+	 * choose another. */
+	LIST_FOREACH(pub, &publishing_list, entry) {
+		LIST_FOREACH(q, &pub->pkt.qlist, entry) {
+			LIST_FOREACH(rr, &pkt->anlist, entry) {
+				if (ANSWERS(q, rr)) {
+					/* TODO: Give up name */
+					log_warnx("Can't use name %s, "
+					    "already taken", rr->dname); 	
+				}
+			}
+		}
+	}
+	    
 	/* process all questions */
 	if (pkt_tryanswerq(pkt) == -1)
 		log_warn("pkt_tryanswerq: error");

@@ -192,7 +192,6 @@ int		 if_set_tos(int, int);
 struct iface *	 if_find_index(u_short);
 struct iface *	 if_new(struct kif *);
 void		 if_set_recvbuf(int);
-void		 if_del(struct iface *);
 
 /* mdnsd.c */
 struct mdnsd_conf {
@@ -212,10 +211,10 @@ struct pkt {
 	u_int8_t 	qr;
 	u_int8_t	tc;
 	
-	u_int16_t	qdcount;
-	u_int16_t	ancount;
-	u_int16_t	nscount;
-	u_int16_t	arcount;
+	u_int16_t	qdcount; /* question */
+	u_int16_t	ancount; /* answer */
+	u_int16_t	nscount; /* authority */
+	u_int16_t	arcount; /* additional */
 	
 	LIST_HEAD(, question) qlist;
 	LIST_HEAD(, rr)       anlist;
@@ -241,6 +240,23 @@ int 		 rr_set(struct rr *, char [MAXHOSTNAMELEN],
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 
 /* mdns.c */
+enum publish_state {
+    	PUB_INITIAL,
+    	PUB_PROBE,
+    	PUB_ANNOUNCE,
+	PUB_DONE
+};
+
+struct publish {
+	LIST_ENTRY(publish)	entry;
+	struct pkt	 	pkt;
+	struct event	 	timer;	/* used in probe and announce */
+	struct iface	       *iface;
+	int		 	state;	/* enum publish state */
+	int		 	sent;
+	unsigned long	 	id;	/* unique id */
+};
+
 enum query_type {
 	QUERY_LOOKUP,
 	QUERY_LOOKUP_ADDR,
@@ -254,6 +270,8 @@ struct query {
 	int			type; 	  /* enum query_type */
 	struct question	*mq;
 };
+
+LIST_HEAD(, publish)		publishing_list;
 
 void		 publish_init(void);
 void		 publish_allrr(struct iface *);

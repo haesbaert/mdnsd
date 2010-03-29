@@ -123,7 +123,7 @@ mdnsd_shutdown(void)
 	
 	while ((iface = LIST_FIRST(&conf->iface_list)) != NULL) {
 		LIST_REMOVE(iface, entry);
-		if_del(iface);
+		free(iface);
 	}
 	
 	kev_cleanup();
