@@ -121,9 +121,9 @@ mdnsd_shutdown(void)
 {
 	struct iface	*iface;
 	
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		/* TODO FINISH ME */
-		free(iface);
+	while ((iface = LIST_FIRST(&conf->iface_list)) != NULL) {
+		LIST_REMOVE(iface, entry);
+		if_del(iface);
 	}
 	
 	kev_cleanup();
