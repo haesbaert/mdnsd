@@ -80,27 +80,28 @@ The library should provide in the near future:
      * Means for publishing names.
      * Means for browsing services (dns-service-discovery).
      * Means for publishing services.
+By now no library is being used to make it easier for people to test
+mdnsctl, everything is being kept on mdnsl.c in mdnsctl/.
 
 On libc integration:
 After a chat with nicm@ we have decided not to worry about libc right
-now, maybe never, so I'm making libmdns a shared library with no libc
-integration. See the README file on mdns-libc branch if you're curious.
+now, maybe never. See the README file on mdns-libc branch if you're
+curious.
      
 MDNSCTL
 -------
      It's a simple interface for the library, code is inspired in
-     ripctl, should provide all libmdns functionalities as written
-     above.
+     ripctl. By now you can use it to lookup hosts.
 
 How do I use this thing ?
 -------------------------
-     Get the freaking sources from http://github.com/haesbaert/mdnsd .
-     Install includes with "make includes" in libmdns directory.
-     Compile and install libmdns
+     Get the freaking sources from http://github.com/haesbaert/mdnsd
+     Add user and group _mdnsd
      Compile and install mdnsd and mdnsctl
      Make sure you have proper multicast setup (man 7 netstart), or
      just add a route to lo0:
           route delete 224/4
           route add 224/4 127.0.0.1
      
-     Play with mdnsctl :). 
+     Run mdnsd on the desired interface: mdnsd -d iface
+     Play with mdnsctl :)

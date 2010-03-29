@@ -22,8 +22,8 @@
 #include <netinet/in.h>
 #include <net/if.h>
 #include <event.h>
-#include <mdns.h>
 
+#include "mdns.h"
 #include "imsg.h"
 #include "control.h"
 

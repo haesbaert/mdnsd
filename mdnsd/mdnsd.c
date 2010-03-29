@@ -23,7 +23,6 @@
 
 #include <err.h>
 #include <event.h>
-#include <mdns.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +31,7 @@
 #include <unistd.h>
 
 #include "mdnsd.h"
+#include "mdns.h"
 #include "log.h"
 #include "control.h"
 
