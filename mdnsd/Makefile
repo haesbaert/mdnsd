@@ -9,7 +9,7 @@ CFLAGS+= -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS+= -Wmissing-declarations
 CFLAGS+= -Wshadow -Wpointer-arith -Wcast-qual
 CFLAGS+= -Wsign-compare
-LDADD+= -levent -lmdns
-DPADD+= ${LIBEVENT} ${LIBMDNS}
+LDADD+= -levent 
+DPADD+= ${LIBEVENT}
 
 .include <bsd.prog.mk>
