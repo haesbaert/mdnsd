@@ -404,28 +404,20 @@ query_notifyout(struct rr *rr)
 	return match;
 }
 
-int
+void
 query_cleanbyconn(struct ctl_conn *c)
 {
-	struct query	*q;
-	struct ctl_conn *qc;
-	int		 match = 0;
+	/* take ourselves out from the query */
+	if (c->q == NULL)
+		return;
 	
-	LIST_FOREACH(q, &qlist, entry) {
-		LIST_FOREACH(qc, &q->ctl_list, qentry) {
-			if (qc->iev.ibuf.fd != c->iev.ibuf.fd)
-				continue;
-			LIST_REMOVE(qc, qentry);
-			if (LIST_EMPTY(&q->ctl_list)) {
-				LIST_REMOVE(q, entry);
-				free(q->mq);
-				free(q);
-			}
-			match++;
-		}
+	LIST_REMOVE(c, qentry);
+	
+	if (LIST_EMPTY(&c->q->ctl_list)) {
+		LIST_REMOVE(c->q, entry);
+		free(c->q->mq);
+		free(c->q);
 	}
-	
-	return match;
 }
 
 /* RR cache */

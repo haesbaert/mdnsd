@@ -268,7 +268,7 @@ struct query {
 	LIST_ENTRY(query)	entry;
 	LIST_HEAD(, ctl_conn)	ctl_list; /* interested controlers */
 	int			type; 	  /* enum query_type */
-	struct question	*mq;
+	struct question		*mq;
 };
 
 LIST_HEAD(, publish)		publishing_list;
@@ -282,7 +282,7 @@ void		 query_init(void);
 struct query *	 query_place(int, struct question *, struct ctl_conn *);
 int		 query_notifyin(struct rr *);
 int		 query_notifyout(struct rr *);
-int		 query_cleanbyconn(struct ctl_conn *);
+void		 query_cleanbyconn(struct ctl_conn *);
 void		 cache_init(void);
 int		 cache_process(struct rr *);
 struct rr	*cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);

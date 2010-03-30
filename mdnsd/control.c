@@ -223,7 +223,7 @@ control_accept(int listenfd, short event, void *bula)
 
 	session_socket_blockmode(connfd, BM_NONBLOCK);
 
-	if ((c = malloc(sizeof(struct ctl_conn))) == NULL) {
+	if ((c = calloc(1, sizeof(struct ctl_conn))) == NULL) {
 		log_warn("control_accept");
 		close(connfd);
 		return;

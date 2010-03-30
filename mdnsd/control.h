@@ -47,8 +47,9 @@ struct imsgev {
 struct ctl_conn {
 	TAILQ_ENTRY(ctl_conn)		entry;
 	struct imsgev			iev;
-	struct query *q;	/* pending query */
-	LIST_ENTRY(ctl_conn)		qentry;
+	/* pending query, NULL if not pending*/
+	struct query 			*q;	
+	LIST_ENTRY(ctl_conn)		qentry; /* our query list */
 };
 
 int	control_init(void);
