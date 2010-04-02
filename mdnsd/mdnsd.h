@@ -247,23 +247,36 @@ enum publish_state {
 	PUB_DONE
 };
 
+/*
+ * All the records we'll answer for, we have always at least 3 records, our
+ * name, our reverse address and our hinfo record. As controlers publish more
+ * services/records we populate them and try to answer every query we receive.
+ */
 struct publish {
 	LIST_ENTRY(publish)	entry;
 	struct pkt	 	pkt;
 	struct event	 	timer;	/* used in probe and announce */
 	struct iface	       *iface;
 	int		 	state;	/* enum publish state */
-	int		 	sent;
+	int		 	sent;	/* how many packets we sent be it probe
+					 * or announce */
 	unsigned long	 	id;	/* unique id */
 };
 
 enum query_type {
-	QUERY_LOOKUP,
-	QUERY_LOOKUP_ADDR,
-	QUERY_LOOKUP_HINFO,
-	QUERY_BROWSING,
+	QUERY_LOOKUP,		/* lookup a hostname in .local domain */
+	QUERY_LOOKUP_ADDR,	/* reverse address lookup */
+	QUERY_LOOKUP_HINFO,	/* simple HINFO lookup */
+	QUERY_BROWSING,		/* browsing for dns-sd services */
 };
 
+LIST_HEAD(, publish)		publishing_list;
+
+/*
+ * Controlers will place queries and wait for their answers, if the query type
+ * is QUERY_BROWSING, we need "Continuous Multicast DNS Querying" MDNS draft
+ * section 5.3.
+ */
 struct query {
 	LIST_ENTRY(query)	entry;
 	LIST_HEAD(, ctl_conn)	ctl_list; /* interested controlers */
@@ -271,7 +284,7 @@ struct query {
 	struct question		*mq;
 };
 
-LIST_HEAD(, publish)		publishing_list;
+LIST_HEAD(, query)		 query_list;
 
 void		 publish_init(void);
 void		 publish_allrr(struct iface *);

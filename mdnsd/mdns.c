@@ -42,7 +42,6 @@ static struct rr_head	*rrt_lookup_head(struct rrt_tree *,
 static struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [],
     u_int16_t, u_int16_t);
 
-LIST_HEAD(, query)		 qlist;
 RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_compare);
 extern struct mdnsd_conf	*conf;
 static struct rrt_tree		 rrt_cache;
@@ -307,7 +306,7 @@ publish_fsm(int unused, short event, void *v_pub)
 void
 query_init(void)
 {
-	LIST_INIT(&qlist);
+	LIST_INIT(&query_list);
 }
 
 struct query *
@@ -316,7 +315,7 @@ query_place(int type, struct question *mq, struct ctl_conn *c)
 	struct query	*q;
 
 	/* avoid having two equivalent questions */
-	LIST_FOREACH(q, &qlist, entry)
+	LIST_FOREACH(q, &query_list, entry)
 	    if (QEQUIV(mq, q->mq)) {
 		    LIST_INSERT_HEAD(&q->ctl_list, c, qentry);
 		    return q;
@@ -329,7 +328,7 @@ query_place(int type, struct question *mq, struct ctl_conn *c)
 	LIST_INSERT_HEAD(&q->ctl_list, c, qentry);
 	q->type = type;
 	q->mq	= mq;
-	LIST_INSERT_HEAD(&qlist, q, entry);
+	LIST_INSERT_HEAD(&query_list, q, entry);
 	
 	return q;
 }
@@ -341,7 +340,7 @@ query_notifyin(struct rr *rr)
 	struct query	*q;
 	struct ctl_conn *c;
 	int		 match	   = 0;
-	LIST_FOREACH(q, &qlist, entry) {
+	LIST_FOREACH(q, &query_list, entry) {
 		if (!ANSWERS(q->mq, rr))
 			continue;
 		match++;
@@ -380,7 +379,7 @@ query_notifyout(struct rr *rr)
 	struct query	*q;
 	int		 match = 0;
 	
-	LIST_FOREACH(q, &qlist, entry) {
+	LIST_FOREACH(q, &query_list, entry) {
 		if (!ANSWERS(q->mq, rr))
 			continue;
 		match++;
