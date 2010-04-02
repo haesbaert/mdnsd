@@ -137,7 +137,7 @@ publish_delete(struct iface *iface, struct rr *rr)
 	    rr->dname);
 	s = rrt_lookup_node(&iface->rrt, rr->dname, rr->type, rr->class);
 	if (s == NULL)
-		return 0;
+		return (0);
 	
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
 		next = LIST_NEXT(rraux, entry);
@@ -155,7 +155,7 @@ publish_delete(struct iface *iface, struct rr *rr)
 		free(s);
 	}
 	
-	return n;
+	return (n);
 }
 
 int
@@ -178,7 +178,7 @@ publish_insert(struct iface *iface, struct rr *rr)
 		if (RB_INSERT(rrt_tree, &iface->rrt, n) != NULL)
 			fatal("rrt_insert: RB_INSERT");
 		
-		return 0;
+		return (0);
 	}
 		
 	/* if an unique record, clean all previous and substitute */
@@ -189,13 +189,13 @@ publish_insert(struct iface *iface, struct rr *rr)
 		}
 		LIST_INSERT_HEAD(hrr, rr, entry);
 		
-		return 0;
+		return (0);
 	}
 	
 	/* not unique, just add */
 	LIST_INSERT_HEAD(hrr, rr, entry);
 	
-	return 0;
+	return (0);
 }
 
 struct rr *
@@ -207,10 +207,10 @@ publish_lookupall(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		rr = rrt_lookup(&iface->rrt, dname, type, class);
 		if (rr != NULL)
-			return rr;
+			return (rr);
 	}
 	
-	return NULL;
+	return (NULL);
 }
 
 static void
@@ -325,7 +325,7 @@ query_place(int type, struct question *mq, struct ctl_conn *c)
 	LIST_FOREACH(q, &query_list, entry)
 	    if (QEQUIV(mq, q->mq)) {
 		    LIST_INSERT_HEAD(&q->ctl_list, c, qentry);
-		    return q;
+		    return (q);
 	    }
 	
 	if ((q = calloc(1, sizeof(*q))) == NULL)
@@ -337,7 +337,7 @@ query_place(int type, struct question *mq, struct ctl_conn *c)
 	q->mq	= mq;
 	LIST_INSERT_HEAD(&query_list, q, entry);
 	
-	return q;
+	return (q);
 }
 
 void
@@ -393,7 +393,7 @@ query_notifyin(struct rr *rr)
 		}
 	}
 	
-	return match;
+	return (match);
 }
 
 static int
@@ -423,7 +423,7 @@ query_notifyout(struct rr *rr)
 		}
 	}
 	
-	return match;
+	return (match);
 }
 
 /*
@@ -442,17 +442,17 @@ cache_process(struct rr *rr)
 
 	evtimer_set(&rr->rev_timer, cache_rev, rr);
 	if (rr->ttl == 0)
-		return cache_delete(rr);
+		return (cache_delete(rr));
 	if (cache_insert(rr) == -1)
-		return -1;
+		return (-1);
 	
-	return 0;
+	return (0);
 }
 	
 struct rr *
 cache_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
-	return rrt_lookup(&rrt_cache, dname, type, class);
+	return (rrt_lookup(&rrt_cache, dname, type, class));
 }
 
 static int
@@ -477,7 +477,7 @@ cache_insert(struct rr *rr)
 		cache_schedrev(rr);
 		query_notifyin(rr);
 		
-		return 0;
+		return (0);
 	}
 		
 	/* if an unique record, clean all previous and substitute */
@@ -492,7 +492,7 @@ cache_insert(struct rr *rr)
 		cache_schedrev(rr);
 		query_notifyin(rr);
 		
-		return 0;
+		return (0);
 	}
 	
 	/* rr is not unique, see if this is a cache refresh */
@@ -503,7 +503,7 @@ cache_insert(struct rr *rr)
 			cache_schedrev(rraux);
 			free(rr);
 			
-			return 0;
+			return (0);
 		}
 	}
 	
@@ -511,7 +511,7 @@ cache_insert(struct rr *rr)
 	LIST_INSERT_HEAD(hrr, rr, entry);
 	query_notifyin(rr);
 	
-	return 0;
+	return (0);
 }
 
 static int
@@ -525,7 +525,7 @@ cache_delete(struct rr *rr)
 	    rr->dname);
 	s = rrt_lookup_node(&rrt_cache, rr->dname, rr->type, rr->class);
 	if (s == NULL)
-		return 0;
+		return (0);
 	
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
 		next = LIST_NEXT(rraux, entry);
@@ -545,7 +545,7 @@ cache_delete(struct rr *rr)
 		free(s);
 	}
 	
-	return n;
+	return (n);
 }
 
 static void
@@ -621,9 +621,9 @@ rrt_lookup_head(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN],
 	
 	tmp = rrt_lookup_node(rrt, dname, type, class);
 	if (tmp == NULL)
-		return NULL;
+		return (NULL);
 	
-	return &tmp->hrr;
+	return (&tmp->hrr);
 }
 
 static struct rr *
@@ -633,8 +633,8 @@ rrt_lookup(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type, u_i
 	
 	hrr = rrt_lookup_head(rrt, dname, type, class);
 	if (hrr)
-		return LIST_FIRST(hrr);
-	return NULL;
+		return (LIST_FIRST(hrr));
+	return (NULL);
 }
 
 static struct rrt_node *
@@ -654,9 +654,9 @@ rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type
 	
 	tmp = RB_FIND(rrt_tree, rrt, &s);
 	if (tmp == NULL)
-		return NULL;
+		return (NULL);
 	
-	return tmp;
+	return (tmp);
 }
 
 static int
@@ -668,14 +668,14 @@ rrt_compare(struct rrt_node *a, struct rrt_node *b)
 	rrb = LIST_FIRST(&b->hrr);
 	
 	if (rra->class < rrb->class)
-		return -1;
+		return (-1);
 	if (rra->class > rrb->class)
-		return 1;
+		return (1);
 	if (rra->type < rrb->type)
-		return -1;
+		return (-1);
 	if (rra->type > rrb->type)
-		return 1;
+		return (1);
 	
-	return strcmp(rra->dname, rrb->dname);
+	return (strcmp(rra->dname, rrb->dname));
 }
 

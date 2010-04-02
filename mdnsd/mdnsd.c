@@ -169,7 +169,7 @@ mdns_sock(void)
 	log_debug("mdns sock bound to %s:%u", inet_ntoa(addr.sin_addr),
 	    ntohs(addr.sin_port));
 	
-	return sock;
+	return (sock);
 }
 
 static void
@@ -322,7 +322,7 @@ main(int argc, char *argv[])
 	/* parent mainloop */
 	event_dispatch();
 	
-	return 0;
+	return (0);
 }
 
 void
@@ -368,7 +368,7 @@ peersuser(int fd)
 	
 	if (getpeereid(fd, &euid, NULL) == -1)
 		fatal("getpeereid");
-	return euid == 0;
+	return (euid == 0);
 }
 
 void
