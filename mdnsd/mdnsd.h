@@ -293,8 +293,6 @@ int		 publish_delete(struct iface *, struct rr *);
 struct rr *	 publish_lookupall(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 void		 query_init(void);
 struct query *	 query_place(int, struct question *, struct ctl_conn *);
-int		 query_notifyin(struct rr *);
-int		 query_notifyout(struct rr *);
 void		 query_cleanbyconn(struct ctl_conn *);
 void		 cache_init(void);
 int		 cache_process(struct rr *);

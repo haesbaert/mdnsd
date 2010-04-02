@@ -29,6 +29,8 @@
 #define RANDOM_PROBETIME arc4random_uniform((u_int32_t) 250000)
 
 static void		 publish_fsm(int, short, void *_pub);
+static int		 query_notifyin(struct rr *);
+static int		 query_notifyout(struct rr *);
 static int		 cache_insert(struct rr *);
 static int		 cache_delete(struct rr *);
 static void		 cache_schedrev(struct rr *);
@@ -46,8 +48,10 @@ RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_compare);
 extern struct mdnsd_conf	*conf;
 static struct rrt_tree		 rrt_cache;
 
-/* TODO: Turn all the publishing types into functions */
-/* Publishing */
+/*
+ * Publishing
+ */
+
 void
 publish_init(void)
 {
@@ -302,7 +306,10 @@ publish_fsm(int unused, short event, void *v_pub)
 	}
 }
 
-/* Querier */
+/*
+ * Querier
+ */
+
 void
 query_init(void)
 {
@@ -333,8 +340,24 @@ query_place(int type, struct question *mq, struct ctl_conn *c)
 	return q;
 }
 
+void
+query_cleanbyconn(struct ctl_conn *c)
+{
+	if (c->q == NULL)
+		return;
+	
+	/* take ourselves out from the query */
+	LIST_REMOVE(c, qentry);
+	
+	if (LIST_EMPTY(&c->q->ctl_list)) {
+		LIST_REMOVE(c->q, entry);
+		free(c->q->mq);
+		free(c->q);
+	}
+}
+
 /* notify about this new rr to all interested peers */
-int
+static int
 query_notifyin(struct rr *rr)
 {
 	struct query	*q;
@@ -373,7 +396,7 @@ query_notifyin(struct rr *rr)
 	return match;
 }
 
-int
+static int
 query_notifyout(struct rr *rr)
 {
 	struct query	*q;
@@ -403,23 +426,10 @@ query_notifyout(struct rr *rr)
 	return match;
 }
 
-void
-query_cleanbyconn(struct ctl_conn *c)
-{
-	/* take ourselves out from the query */
-	if (c->q == NULL)
-		return;
-	
-	LIST_REMOVE(c, qentry);
-	
-	if (LIST_EMPTY(&c->q->ctl_list)) {
-		LIST_REMOVE(c->q, entry);
-		free(c->q->mq);
-		free(c->q);
-	}
-}
+/*
+ * RR cache
+ */
 
-/* RR cache */
 void
 cache_init(void)
 {
@@ -585,7 +595,10 @@ cache_rev(int unused, short event, void *v_rr)
 /* 	rrt_dump(); */
 }
 
-/* RR tree */
+/*
+ * RR tree
+ */
+
 void
 rrt_dump(struct rrt_tree *rrt)
 {
