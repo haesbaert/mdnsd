@@ -16,6 +16,14 @@ Setup
   
 Code
 -----------------
+  * Cache is wrong, we should have all records of the same name under
+  the same node, so our tree node is actually a rrset, the rrset has
+  an attribute "unique". When we say a rrset is unique, we're saying
+  "there is only one record for that name and type". The way it is
+  works, but we have a node for each name/type pair, so it's a little
+  dumb since 98% of records are unique, we usually want to work on
+  rrsets not rr individually, so we go from O(log(n)) to O(n), cause
+  we need a RB_FOREACH lots of time, fix this. 
   * Fetchmyname should use the return of strlcat to check truncation.
   * Write manual pages
   * Implement cache dump.

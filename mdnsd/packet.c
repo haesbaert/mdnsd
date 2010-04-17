@@ -47,7 +47,7 @@ static struct {
 
 static struct iface	*find_iface(unsigned int, struct in_addr);
 
-static int	pkt_parse(u_int8_t *, uint16_t, struct pkt *);
+static int	pkt_parse(u_int8_t *, u_int16_t, struct pkt *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
@@ -63,13 +63,13 @@ static ssize_t	serialize_rdata(struct rr *, u_int8_t *, u_int16_t);
 static int	rr_parse_hinfo(struct rr *, u_int8_t *);
 static int	rr_parse_a(struct rr *, u_int8_t *);
 static int	rr_parse_txt(struct rr *, u_int8_t *);
-static int	rr_parse_srv(struct rr *, u_int8_t *, uint16_t);
+static int	rr_parse_srv(struct rr *, u_int8_t *, u_int16_t);
 static int	rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
-static ssize_t  charstr(char [MAX_CHARSTR], u_int8_t *, uint16_t);
+static ssize_t  charstr(char [MAX_CHARSTR], u_int8_t *, u_int16_t);
 
 /* util */
 static ssize_t
-charstr(char dest[MAX_CHARSTR], u_int8_t *buf, uint16_t len)
+charstr(char dest[MAX_CHARSTR], u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t tocpy;
 	
@@ -335,7 +335,7 @@ find_iface(unsigned int ifindex, struct in_addr src)
 
 /* TODO: insert all sections at end, don't use LIST_INSERT_HEAD */
 static int
-pkt_parse(u_int8_t *buf, uint16_t len, struct pkt *pkt)
+pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
 {
 	u_int16_t		 i;
 	struct question	*mq;
@@ -507,9 +507,9 @@ static ssize_t
 pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
 	size_t i;
-	uint8_t lablen;
+	u_int8_t lablen;
 	int jumped = 0;
-	uint16_t oldlen = len;
+	u_int16_t oldlen = len;
 	u_char label[MAXLABEL + 1];
 	
 	/* be extra safe */
@@ -671,7 +671,7 @@ pkt_process(struct pkt *pkt)
 {
 	struct rr	*rr;
 	struct question *q;
-	struct publish *pub;
+	struct publish	*pub;
 	
 	/* mark all probe questions, so we don't try to answer them below */
 	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
@@ -683,16 +683,23 @@ pkt_process(struct pkt *pkt)
 		free(rr);
 	}
 	
-	/* check for a conflicting response, that is any response that answers
+	/* Check for a conflicting response, that is any response that answers
 	 * our probe queries, if any of them answers, give up our name and
 	 * choose another. */
-	LIST_FOREACH(pub, &publishing_list, entry) {
+	LIST_FOREACH(pub, &probing_list, entry) {
 		LIST_FOREACH(q, &pub->pkt.qlist, entry) {
+			if (!q->probe) /* consider probe queries only */
+				continue;
 			LIST_FOREACH(rr, &pkt->anlist, entry) {
 				if (ANSWERS(q, rr)) {
 					/* TODO: Give up name */
 					log_warnx("Can't use name %s, "
-					    "already taken", rr->dname); 	
+					    "already taken", q->dname);
+/* 					if (publish_conflict(q->dname) == -1) */
+/* 						log_warnx("Can't resolve " */
+/* 						    "conflict for name %s", */
+/* 						    q->dname); */
+					break;
 				}
 			}
 		}
@@ -700,7 +707,7 @@ pkt_process(struct pkt *pkt)
 	    
 	/* process all questions */
 	if (pkt_tryanswerq(pkt) == -1)
-		log_warn("pkt_tryanswerq: error");
+		log_warnx("pkt_tryanswerq: error");
 	
 	/* process all answers */
 	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
@@ -789,7 +796,7 @@ rr_parse_txt(struct rr *rr, u_int8_t *buf)
 }
 
 static int
-rr_parse_srv(struct rr *rr, u_int8_t *buf, uint16_t len)
+rr_parse_srv(struct rr *rr, u_int8_t *buf, u_int16_t len)
 {
 	GETSHORT(rr->rdata.SRV.priority, buf);
 	len -= INT16SZ;

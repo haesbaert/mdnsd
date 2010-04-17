@@ -241,7 +241,7 @@ TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 
 /* mdns.c */
 enum publish_state {
-    	PUB_INITIAL,
+	PUB_INITIAL,
     	PUB_PROBE,
     	PUB_ANNOUNCE,
 	PUB_DONE
@@ -270,7 +270,7 @@ enum query_type {
 	QUERY_BROWSING,		/* browsing for dns-sd services */
 };
 
-LIST_HEAD(, publish)		publishing_list;
+LIST_HEAD(, publish)		probing_list;
 
 /*
  * Controlers will place queries and wait for their answers, if the query type

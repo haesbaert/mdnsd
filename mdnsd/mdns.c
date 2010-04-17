@@ -59,8 +59,8 @@ publish_init(void)
 	struct rr	*rr;
 	char		 revaddr[MAXHOSTNAMELEN];
 	
-	/* init publishing list used in name conflicts */
-	LIST_INIT(&publishing_list);
+	/* init probing list used in name conflicts */
+	LIST_INIT(&probing_list);
 	
 	/* insert default records in all our interfaces */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
@@ -226,9 +226,9 @@ publish_fsm(int unused, short event, void *v_pub)
 	case PUB_INITIAL:	
 		pub->state = PUB_PROBE;
 		pub->id = ++pubid;
-		/* Register probing in our probing lists so we can deal with
+		/* Register probing in our probing list so we can deal with
 		 * name conflicts */
-		LIST_INSERT_HEAD(&publishing_list, pub, entry);
+		LIST_INSERT_HEAD(&probing_list, pub, entry);
 		/* FALLTHROUGH */
 	case PUB_PROBE:
 		pub->pkt.qr = 0;
@@ -237,7 +237,7 @@ publish_fsm(int unused, short event, void *v_pub)
 		pub->sent++;
 		if (pub->sent == 3) { /* enough probing, start announcing */
 			/* cool, so now that we're done, remove it from
-			 * publishing lists, now the record is ours. */
+			 * probing list, now the record is ours. */
 			LIST_REMOVE(pub, entry);
 			pub->state  = PUB_ANNOUNCE;
 			pub->sent   = 0;
