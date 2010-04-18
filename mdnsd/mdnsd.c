@@ -44,6 +44,7 @@ static void		 fetchmyname(char [MAXHOSTNAMELEN]);
 static void		 fetchhinfo(struct hinfo *);
 
 struct mdnsd_conf	*conf = NULL;
+extern char 		*malloc_options;
 
 __dead void
 usage(void)
@@ -62,6 +63,9 @@ mdnsd_conf_init(int argc, char *argv[])
 	int		 i;
 	struct kif	*k;
 	struct iface	*iface;
+	
+	if ((conf = calloc(1, sizeof(*conf))) == NULL)
+		fatal("calloc");
 	
 	LIST_INIT(&conf->iface_list);
 	
@@ -216,16 +220,15 @@ main(int argc, char *argv[])
 	struct passwd	*pw;
 	struct iface	*iface;
 	struct event	 ev_sigint, ev_sigterm, ev_sighup;
+	char *buf;
 
-	if ((conf = calloc(1, sizeof(*conf))) == NULL)
-		fatal("calloc");
-	
 	log_init(1);	/* log to stderr until daemonized */
 
 	while ((ch = getopt(argc, argv, "d")) != -1) {
 		switch (ch) {
 		case 'd':
 			debug = 1;
+			malloc_options = "AFGJPX";
 			break;
 		default:
 			usage();
