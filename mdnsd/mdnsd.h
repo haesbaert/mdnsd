@@ -86,6 +86,10 @@ struct question {
 	int 			probe;
 };
 
+#define RR_EQTYPE(rra, rrb)					\
+	((rra->type  == rrb->type)      &&			\
+	    (rra->class == rrb->class)  &&			\
+	    (strcmp(rra->dname, rrb->dname) == 0))
 #define RR_UNIQ(rr) (rr->cacheflush)
 #define QEQUIV(qa, qb)						\
 	((qa->qtype  == qb->qtype)	&&			\
@@ -247,11 +251,6 @@ enum publish_state {
 	PUB_DONE
 };
 
-/*
- * All the records we'll answer for, we have always at least 3 records, our
- * name, our reverse address and our hinfo record. As controlers publish more
- * services/records we populate them and try to answer every query we receive.
- */
 struct publish {
 	LIST_ENTRY(publish)	entry;
 	struct pkt	 	pkt;
