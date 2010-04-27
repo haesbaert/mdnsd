@@ -26,7 +26,8 @@
 #include "mdnsd.h"
 #include "log.h"
 
-#define RANDOM_PROBETIME arc4random_uniform((u_int32_t) 250000)
+#define INTERVAL_PROBETIME	250000
+#define RANDOM_PROBETIME 	arc4random_uniform((u_int32_t) 250000)
 
 static void		 publish_fsm(int, short, void *_pub);
 static int		 query_notifyin(struct rr *);
@@ -141,7 +142,7 @@ publish_delete(struct iface *iface, struct rr *rr)
 	
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
 		next = LIST_NEXT(rraux, entry);
-		if (RR_UNIQ(rr) ||
+		if (RR_UNIQ(rr) || /* XXX: Revise this */
 		    (memcmp(&rr->rdata, &rraux->rdata,
 		    rraux->rdlen) == 0)) {
 			LIST_REMOVE(rraux, entry);
@@ -259,7 +260,7 @@ publish_fsm(int unused, short event, void *v_pub)
 			publish_fsm(unused, event, pub);
 			return;
 		}
-		tv.tv_usec = RANDOM_PROBETIME;
+		tv.tv_usec = INTERVAL_PROBETIME;
 		evtimer_add(&pub->timer, &tv);
 		break;
 	case PUB_ANNOUNCE:
@@ -510,6 +511,7 @@ cache_insert(struct rr *rr)
 	/* not a refresh, so add */
 	LIST_INSERT_HEAD(hrr, rr, entry);
 	query_notifyin(rr);
+	/* XXX: should we cache_schedrev ? */
 	
 	return (0);
 }
