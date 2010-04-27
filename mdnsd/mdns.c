@@ -26,8 +26,7 @@
 #include "mdnsd.h"
 #include "log.h"
 
-#define RANDOM_PROBETIME	arc4random_uniform((u_int32_t) 250000)
-#define INTERVAL_PROBETIME	250000
+#define RANDOM_PROBETIME arc4random_uniform((u_int32_t) 250000)
 
 static void		 publish_fsm(int, short, void *_pub);
 static int		 query_notifyin(struct rr *);
@@ -41,9 +40,9 @@ void			 rrt_dump(struct rrt_tree *);
 static struct rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
     u_int16_t, u_int16_t);
 static struct rr_head	*rrt_lookup_head(struct rrt_tree *,
-    char [MAXHOSTNAMELEN]);
-static struct rrt_node	*rrt_lookup_node(struct rrt_tree *,
-    char [MAXHOSTNAMELEN]);
+    char [MAXHOSTNAMELEN],  u_int16_t, u_int16_t);
+static struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [],
+    u_int16_t, u_int16_t);
 
 RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_compare);
 extern struct mdnsd_conf	*conf;
@@ -96,10 +95,10 @@ void
 publish_allrr(struct iface *iface)
 {
 	struct question	*mq;
-	struct rr	*rr, *rrcopy;
-	struct publish	*pub;
-	struct rrt_node	*n;
-	struct timeval	 tv;
+	struct rr		*rr, *rrcopy;
+	struct publish		*pub;
+	struct rrt_node		*n;
+	struct timeval		 tv;
 	
 	/* start a publish thingy */
 	if ((pub = calloc(1, sizeof(*pub))) == NULL)
@@ -136,13 +135,13 @@ publish_delete(struct iface *iface, struct rr *rr)
 	
 	log_debug("publish_delete: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
-	s = rrt_lookup_node(&iface->rrt, rr->dname);
+	s = rrt_lookup_node(&iface->rrt, rr->dname, rr->type, rr->class);
 	if (s == NULL)
 		return (0);
 	
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
 		next = LIST_NEXT(rraux, entry);
-		if (RR_EQTYPE(rr, rraux) ||
+		if (RR_UNIQ(rr) ||
 		    (memcmp(&rr->rdata, &rraux->rdata,
 		    rraux->rdlen) == 0)) {
 			LIST_REMOVE(rraux, entry);
@@ -164,12 +163,12 @@ publish_insert(struct iface *iface, struct rr *rr)
 {
 	struct rr_head	*hrr;
 	struct rrt_node *n;
-	struct rr	*rraux, *next;
+	struct rr	*rraux;
 	
 	log_debug("publish_insert: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
 	
-	hrr = rrt_lookup_head(&iface->rrt, rr->dname);
+	hrr = rrt_lookup_head(&iface->rrt, rr->dname, rr->type, rr->class);
 	if (hrr == NULL) {
 		if ((n = calloc(1, sizeof(*n))) == NULL)
 			fatal("calloc");
@@ -182,22 +181,17 @@ publish_insert(struct iface *iface, struct rr *rr)
 		return (0);
 	}
 		
-	/* if an unique record, remove all records with same type/class */
+	/* if an unique record, clean all previous and substitute */
 	if (RR_UNIQ(rr)) {
-		for (rraux = LIST_FIRST(hrr); rraux != NULL; rraux = next) {
-			next = LIST_NEXT(rraux, entry);
-			if (RR_EQTYPE(rr, rraux)) {
-				LIST_REMOVE(rraux, entry);
-				if (evtimer_pending(&rraux->rev_timer, NULL))
-					evtimer_del(&rraux->rev_timer);
-				free(rraux);
-			}
+		while ((rraux = LIST_FIRST(hrr)) != NULL) {
+			LIST_REMOVE(rraux, entry);
+			free(rraux);
 		}
 		LIST_INSERT_HEAD(hrr, rr, entry);
 		
 		return (0);
 	}
-
+	
 	/* not unique, just add */
 	LIST_INSERT_HEAD(hrr, rr, entry);
 	
@@ -265,7 +259,7 @@ publish_fsm(int unused, short event, void *v_pub)
 			publish_fsm(unused, event, pub);
 			return;
 		}
-		tv.tv_usec = INTERVAL_PROBETIME;
+		tv.tv_usec = RANDOM_PROBETIME;
 		evtimer_add(&pub->timer, &tv);
 		break;
 	case PUB_ANNOUNCE:
@@ -466,9 +460,12 @@ cache_insert(struct rr *rr)
 {
 	struct rr_head	*hrr;
 	struct rrt_node *n;
-	struct rr	*rraux, *next;
+	struct rr	*rraux;
 	
-	hrr = rrt_lookup_head(&rrt_cache, rr->dname);
+	log_debug("cache_insert: type: %s name: %s", rr_type_name(rr->type),
+	    rr->dname);
+	
+	hrr = rrt_lookup_head(&rrt_cache, rr->dname, rr->type, rr->class);
 	if (hrr == NULL) {
 		if ((n = calloc(1, sizeof(*n))) == NULL)
 			fatal("calloc");
@@ -480,40 +477,30 @@ cache_insert(struct rr *rr)
 		cache_schedrev(rr);
 		query_notifyin(rr);
 		
-		log_debug("cache_insert: type: %s name: %s (NEW NAME)", rr_type_name(rr->type),
-		    rr->dname);
 		return (0);
 	}
 		
-	/* if an unique record, remove all records with same type/class */
+	/* if an unique record, clean all previous and substitute */
 	if (RR_UNIQ(rr)) {
-		for (rraux = LIST_FIRST(hrr); rraux != NULL; rraux = next) {
-			next = LIST_NEXT(rraux, entry);
-			if (RR_EQTYPE(rr, rraux)) {
-				LIST_REMOVE(rraux, entry);
-				if (evtimer_pending(&rraux->rev_timer, NULL))
-					evtimer_del(&rraux->rev_timer);
-				free(rraux);
-			}
+		while ((rraux = LIST_FIRST(hrr)) != NULL) {
+			LIST_REMOVE(rraux, entry);
+			if (evtimer_pending(&rraux->rev_timer, NULL))
+				evtimer_del(&rraux->rev_timer);
+			free(rraux);
 		}
 		LIST_INSERT_HEAD(hrr, rr, entry);
 		cache_schedrev(rr);
 		query_notifyin(rr);
 		
-		log_debug("cache_insert: type: %s name: %s (UNIQUE)", rr_type_name(rr->type),
-		    rr->dname);
 		return (0);
 	}
-		
+	
 	/* rr is not unique, see if this is a cache refresh */
 	LIST_FOREACH(rraux, hrr, entry) {
-		if (RR_EQTYPE(rr, rraux) &&
-		    (memcmp(&rr->rdata, &rraux->rdata, rraux->rdlen) == 0)) {
+		if (memcmp(&rr->rdata, &rraux->rdata, rraux->rdlen) == 0) {
 			rraux->ttl = rr->ttl;
 			rraux->revision = 0;
 			cache_schedrev(rraux);
-			log_debug("cache_insert: type: %s name: %s (REFRESH)", rr_type_name(rr->type),
-			    rr->dname);
 			free(rr);
 			
 			return (0);
@@ -522,10 +509,6 @@ cache_insert(struct rr *rr)
 	
 	/* not a refresh, so add */
 	LIST_INSERT_HEAD(hrr, rr, entry);
-	log_debug("cache_insert: type: %s name: %s (SHARED ADD)", rr_type_name(rr->type),
-	    rr->dname);
-	/* XXX: should we really schedule ? */
-	cache_schedrev(rraux);
 	query_notifyin(rr);
 	
 	return (0);
@@ -540,14 +523,15 @@ cache_delete(struct rr *rr)
 	
 	log_debug("cache_delete: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
-	s = rrt_lookup_node(&rrt_cache, rr->dname);
+	s = rrt_lookup_node(&rrt_cache, rr->dname, rr->type, rr->class);
 	if (s == NULL)
 		return (0);
 	
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
 		next = LIST_NEXT(rraux, entry);
-		if (RR_EQTYPE(rr, rraux) &&
-		    (memcmp(&rr->rdata, &rraux->rdata, rraux->rdlen) == 0)) {
+		if (RR_UNIQ(rr) ||
+		    (memcmp(&rr->rdata, &rraux->rdata,
+		    rraux->rdlen) == 0)) {
 			LIST_REMOVE(rraux, entry);
 			if (evtimer_pending(&rraux->rev_timer, NULL))
 				evtimer_del(&rraux->rev_timer);
@@ -630,11 +614,12 @@ rrt_dump(struct rrt_tree *rrt)
 }
 
 static struct rr_head *
-rrt_lookup_head(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN])
+rrt_lookup_head(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN],
+    u_int16_t type, u_int16_t class)
 {
 	struct rrt_node	*tmp;
 	
-	tmp = rrt_lookup_node(rrt, dname);
+	tmp = rrt_lookup_node(rrt, dname, type, class);
 	if (tmp == NULL)
 		return (NULL);
 	
@@ -645,36 +630,33 @@ static struct rr *
 rrt_lookup(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct rr_head	*hrr;
-	struct rr	*rraux, rrlkup;
 	
-	hrr = rrt_lookup_head(rrt, dname);
-	if (hrr != NULL) {
-		rrlkup.type  = type;
-		rrlkup.class = class;
-		strlcpy(rrlkup.dname, dname, MAXHOSTNAMELEN);
-		
-		LIST_FOREACH(rraux, hrr, entry)
-		    if (RR_EQTYPE(rraux, (&rrlkup)))
-			    return (rraux);
-	}
-	
+	hrr = rrt_lookup_head(rrt, dname, type, class);
+	if (hrr)
+		return (LIST_FIRST(hrr));
 	return (NULL);
 }
 
 static struct rrt_node *
-rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN])
+rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
-	struct rrt_node	s;
+	struct rrt_node	s, *tmp;
 	struct rr	rr;
 	
 	bzero(&s, sizeof(s));
 	bzero(&rr, sizeof(rr));
+	rr.type	 = type;
+	rr.class = class;
 	strlcpy(rr.dname, (const char *)dname, MAXHOSTNAMELEN);
 
 	LIST_INIT(&s.hrr);
 	LIST_INSERT_HEAD(&s.hrr, &rr, entry);
 	
-	return (RB_FIND(rrt_tree, rrt, &s));
+	tmp = RB_FIND(rrt_tree, rrt, &s);
+	if (tmp == NULL)
+		return (NULL);
+	
+	return (tmp);
 }
 
 static int
@@ -684,6 +666,15 @@ rrt_compare(struct rrt_node *a, struct rrt_node *b)
 	
 	rra = LIST_FIRST(&a->hrr);
 	rrb = LIST_FIRST(&b->hrr);
+	
+	if (rra->class < rrb->class)
+		return (-1);
+	if (rra->class > rrb->class)
+		return (1);
+	if (rra->type < rrb->type)
+		return (-1);
+	if (rra->type > rrb->type)
+		return (1);
 	
 	return (strcmp(rra->dname, rrb->dname));
 }
