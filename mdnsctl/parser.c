@@ -37,6 +37,7 @@ enum token_type {
 	KEYWORD,
 	ADDRESS,
 	HOSTNAME,
+	PROTO
 };
 
 struct token {
@@ -49,9 +50,11 @@ struct token {
 static const struct token t_main[];
 static const struct token t_lkup[];
 static const struct token t_lkup_hinfo[];
+static const struct token t_br[];
 
 static const struct token t_main[] = {
 	{KEYWORD,	"lkup",		NONE,		t_lkup},
+	{KEYWORD,	"browse",	NONE,		t_br},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -67,6 +70,10 @@ static const struct token t_lkup_hinfo[] = {
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
+static const struct token t_br[] = {
+	{ PROTO,	"",		BROWSE_PROTO,	NULL},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
 
 static struct parse_result	res;
 
@@ -143,6 +150,13 @@ match_token(const char *word, const struct token *table)
 					res.action = t->value;
 			}
 			break;
+		case PROTO:
+			if (parse_proto(word, res.proto)) {
+				match++;
+				t = &table[i];
+				if (t->value)
+					res.action = t->value;
+			}
 		case ENDTOKEN:
 			break;
 		}
@@ -179,6 +193,9 @@ show_valid_args(const struct token *table)
 			break;
 		case HOSTNAME:
 			fprintf(stderr, "  <hostname.local>\n");
+			break;
+		case PROTO:
+			fprintf(stderr, "  <_appproto._(tcp|udp).local>\n");
 			break;
 		case ENDTOKEN:
 			break;
@@ -220,3 +237,22 @@ parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN])
 	return (1);
 }
 
+/* XXX: improve this parsing, lala.tcp_ shouldn't be accepted */
+int
+parse_proto(const char *word, char proto[MAXHOSTNAMELEN])
+{
+	char *p;
+
+	if (word == NULL || strlen(word) < 6)
+		return (0);
+	
+	if ((p = strstr(word, ".")) == NULL)
+		return (0);
+	if (strlen(p) != 11)
+		return (0);
+	if (strcmp(p, "._tcp.local") != 0 && strcmp(p, "._udp.local") != 0)
+		return (0);
+	strlcpy(proto, word, MAXHOSTNAMELEN);
+	
+	return (1);
+}
