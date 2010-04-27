@@ -23,19 +23,24 @@
 #include <event.h>
 #include <string.h>
 
-#define	MDNSD_SOCKET		"/var/run/mdnsd.sock"
+#include "imsg.h"	/* XXX this shouldn't be here */
+
+#define MDNSD_SOCKET		"/var/run/mdnsd.sock"
 #define ALL_MDNS_DEVICES	"224.0.0.251"
 #define MDNS_TIMEOUT 		3
-#define MAX_CHARSTR		256 /* we swap the length byter per the null byte */
+#define MAX_CHARSTR		256	/* we swap the length byter per the null byte */
 
 /* XXX remove CTL infix */
 enum imsg_type {
 	IMSG_NONE,
 	IMSG_CTL_END,
 	IMSG_CTL_LOOKUP,
-	IMSG_CTL_LOOKUP_ADDR,
-	IMSG_CTL_LOOKUP_HINFO,
-	IMSG_DEMOTE
+};
+
+struct mdns_msg_lkup {
+	char		dname[MAXHOSTNAMELEN];
+	u_int16_t	type;
+	u_int16_t	class;
 };
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
@@ -45,7 +50,7 @@ struct hinfo {
 };
 
 int	mdns_lkup(const char *, struct in_addr *);
-int	mdns_lkup_addr(struct in_addr *, char *, size_t);
 int	mdns_lkup_hinfo(const char *, struct hinfo *);
+int	mdns_lkup_addr(struct in_addr *, char *, size_t);
 
 #endif	/* _MDNS_H_ */

@@ -115,7 +115,9 @@ main(int argc, char *argv[])
 			break;
 		}
 		break;
-
+	case BROWSE_PROTO:
+		errx(1, "implement me");
+		break;
 	}
 	
 	return (0);		/* NOTREACHED */
