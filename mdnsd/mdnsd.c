@@ -220,6 +220,7 @@ main(int argc, char *argv[])
 	struct passwd	*pw;
 	struct iface	*iface;
 	struct event	 ev_sigint, ev_sigterm, ev_sighup;
+	char *buf;
 
 	log_init(1);	/* log to stderr until daemonized */
 
