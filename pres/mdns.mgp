@@ -1,0 +1,366 @@
+%deffont "thick"      tfont "thick.ttf",      tmfont "goth.ttf"
+%deffont "typewriter" tfont "typewriter.ttf", tmfont "goth.ttf"
+%default 1 area 90 90, leftfill, size 2, fore "white", back "blue", font "thick"
+%default 2 size 7, vgap 10, prefix " ", fore "white", back "blue", center
+%default 3 size 2, bar "gray70", vgap 10, fore "white", back "blue", left
+%default 4 size 4, fore "white", vgap 30, prefix " ", font "standard", fore "white", back "blue", left
+%tab 1 size 5, vgap 40, prefix "  ", icon box "green" 50
+%tab 2 size 4, vgap 40, prefix "      ", icon arc "grey" 50
+%tab 3 size 3, vgap 40, prefix "            ", icon delta3 "black" 40
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+%nodefault
+%size 7, font "standard", fore "black", back "white", vgap 20, center
+
+MDNS
+Design e Implementação
+
+%newimage -zoom 80 "openbsd_puffy.png"
+
+%size 4
+Christiano Farina Haesbaert
+haesbaert at irc.freenode.net
+haesbaert@haesbaert.org
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+MDNS
+
+
+	MDNS = Multicast Domain Name System
+	Criado por Stuart Chesnire da Apple na transição
+Appletalk->Ipv4.
+	Ainda um draft, expira em Setembro/2010.	 
+	Faz parte do "Zeroconf", junto com DNS-SD.
+	Presente na maioria das distribuições linux (Avahi).
+	Popularizado pelo "Bonjour".
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Por que MDNS ?
+
+
+	Network Browsing não tão cretino.
+	Decorar IP nunca mais.
+	Zeroconf configuration.
+	Feito em cima de um protocolo conhecido que funciona :-).
+	Protocolo na mesma estrutura de DNS unicast.
+	Draft bem escrito (mal cisco, muito mal).
+	Resolve o problema dos recursos instáveis.
+	Funciona com clientes unicast (legacy clients).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Relação com Zeroconf
+
+	Zeroconf foi a buzzword dada a MDNS, DNS-SD e "link-local autoconf".
+	MDNS sozinho apenas resolve/publica nomes de DNS por multicast.
+	Ganha Network Browsing se usado com DNS-SD (DNS Service Discovery).
+	"link-local address autoconf" como um substituto decentralizado e
+	automático para DHCP.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Funcionamento MDNS Básico (Sem DNS-SD)
+
+Semântica especial no domínio ".local".
+
+Queriers perguntam por nomes, Responders respondem :-).
+
+Perguntas são enviadas para a rede local via Multicast porta 5353.
+Respostas também, fate-sharing, uma resposta serve vários queriers.
+
+Querier:   Quem é arthur.local ? (A)
+Responder: Soy jo ! meu ip é 192.168.8.4
+
+Querier:   Qual o HINFO de lancelot.local ? (HINFO)
+Responder: OpenBSD 4.7/i386
+
+Querier:   Quem é 192.168.8.4 ? (PTR)
+Responder: É arthur.local.
+
+Pode ser usado para *qualquer* record de DNS: MX, TXT, SRV, A, AAAA,
+PTR....
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Funcionamento com DNS-SD
+
+Service Instance Enumeration (Browsing).
+
+Service Instance Name = <Instance> . <Service> . <Domain>
+
+Ainda todo feito em cima de MDNS básico com mesmos pacotes de DNS.
+
+Usuário faz PTR lookups para enumerar serviços, SRV/TXT para resolver.
+
+Exemplos:
+Querier:   Quem são os serviços do tipo _http._tcp.local (PTR) ?
+Querier:   LOOKUP PTR name=_http._tcp.local
+
+Responder: São estes:
+PTR name=_http._tcp.local   DATA=montypython._http._tcp.local
+PTR name=_http._tcp.local   DATA=holygrail._http_.tcp.local  
+PTR name=_http._tcp.local   DATA=lancelott._http_.tcp.local  
+
+Querier:   Como eu acesso  holygrail._http._tcp.local (SRV/TXT) ?
+Responder: Na porta 80 com path=/ no host arthur.local cujo ip é
+192.168.8.4
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Eu gosto de exemplos...
+
+Supondo que o Lancellot esteja cansado da batalha com os cavaleiros que dizem NI.
+
+Ele agora quer saber todos os serviços anunciados em sua rede, dns-sd
+provê um nome especial para enumerar todos os protocolos.
+
+Um PTR lookup para _services._dns-sd._udp.local nos devolve uma lista
+de todos protocolos sendo anunciados:
+
+Querier:   LOOKUP PTR name=_services._dns-sd._udp.local
+
+Responder:
+PTR name=_services._dns-sd._udp.local   DATA=_workstation_tcp.local
+PTR name=_services._dns-sd._udp.local   DATA=_ssh._tcp.local
+PTR name=_services._dns-sd._udp.local   DATA=_ichat._udp.local
+PTR name=_services._dns-sd._udp.local   DATA=_http_tcp.local
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Ainda nos exemplos...
+
+Hmm, legal, agora me mostre todos os serviços destes protocolos
+
+Querier:
+LOOKUP PTR name=_workstation_tcp.local
+LOOKUP PTR name=_ichat._udp.local
+LOOKUP PTR name=_http_tcp.local
+
+Responder:
+PTR name=_workstation._tcp.local DATA=arthur._workstation._tcp.local
+PTR name=_workstation._tcp.local DATA=brian._workstation._tcp.local 
+PTR name=_ichat._udp.local DATA=user._ichat._udp.local 
+PTR name=_http_tcp.local DATA=holygrail._http_tcp.local 
+
+Um lookup pelo SRV e TXT de qualquer serviço nos daria os detalhes de
+como acessar.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Alguns possíveis usos...
+
+	iChat.
+	Impressoras.
+	Músicas iTunes.
+	Gerência de equipamentos.
+	Inventário/Serviços em um servidor.
+	Jogos em LAN.
+	Qualquer coisa que seja um recurso instável.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Complicações.
+
+	Conflito de nomes.
+	Continuous Querying.
+	Known Answer Supression.
+	Limitado igualmente a DNS (hosts <= 256...).
+	Complexidade bastante maior que DNS unicast.
+	Falta de um padrão de API.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Requisitos para Implementação
+
+	 MDNS daemon (querier/responder).
+	 Uma biblioteca (API).
+	 Integração com a libc (gethostbyname e cia).
+	 Programa controlador.	 	 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Freedesktop's Avahi
+	Popular no Linux.
+	Implementa todo Zeroconf.
+	Relativamente portavel.
+	API compativel com bonjour.
+
+	~57000 linhas.
+	Licensa LGPL.
+	API complexa.
+	Muitas dependencias.
+	Tipico codigo pseudo-OO dos gtk-folks.
+	DBUS.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Apple Mdns (Bonjour):
+	Primeira implementacao.  
+	Escrita pelo criador do protocolo.
+	Utilizada no OSX e NetBSD.
+
+	Licensa Apache 2.
+	API complexa.
+	Tipico codigo corporativo.
+	Codigo bloated.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Por que criar o OpenMdns ?
+
+	Licensas incompativeis, GPL aceita so em ultimo caso.
+	Autor não tinha nada melhor para fazer.
+	Revolta do autor.
+	Protocolo relativamente novo e interessante.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+O Openmdns
+
+	Licensa BSD.
+	Daemon e mdnsctl no padrão OpenBSD.
+	Código limpo e simples.
+	Sem threads.
+	Imsg framework.
+	AF_ROUTE socket.
+	Niel's Provos libevent, tree.h e queue.h.
+	Processo não privilegiado.
+	Sem planos de suportar multiplos domínios.
+	style(9).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Mdnsd, o daemon.	
+
+	Recebe requisições pelo socket de controle.
+	Querier/Responder.
+	AF_ROUTE socket, eventos de link.
+	Cache como uma Red-Black Tree, cada nodo é uma lista de recordes.
+	Lista de query pendentedes.
+	Lista de controllers.
+	Lista de probes em execução.
+	~6000 linhas por enquanto.
+	Muito código do ripd aproveitado.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Mdnsctl, o controller.
+
+	Apenas uma interface para a biblioteca, ~760 linhas.
+	Biblioteca momentaneamente embutida no controller.
+	Gramática simplificada.
+	Baseado em mensagens usando imsg framework.
+	Atualmente 3 tipos:
+		IMSG_CTL_LOOKUP
+		IMSG_CTL_BROWSE_ADD
+		IMSG_CTL_BROWSE_DEL
+	No futuro:
+		IMSG_CTL_PUBLISH_HOST
+		IMSG_CTL_PUBLISH_SERVICE
+		IMSG_CTL_DISABLE_IF
+		IMSG_CTL_ENABLE_IF
+		IMSG_CTL_DUMP_CACHE
+		IMSG_CTL_DEBUG
+		...
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+As mensagens...
+
+struct mdns_msg_lkup { /* IMSG_CTL_LOOKUP */
+        char dname[MAXHOSTNAMELEN];
+        u_int16_t type;
+        u_int16_t class;
+};
+
+struct mdns_msg_browse { /* IMSG_CTL_BROWSER_ADD|DEL */
+        char dname[MAXHOSTNAMELEN]; /* request/reply */
+        char ptr[MAXHOSTNAMELEN]; /* reply */
+        int  up; /* reply */
+};
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Libmdns
+
+	Dois conceitos, resolver e browser, futuramente publisher.
+	Resolver síncrono enquanto browser assíncrono.
+	Resolver faz apenas lookups.
+	Browser adiciona/remove protocolos para browsing.
+	Browser recebe notificações de serviço (browsing socket).
+	Browser integra com poll/select/libevent e cia.
+	Resolver e Browser em sockets distintos, simplifica muito a implementação.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+API
+
+Resolver
+		int   mdns_resolver_init(struct mdns_resolver *);
+		void  mdns_resolver_finish(struct mdns_resolver *);
+		int   mdns_resolver_host(struct mdns_resolver *, const char *, struct in_addr *);
+		int   mdns_resolver_hinfo(struct mdns_resolver *, const char *, struct hinfo *);
+
+Browser
+		int   mdns_browser_init(struct mdns_browser *, void (*cb)(int, const char *, void *);
+		void  mdns_browser_finish(struct mdns_browser *);
+		int   mdns_browser_add_proto(struct mdns_browser *, const char *);
+		int   mdns_browser_del_proto(struct mdns_browser *, const char *);
+		int   mdns_browser_pending(struct mdns_browser *);
+		int   mdns_browser_fetch(struct mdns_browser *);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Colaborando
+
+%center
+http://github.com/haesbaert/mdnsd
+%left
+
+	Testando, em especial em uma rede grande.
+	Testando em arquiteturas obscuras (alpha/hppa/sparc64...).
+	Mandando diffs, em especial re-escrever o parser dos pacotes.
+	Reportando bugs.
+
+	Mandando um email ao autor dizendo que gostaram do projeto :-).
+	Usando e divulgando OpenBSD.
+	Comprando as releases do OpenBSD.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Drafts
+
+MDNS
+http://files.multicastdns.org/draft-cheshire-dnsext-multicastdns.txt
+
+DNS-SD
+http://files.dns-sd.org/draft-cheshire-dnsext-dns-sd.txt
+
+DNS
+www.ietf.org/rfc/rfc1035.txt 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%page
+
+Perguntas ?
+
+%center
+
+Email: haesbaert@haesbaert.org
+
+MSN: cartucho@cartucho.org
+
+IRC:  haesbaert at irc.freenode.net
+SILC: haesbaert at peereboom.us #openbsd
+
+MDNS: http://github.com/haesbaert/mdnsd
+http://haesbaert.org/upload/mdns_pres
+
+%center
+%newimage -zoom 100 "260px-Openbsd.png"
