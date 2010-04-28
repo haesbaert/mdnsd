@@ -175,8 +175,7 @@ mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
 		imsg_free(&imsg);
 		return (-1);
 	}
-	memcpy(hostname, imsg.data, imsg.hdr.len - IMSG_HEADER_SIZE);
-	hostname[len - 1] = '\0';
+	strlcpy(hostname, imsg.data, len);
 	mdns_finish(&mst);
 	imsg_free(&imsg);
 	return (1);
