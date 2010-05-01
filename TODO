@@ -18,7 +18,6 @@ Code
 -----------------
   * Make browsing commands (DNS-SD).
   * Make the queries dynamic in ctl_conn (grow the buffer when full).
-  * Unify some code in mdnsl.c.
   * Fetchmyname should use the return of strlcat to check truncation.
   * Write manual pages.
   * Implement cache dump.
@@ -33,6 +32,7 @@ Code
   * Check if the signal handling code is correct.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
+  * Unify some code in mdnsl.c. DONE
   * Write a dummy README. DONE
   * Put prefix in mdns symbols. DONE
   * Remove api infix in mdns_api.c, it's plain lame, gotta split the
