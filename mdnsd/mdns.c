@@ -51,7 +51,6 @@ static struct rrt_node	*rrt_lookup_node(struct rrt_tree *,
     char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
 static int	query_node_compare(struct query_node *, struct query_node *);
-static int	query_answer(struct ctl_conn *, struct query *, struct rr *);
 static struct query_node *query_lookup_node(char [MAXHOSTNAMELEN],
     u_int16_t, u_int16_t);
 
@@ -682,7 +681,7 @@ query_notifyin(struct rr *rr)
 			return (0);
 		}
 		/* notify controller */
-		if (query_answer(c, q, rr) == -1)
+		if (query_answer(c, rr, q->style) == -1)
 			log_warnx("query_answer error");
 	}
 	
@@ -690,13 +689,13 @@ query_notifyin(struct rr *rr)
 	return (q->active - tosee);
 }
 
-static int
-query_answer(struct ctl_conn *c, struct query *q, struct rr *rr)
+int
+query_answer(struct ctl_conn *c, struct rr *rr, int style)
 {
 	int msgtype;
 	
 	/* XXX this is a design error :-( */
-	switch (q->style) {
+	switch (style) {
 	case QUERY_SINGLE:
 		msgtype = IMSG_CTL_LOOKUP;
 		break;
@@ -709,7 +708,7 @@ query_answer(struct ctl_conn *c, struct query *q, struct rr *rr)
 		break;	/* NOTREACHED */
 	}
 		
-	switch (q->mq.qtype) {
+	switch (rr->type) {
 	case T_A:
 		mdnsd_imsg_compose_ctl(c, msgtype,
 		    &rr->rdata.A, sizeof(rr->rdata.A));

@@ -38,6 +38,7 @@ static int	ibuf_read_imsg(struct imsgbuf *, struct imsg *);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
 
+/* TODO: unify all this code */
 int
 mdns_lkup(const char *hostname, struct in_addr *addr)
 {
@@ -178,6 +179,106 @@ mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
 	strlcpy(hostname, imsg.data, len);
 	mdns_finish(&mst);
 	imsg_free(&imsg);
+	return (1);
+}
+
+int
+mdns_lkup_srv(const char *hostname, struct srv *srv)
+{
+	struct imsg imsg;
+	struct mdns_msg_lkup mlkup;
+	struct mdns_state mst;
+	int err;
+	
+	if (strlen(hostname) > MAXHOSTNAMELEN) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
+	if (mdns_connect(&mst) == -1)
+		return (-1);
+
+	bzero(&mlkup, sizeof(mlkup));
+	strlcpy(mlkup.dname, hostname, sizeof(mlkup.dname));
+	mlkup.type  = T_SRV;
+	mlkup.class = C_IN;
+	
+	if (ibuf_send_imsg(&mst.ibuf, IMSG_CTL_LOOKUP,
+	    &mlkup, sizeof(mlkup)) == -1)
+		return (-1);	/* XXX: set errno */
+	if (ibuf_read_imsg(&mst.ibuf, &imsg) == -1) {
+		err = errno;
+		mdns_finish(&mst);
+		if (err == ETIMEDOUT) 
+			return (0);
+		return (-1);
+	}
+	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
+		errno = EMSGSIZE; /* think of a better errno */
+		mdns_finish(&mst);
+		imsg_free(&imsg);
+		return (-1);
+	}
+	if (imsg.hdr.len - IMSG_HEADER_SIZE !=
+	    sizeof(struct srv)) {
+		errno = EMSGSIZE;
+		mdns_finish(&mst);
+		imsg_free(&imsg);
+		return (-1);
+	}
+	memcpy(srv, imsg.data, imsg.hdr.len - IMSG_HEADER_SIZE);
+	imsg_free(&imsg);
+	mdns_finish(&mst);
+	
+	return (1);
+
+}
+int
+mdns_lkup_txt(const char *hostname, char *txt, size_t len)
+{
+	struct imsg imsg;
+	struct mdns_msg_lkup mlkup;
+	struct mdns_state mst;
+	int err;
+	
+	if (strlen(hostname) > MAXHOSTNAMELEN) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
+	if (mdns_connect(&mst) == -1)
+		return (-1);
+
+	bzero(&mlkup, sizeof(mlkup));
+	strlcpy(mlkup.dname, hostname, sizeof(mlkup.dname));
+	mlkup.type  = T_TXT;
+	mlkup.class = C_IN;
+	
+	if (ibuf_send_imsg(&mst.ibuf, IMSG_CTL_LOOKUP,
+	    &mlkup, sizeof(mlkup)) == -1)
+		return (-1);	/* XXX: set errno */
+	if (ibuf_read_imsg(&mst.ibuf, &imsg) == -1) {
+		err = errno;
+		mdns_finish(&mst);
+		if (err == ETIMEDOUT) 
+			return (0);
+		return (-1);
+	}
+	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
+		errno = EMSGSIZE; /* think of a better errno */
+		mdns_finish(&mst);
+		imsg_free(&imsg);
+		return (-1);
+	}
+	if (imsg.hdr.len - IMSG_HEADER_SIZE !=
+	    MAX_CHARSTR) {
+		errno = EMSGSIZE;
+		mdns_finish(&mst);
+		imsg_free(&imsg);
+		return (-1);
+	}
+	strlcpy(txt, imsg.data, len);
+	imsg_free(&imsg);
+	mdns_finish(&mst);
+	
 	return (1);
 }
 

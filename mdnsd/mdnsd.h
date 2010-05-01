@@ -61,13 +61,7 @@ struct rr {
 		char		PTR[MAXHOSTNAMELEN];
 		char		NS[MAXHOSTNAMELEN];
 		char		TXT[MAX_CHARSTR];
-		
-		struct {
-			uint16_t	priority;
-			uint16_t	weight;
-			uint16_t	port;
-			char		dname[MAXHOSTNAMELEN];
-		} SRV;
+		struct srv 	SRV;
 		struct hinfo 	HINFO;
 
 	} rdata;
@@ -275,6 +269,7 @@ struct rr *	 publish_lookupall(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 void		 query_init(void);
 struct query *	 query_place(int, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 struct query *	 query_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+int		 query_answer(struct ctl_conn *, struct rr *, int);
 int		 query_notifyin(struct rr *);
 void		 query_remove(struct query *);
 /* void		 query_cleanbyconn(struct ctl_conn *); */

@@ -25,11 +25,15 @@
 #include <net/if.h>
 #include <netinet/in.h>
 
+#define F_A	1
+#define F_HINFO	2
+#define F_SRV	4
+#define F_TXT	8
+
 enum actions {
 	NONE,
-	LOOKUP_HOST,
+	LOOKUP,
 	LOOKUP_ADDR,
-	LOOKUP_HINFO,
 	BROWSE_PROTO,
 };
 
@@ -47,5 +51,6 @@ void			 show_valid_args(const struct token *);
 int			 parse_addr(const char *, struct in_addr *);
 int			 parse_hostname(const char *, char [MAXHOSTNAMELEN]);
 int			 parse_proto(const char *, char [MAXHOSTNAMELEN]);
+int			 parse_flags(const char *, int *);
 
 #endif	/* _PARSER_H_ */

@@ -52,8 +52,10 @@ main(int argc, char *argv[])
 	int			 r, done = 0;
 	struct in_addr		 addr;
 	struct hinfo		 hi;
+	struct srv		 srv;
 	struct parse_result	*res;
 	char			 hostname[MAXHOSTNAMELEN];
+	char			 txt[MAX_CHARSTR];
 	/* parse options */
 	if ((res = parse(argc - 1, argv + 1)) == NULL)
 		exit(1);
@@ -65,21 +67,54 @@ main(int argc, char *argv[])
 		usage();
 		/* not reached */
 		break;
-	case LOOKUP_HOST:
-		r = mdns_lkup(res->hostname, &addr);
-		switch (r) {
-		case 0:
-			printf("Address not found.\n");
-			exit(1); /* NOTREACHED */
-			break;
-		case 1:
-			printf("Address: %s\n", inet_ntoa(addr));
-			exit(0);
-			break;	/* NOTREACHED */
-		default:
-			err(1, "mdns_lkup");
-			break;
+	case LOOKUP:
+		if (res->flags & F_A || !res->flags) { 
+			r = mdns_lkup(res->hostname, &addr);
+			if (r == 0)
+				printf("Address not found.\n");
+			else if(r == 1)
+				printf("Address: %s\n", inet_ntoa(addr));
+			else
+				err(1, "mdns_lkup");
 		}
+		
+		if (res->flags & F_HINFO) {
+			r = mdns_lkup_hinfo(res->hostname, &hi);
+			if (r == 0)
+				printf("Hinfo not found.\n");
+			else if (r == 1) {
+				printf("Cpu: %s\n", hi.cpu);
+				printf("Os: %s\n",  hi.os);
+			}
+			else
+				err(1, "mdns_lkup_hinfo");
+		}
+		
+		if (res->flags & F_SRV) {
+			r = mdns_lkup_srv(res->hostname, &srv);
+			if (r == 0)
+				printf("SRV not found.\n");
+			else if (r == 1) {
+				printf("Name: %s\n", srv.dname);
+				printf("Port: %u\n", srv.port);
+				printf("Priority: %u\n", srv.priority);
+				printf("Weight: %u\n", srv.weight);
+			}
+			else
+				err(1, "mdns_lkup_srv");
+		}
+
+		if (res->flags & F_TXT) {
+			r = mdns_lkup_txt(res->hostname, txt, sizeof(txt));
+			if (r == 0)
+				printf("TXT not found.\n");
+			else if (r == 1) {
+				printf("TXT: %s\n", txt);
+			}
+			else
+				err(1, "mdns_lkup_txt");
+		}
+
 		break;
 	case LOOKUP_ADDR:
 		r = mdns_lkup_addr(&res->addr, hostname,
@@ -95,23 +130,6 @@ main(int argc, char *argv[])
 			break;	/* NOTREACHED */
 		default:
 			err(1, "mdns_lkup_addr");
-			break;
-		}
-		break;
-	case LOOKUP_HINFO:
-		r = mdns_lkup_hinfo(res->hostname, &hi);
-		switch (r) {
-		case 0:
-			printf("Hinfo not found.\n");
-			exit(1); /* NOTREACHED */
-			break;
-		case 1:
-			printf("Cpu: %s\n", hi.cpu);
-			printf("Os: %s\n",  hi.os);
-			exit(0);
-			break;	/* NOTREACHED */
-		default:
-			err(1, "mdns_lkup_hinfo");
 			break;
 		}
 		break;

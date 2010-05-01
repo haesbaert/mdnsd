@@ -55,7 +55,14 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	memcpy(&mlkup, imsg->data, sizeof(mlkup));
 	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0'; /* assure clients are nice */
 	
-	if (mlkup.type != T_A && mlkup.type != T_PTR && mlkup.type != T_HINFO) {
+	switch (mlkup.type) {
+	case T_A:		/* FALLTHROUGH */
+	case T_HINFO:		/* FALLTHROUGH */
+	case T_PTR:		/* FALLTHROUGH */
+	case T_SRV:		/* FALLTHROUGH */
+	case T_TXT:		/* FALLTHROUGH */
+		break;
+	default:
 		log_warnx("Lookup type %d not supported/implemented",
 		    mlkup.type);
 		return;
@@ -72,26 +79,10 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	
 	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
 	/* cache hit */
-	if (rr != NULL) {
-		switch (mlkup.type) {
-		case T_A:
-			mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
-			    &rr->rdata.A, sizeof(rr->rdata.A));
-			return;
-		case T_HINFO:
-			mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
-			    &rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
-			return;
-		case T_PTR:
-			mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
-			    &rr->rdata.PTR, sizeof(rr->rdata.PTR));
-		default:
-			log_warnx("Unknown type, report this");
-			return;
-		}
-		return;
-	}
-	
+	if (rr != NULL)
+	    if (query_answer(c, rr, QUERY_SINGLE) == -1)
+		    log_warnx("query_answer error");
+
 	/* cache miss */
 	if ((slot = control_freeq(c)) == -1) {
 		log_debug("No more free control queries");

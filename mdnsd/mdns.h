@@ -51,8 +51,17 @@ struct hinfo {
 	char	os[MAX_CHARSTR];
 };
 
+struct srv {
+	u_int16_t	priority;
+	u_int16_t	weight;
+	u_int16_t	port;
+	char		dname[MAXHOSTNAMELEN];
+};
+
 int	mdns_lkup(const char *, struct in_addr *);
 int	mdns_lkup_hinfo(const char *, struct hinfo *);
 int	mdns_lkup_addr(struct in_addr *, char *, size_t);
+int	mdns_lkup_srv(const char *, struct srv *);
+int	mdns_lkup_txt(const char *, char *, size_t);
 
 #endif	/* _MDNS_H_ */

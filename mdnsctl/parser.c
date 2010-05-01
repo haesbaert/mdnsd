@@ -36,6 +36,7 @@ enum token_type {
 	ENDTOKEN,
 	KEYWORD,
 	ADDRESS,
+	FLAGS,
 	HOSTNAME,
 	PROTO
 };
@@ -49,7 +50,6 @@ struct token {
 
 static const struct token t_main[];
 static const struct token t_lkup[];
-static const struct token t_lkup_hinfo[];
 static const struct token t_br[];
 
 static const struct token t_main[] = {
@@ -59,15 +59,10 @@ static const struct token t_main[] = {
 };
 
 static const struct token t_lkup[] = {
+	{ FLAGS	,	"-",		NONE,		t_lkup},
 	{ ADDRESS,	"",		LOOKUP_ADDR,	NULL},
-	{ HOSTNAME,     "",             LOOKUP_HOST,    NULL},
-	{ KEYWORD,	"-h",		NONE,		t_lkup_hinfo},
+	{ HOSTNAME,     "",             LOOKUP,    	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
-};
-
-static const struct token t_lkup_hinfo[] = {
-	{HOSTNAME,	"",		LOOKUP_HINFO,	NULL},
-	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
 static const struct token t_br[] = {
@@ -123,6 +118,14 @@ match_token(const char *word, const struct token *table)
 			if (word == NULL || strlen(word) == 0) {
 				match++;
 				t = &table[i];
+			}
+			break;
+		case FLAGS:
+			if (parse_flags(word, &res.flags)) {
+				match++;
+				t = &table[i];
+				if (t->value)
+					res.action = t->value;
 			}
 			break;
 		case KEYWORD:
@@ -197,6 +200,9 @@ show_valid_args(const struct token *table)
 		case PROTO:
 			fprintf(stderr, "  <_appproto._(tcp|udp).local>\n");
 			break;
+		case FLAGS:
+			fprintf(stderr, "  <-ahst>\n");
+			break;
 		case ENDTOKEN:
 			break;
 		}
@@ -235,6 +241,41 @@ parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN])
 	strlcpy(hostname, word, MAXHOSTNAMELEN);
 		
 	return (1);
+}
+
+int
+parse_flags(const char *word, int *flags)
+{
+	int r = 0;
+	
+	if (word == NULL || *word != '-')
+		return (r);
+	word++;
+	while(*word) {
+		switch (*word) {
+		case 'a':
+			*flags |= F_A;
+			r++;
+			break;
+		case 'h':
+			*flags |= F_HINFO;
+			r++;
+			break;
+		case 's':
+			*flags |= F_SRV;
+			r++;
+			break;
+		case 't':
+			*flags |= F_TXT;
+			r++;
+			break;
+		default:
+			errx(1, "unknown flag -%c", *word);
+		}
+		word++;
+	}
+	
+	return (r);
 }
 
 /* XXX: improve this parsing, lala.tcp_ shouldn't be accepted */
