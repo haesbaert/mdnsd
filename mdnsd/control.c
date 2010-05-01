@@ -39,8 +39,8 @@
 struct ctl_conn	*control_connbyfd(int);
 struct ctl_conn	*control_connbypid(pid_t);
 void		 control_close(int);
-void	 	 control_lookup(struct ctl_conn *, struct imsg *);
-int	 	 control_freeq(struct ctl_conn *);
+void		 control_lookup(struct ctl_conn *, struct imsg *);
+int		 control_freeq(struct ctl_conn *);
 
 void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
@@ -51,10 +51,10 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
-	
+
 	memcpy(&mlkup, imsg->data, sizeof(mlkup));
 	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0'; /* assure clients are nice */
-	
+
 	switch (mlkup.type) {
 	case T_A:		/* FALLTHROUGH */
 	case T_HINFO:		/* FALLTHROUGH */
@@ -73,10 +73,10 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		    mlkup.class);
 		return;
 	}
-	    
+
 	log_debug("looking up %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
-	
+
 	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
 	/* cache hit */
 	if (rr != NULL)
@@ -227,7 +227,7 @@ control_close(int fd)
 {
 	struct ctl_conn	*c;
 	int i;
-	
+
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_close: fd %d: not found", fd);
 		return;
@@ -252,7 +252,7 @@ control_dispatch_imsg(int fd, short event, void *bula)
 	struct ctl_conn	*c;
 	struct imsg	 imsg;
 	ssize_t		 n;
-	
+
 	log_debug("control_dispatch_imsg");
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_dispatch_imsg: fd %d: not found", fd);
