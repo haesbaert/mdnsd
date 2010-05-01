@@ -181,49 +181,6 @@ mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
 	return (1);
 }
 
-/* int */
-/* mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len) */
-/* { */
-/* 	struct mdns_state mst; */
-/* 	struct imsg imsg; */
-/* 	int err; */
-	
-/* 	if (mdns_connect(&mst) == -1) */
-/* 		return (-1); */
-	
-/* 	if (mdns_send_imsg(&mst, IMSG_CTL_LOOKUP_ADDR, */
-/* 	    addr, sizeof(struct in_addr)) == -1) { */
-/* 		mdns_finish(&mst); */
-/* 		return (-1); */
-/* 	} */
-/* 	if (mdns_read_imsg(&mst, &imsg) == -1) { */
-/* 		err = errno; */
-/* 		mdns_finish(&mst); */
-/* 		if (err == ETIMEDOUT) */
-/* 			return (0); */
-/* 		return (-1); */
-/* 	} */
-/* 	if (imsg.hdr.type != IMSG_CTL_LOOKUP_ADDR) { */
-/* 		errno = EMSGSIZE; /\* think of a better errno *\/ */
-/* 		mdns_finish(&mst); */
-/* 		imsg_free(&imsg); */
-/* 		    return (-1); */
-/* 	} */
-/* 	if (imsg.hdr.len - IMSG_HEADER_SIZE != MAXHOSTNAMELEN) { */
-/* 		errno = EMSGSIZE; */
-/* 		mdns_finish(&mst); */
-/* 		imsg_free(&imsg); */
-/* 		    return (-1); */
-/* 	} */
-/* 	if (len > MAXHOSTNAMELEN) */
-/* 		len = MAXHOSTNAMELEN; */
-/* 	strlcpy(hostname, imsg.data, len); */
-/* 	imsg_free(&imsg); */
-/* 	mdns_finish(&mst); */
-	
-/* 	return (1); */
-/* } */
-
 static int
 mdns_connect(struct mdns_state *mst)
 {
