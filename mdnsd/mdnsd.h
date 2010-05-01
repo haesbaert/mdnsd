@@ -86,25 +86,20 @@ struct question {
 	int 			probe;
 };
 
-#define RR_EQTYPE(rra, rrb)					\
-	((rra->type  == rrb->type)      &&			\
-	    (rra->class == rrb->class)  &&			\
-	    (strcmp(rra->dname, rrb->dname) == 0))
 #define RR_UNIQ(rr) (rr->cacheflush)
 #define QEQUIV(qa, qb)						\
 	((qa->qtype  == qb->qtype)	&&			\
 	    (qb->qclass == qb->qclass)	&&			\
 	    (strcmp(qa->dname, qb->dname) == 0))
-#define ANSWERS(q, rr)						\
-	(((q->qtype == T_ANY) || (q->qtype == rr->type))  &&	\
-	    q->qclass == rr->class                        &&	\
-	    strcmp(q->dname, rr->dname) == 0)
+#define ANSWERS(q, rr)							\
+	((((q)->qtype == T_ANY) || ((q)->qtype == (rr)->type))    &&	\
+	    (q)->qclass == (rr)->class                            &&	\
+	    strcmp((q)->dname, (rr)->dname) == 0)
 
 /* mdnsd.c */
-int		 peersuser(int);
-void		 reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
-int		 mdnsd_imsg_compose_ctl(struct ctl_conn *, u_int16_t,
-	void *, u_int16_t);
+int	peersuser(int);
+void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
+int	mdnsd_imsg_compose_ctl(struct ctl_conn *, u_int16_t, void *, u_int16_t);
 
 /* kiface.c */
 struct kif {
@@ -226,22 +221,18 @@ struct pkt {
 	LIST_HEAD(, rr)       arlist;
 };
 
-void		 recv_packet(int, short, void *); /* these don't belong here */
-int		 send_packet(struct iface *, void *, size_t,
-	struct sockaddr_in *);
-int		 pkt_send_allif(struct pkt *);
-void		 pkt_init(struct pkt *);
-int		 pkt_add_question(struct pkt *, struct question *);
-int 		 pkt_add_anrr(struct pkt *, struct rr *);
-int 		 pkt_add_nsrr(struct pkt *, struct rr *);
-int 		 pkt_add_arrr(struct pkt *, struct rr *);
-int 		 question_set(struct question *, char [MAXHOSTNAMELEN],
-    	u_int16_t, u_int16_t, int, int);
-int 		 rr_set(struct rr *, char [MAXHOSTNAMELEN],
-    	u_int16_t, u_int16_t, u_int32_t, int, void *, size_t);
-
-/* control.c */
-TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
+void	recv_packet(int, short, void *);	/* these don't belong here */
+int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+int	pkt_send_allif(struct pkt *);
+void	pkt_init(struct pkt *);
+int	pkt_add_question(struct pkt *, struct question *);
+int 	pkt_add_anrr(struct pkt *, struct rr *);
+int 	pkt_add_nsrr(struct pkt *, struct rr *);
+int 	pkt_add_arrr(struct pkt *, struct rr *);
+int 	question_set(struct question *, char [MAXHOSTNAMELEN], u_int16_t,
+    u_int16_t, int, int);
+int 	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
+    u_int32_t, int, void *, size_t);
 
 /* mdns.c */
 enum publish_state {
@@ -262,28 +253,19 @@ struct publish {
 	unsigned long	 	id;	/* unique id */
 };
 
-enum query_type {
-	QUERY_LOOKUP,		/* lookup a hostname in .local domain */
-	QUERY_LOOKUP_ADDR,	/* reverse address lookup */
-	QUERY_LOOKUP_HINFO,	/* simple HINFO lookup */
-	QUERY_BROWSING,		/* browsing for dns-sd services */
+enum query_style {
+	QUERY_SINGLE,
+	QUERY_CONTINUOUS,
 };
 
-LIST_HEAD(, publish)		probing_list;
-
-/*
- * Controlers will place queries and wait for their answers, if the query type
- * is QUERY_BROWSING, we need "Continuous Multicast DNS Querying" MDNS draft
- * section 5.3.
- */
 struct query {
-	LIST_ENTRY(query)	entry;
-	LIST_HEAD(, ctl_conn)	ctl_list; /* interested controlers */
-	int			type; 	  /* enum query_type */
-	struct question		*mq;
+	int		active;
+	int		style;
+	int		sent;
+	int		msgtype;
+	struct question mq;
+	struct event	timer;
 };
-
-LIST_HEAD(, query)		 query_list;
 
 void		 publish_init(void);
 void		 publish_allrr(struct iface *);
@@ -291,10 +273,19 @@ int		 publish_insert(struct iface *, struct rr *);
 int		 publish_delete(struct iface *, struct rr *);
 struct rr *	 publish_lookupall(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 void		 query_init(void);
-struct query *	 query_place(int, struct question *, struct ctl_conn *);
-void		 query_cleanbyconn(struct ctl_conn *);
+struct query *	 query_place(int, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+struct query *	 query_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+int		 query_notifyin(struct rr *);
+void		 query_remove(struct query *);
+/* void		 query_cleanbyconn(struct ctl_conn *); */
 void		 cache_init(void);
 int		 cache_process(struct rr *);
 struct rr	*cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+
+LIST_HEAD(, publish)		probing_list;
+
+/* control.c */
+int   		 control_hasq(struct ctl_conn *, struct query *);
+TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 
 #endif /* _MDNSD_H_ */

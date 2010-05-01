@@ -29,24 +29,40 @@
 #define INTERVAL_PROBETIME	250000
 #define RANDOM_PROBETIME 	arc4random_uniform((u_int32_t) 250000)
 
-static void		 publish_fsm(int, short, void *_pub);
-static int		 query_notifyin(struct rr *);
-static int		 query_notifyout(struct rr *);
-static int		 cache_insert(struct rr *);
-static int		 cache_delete(struct rr *);
-static void		 cache_schedrev(struct rr *);
-static void		 cache_rev(int, short, void *);
-static int		 rrt_compare(struct rrt_node *, struct rrt_node *);
+struct query_node {
+	RB_ENTRY(query_node)	entry;
+	struct query	 	q;
+};
+
+static void	publish_fsm(int, short, void *_pub);
+
+static int	cache_insert(struct rr *);
+static int	cache_delete(struct rr *);
+static void	cache_schedrev(struct rr *);
+static void	cache_rev(int, short, void *);
+
 void			 rrt_dump(struct rrt_tree *);
+static int		 rrt_compare(struct rrt_node *, struct rrt_node *);
 static struct rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
     u_int16_t, u_int16_t);
 static struct rr_head	*rrt_lookup_head(struct rrt_tree *,
     char [MAXHOSTNAMELEN],  u_int16_t, u_int16_t);
-static struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [],
+static struct rrt_node	*rrt_lookup_node(struct rrt_tree *,
+    char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+
+static int	query_node_compare(struct query_node *, struct query_node *);
+static int	query_answer(struct ctl_conn *, struct query *, struct rr *);
+static struct query_node *query_lookup_node(char [MAXHOSTNAMELEN],
     u_int16_t, u_int16_t);
 
 RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_compare);
+
+RB_HEAD(query_tree, query_node);
+RB_PROTOTYPE(query_tree, query_node, entry, query_node_compare)
+RB_GENERATE(query_tree, query_node, entry, query_node_compare)
+
 extern struct mdnsd_conf	*conf;
+static struct query_tree	 qtree;
 static struct rrt_tree		 rrt_cache;
 
 /*
@@ -308,126 +324,6 @@ publish_fsm(int unused, short event, void *v_pub)
 }
 
 /*
- * Querier
- */
-
-void
-query_init(void)
-{
-	LIST_INIT(&query_list);
-}
-
-struct query *
-query_place(int type, struct question *mq, struct ctl_conn *c)
-{
-	struct query	*q;
-
-	/* avoid having two equivalent questions */
-	LIST_FOREACH(q, &query_list, entry)
-	    if (QEQUIV(mq, q->mq)) {
-		    LIST_INSERT_HEAD(&q->ctl_list, c, qentry);
-		    return (q);
-	    }
-	
-	if ((q = calloc(1, sizeof(*q))) == NULL)
-		fatal("calloc");
-	
-	LIST_INIT(&q->ctl_list);
-	LIST_INSERT_HEAD(&q->ctl_list, c, qentry);
-	q->type = type;
-	q->mq	= mq;
-	LIST_INSERT_HEAD(&query_list, q, entry);
-	
-	return (q);
-}
-
-void
-query_cleanbyconn(struct ctl_conn *c)
-{
-	if (c->q == NULL)
-		return;
-	
-	/* take ourselves out from the query */
-	LIST_REMOVE(c, qentry);
-	
-	if (LIST_EMPTY(&c->q->ctl_list)) {
-		LIST_REMOVE(c->q, entry);
-		free(c->q->mq);
-		free(c->q);
-	}
-}
-
-/* notify about this new rr to all interested peers */
-static int
-query_notifyin(struct rr *rr)
-{
-	struct query	*q;
-	struct ctl_conn *c;
-	int		 match	   = 0;
-	LIST_FOREACH(q, &query_list, entry) {
-		if (!ANSWERS(q->mq, rr))
-			continue;
-		match++;
-		switch (q->type) {
-		case QUERY_LOOKUP:
-			LIST_FOREACH(c, &q->ctl_list, qentry)
-			    mdnsd_imsg_compose_ctl(c, IMSG_CTL_LOOKUP,
-				&rr->rdata.A, sizeof(rr->rdata.A));
-			break;
-		case QUERY_LOOKUP_ADDR:
-			LIST_FOREACH(c, &q->ctl_list, qentry)
-			    mdnsd_imsg_compose_ctl(c, IMSG_CTL_LOOKUP_ADDR,
-				&rr->rdata.PTR, sizeof(rr->rdata.PTR));
-			break;
-		case QUERY_LOOKUP_HINFO:
-			LIST_FOREACH(c, &q->ctl_list, qentry)
-			    mdnsd_imsg_compose_ctl(c, IMSG_CTL_LOOKUP_HINFO,
-				&rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
-			break;
-		case QUERY_BROWSING:
-			rr->active = 1;
-			/* TODO: fill me with love */
-			break;
-		default:
-			log_warnx("Unknown query type, report this bug");
-			break;
-		}
-	}
-	
-	return (match);
-}
-
-static int
-query_notifyout(struct rr *rr)
-{
-	struct query	*q;
-	int		 match = 0;
-	
-	LIST_FOREACH(q, &query_list, entry) {
-		if (!ANSWERS(q->mq, rr))
-			continue;
-		match++;
-		rr->active = 0;
-		switch (q->type) {
-		case QUERY_LOOKUP:
-			/* nothing */
-			break;
-		case QUERY_LOOKUP_ADDR:
-			/* nothing */
-			break;
-		case QUERY_BROWSING:
-			/* TODO: fill me with love */
-			break;
-		default:
-			log_warnx("Unknown query type, report this bug");
-			break;
-		}
-	}
-	
-	return (match);
-}
-
-/*
  * RR cache
  */
 
@@ -679,5 +575,192 @@ rrt_compare(struct rrt_node *a, struct rrt_node *b)
 		return (1);
 	
 	return (strcmp(rra->dname, rrb->dname));
+}
+
+/*
+ * Querier
+ */
+
+void
+query_init(void)
+{
+	RB_INIT(&qtree);
+}
+
+struct query *
+query_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+{
+	struct query_node *qn;
+	
+	qn = query_lookup_node(dname, type, class);
+	if (qn != NULL)
+		return (&qn->q);
+	return (NULL);
+}
+
+struct query *
+query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+{
+	struct query		*q;
+	struct query_node	*qn;
+	struct pkt		 pkt;
+	struct timeval		 tv;
+	
+	q = query_lookup(dname, type, class);
+	if (q != NULL) {
+		if (s != q->style) {
+			log_warnx("trying to change a query style");
+			return NULL;
+		}
+		q->active++;
+		log_debug("existing query %d active", q->active);
+		return (q);
+	}
+	/* no query, make a new one */
+	log_debug("making new query");
+	if ((qn = calloc(1, sizeof(*qn))) == NULL)
+		fatal("calloc");
+	q = &qn->q;
+	question_set(&q->mq, dname, type, class, 0, 0);
+	q->style = s;
+	q->active++;
+	if (RB_INSERT(query_tree, &qtree, qn) != NULL)
+		fatal("query_place: RB_INSERT");
+	/* send packet */
+	pkt_init(&pkt);
+	pkt_add_question(&pkt, &q->mq);
+	if (pkt_send_allif(&pkt) == -1)
+		log_warnx("can't send packet to all interfaces");
+	q->sent++;
+	
+	if (q->style == QUERY_CONTINUOUS) {
+		timerclear(&tv);
+		tv.tv_sec = 1;
+/* 		evtimer_set(&q->timer, query_fsm, q); */
+/* 		evtimer_add(&q->timer, &tv); */
+	}
+	
+	return (q);
+}
+
+void
+query_remove(struct query *qrem)
+{
+	struct query *qfound;
+	struct query_node *qn;
+	
+	qn = query_lookup_node(qrem->mq.dname, qrem->mq.qtype, qrem->mq.qclass);
+	if (qn == NULL)
+		return;
+	qfound = &qn->q;
+	if (--qfound->active == 0) {
+		RB_REMOVE(query_tree, &qtree, qn);
+		free(qn);
+	}
+}
+
+int
+query_notifyin(struct rr *rr)
+{
+	struct ctl_conn *c;
+	struct query	*q;
+	int		 tosee;
+	
+	q = query_lookup(rr->dname, rr->type, rr->class);
+	if (q == NULL)
+		return (0);
+	/* try to answer the controllers */
+	tosee = q->active;
+	TAILQ_FOREACH(c, &ctl_conns, entry) {
+		if (!tosee)
+			break;
+		if (!control_hasq(c, q))
+			continue;
+		/* sanity check */
+		if (!ANSWERS(&q->mq, rr)) {
+			log_warnx("Bogus pointer, report me");
+			return (0);
+		}
+		/* notify controller */
+		if (query_answer(c, q, rr) == -1)
+			log_warnx("query_answer error");
+	}
+	
+	/* number of notified controllers */
+	return (q->active - tosee);
+}
+
+static int
+query_answer(struct ctl_conn *c, struct query *q, struct rr *rr)
+{
+	int msgtype;
+	
+	/* XXX this is a design error :-( */
+	switch (q->style) {
+	case QUERY_SINGLE:
+		msgtype = IMSG_CTL_LOOKUP;
+		break;
+	case QUERY_CONTINUOUS:
+		msgtype = IMSG_CTL_BROWSE_NEW;
+		break;
+	default:
+		log_warnx("Unknown query style, report this");
+		return (-1);
+		break;	/* NOTREACHED */
+	}
+		
+	switch (q->mq.qtype) {
+	case T_A:
+		mdnsd_imsg_compose_ctl(c, msgtype,
+		    &rr->rdata.A, sizeof(rr->rdata.A));
+		break;
+	case T_PTR:
+		mdnsd_imsg_compose_ctl(c, msgtype,
+		    &rr->rdata.PTR, sizeof(rr->rdata.PTR));
+		break;
+	case T_HINFO:
+		mdnsd_imsg_compose_ctl(c, msgtype,
+		    &rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
+		break;
+	case T_SRV:
+		mdnsd_imsg_compose_ctl(c, msgtype,
+		    &rr->rdata.SRV, sizeof(rr->rdata.SRV));
+		break;
+	case T_TXT:
+		mdnsd_imsg_compose_ctl(c, msgtype,
+		    &rr->rdata.TXT, sizeof(rr->rdata.TXT));
+		break;
+	default:
+		log_warnx("Unknown question type, report this");
+		return (-1);
+		break;		/* NOTREACHED */
+	}
+	
+	return (0);
+}
+
+static int
+query_node_compare(struct query_node *a, struct query_node *b)
+{
+	if (a->q.mq.qtype < b->q.mq.qtype)
+		return (-1);
+	if (a->q.mq.qtype > b->q.mq.qtype)
+		return (1);
+	if (a->q.mq.qclass < b->q.mq.qclass)
+		return (-1);
+	if (a->q.mq.qclass > b->q.mq.qclass)
+		return (1);
+	return (strcmp(a->q.mq.dname, b->q.mq.dname));
+}
+
+static struct query_node *
+query_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+{
+	struct query_node qn;
+	
+	bzero(&qn, sizeof(qn));
+	question_set(&qn.q.mq, dname, type, class, 0, 0);
+	
+	return (RB_FIND(query_tree, &qtree, &qn));
 }
 

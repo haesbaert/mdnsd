@@ -30,6 +30,7 @@
 #include <unistd.h>
 
 #include "mdnsd.h"
+#include "mdns.h"
 #include "log.h"
 #include "control.h"
 
@@ -38,103 +39,70 @@
 struct ctl_conn	*control_connbyfd(int);
 struct ctl_conn	*control_connbypid(pid_t);
 void		 control_close(int);
-static void	 control_lookup(struct ctl_conn *, struct imsg *);
-static void	 control_lookupaddr(struct ctl_conn *, struct imsg *);
-static void	 control_lookuphinfo(struct ctl_conn *, struct imsg *);
+void	 	 control_lookup(struct ctl_conn *, struct imsg *);
+int	 	 control_freeq(struct ctl_conn *);
 
-static void
+void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct pkt		 pkt;
+	struct mdns_msg_lkup	 mlkup;
 	struct rr		*rr;
-	struct question 	*mq;
-	char			 hostname[MAXHOSTNAMELEN];
+	int			 slot;
 	
-	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(hostname))
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
-
-	memcpy(hostname, imsg->data, sizeof(hostname));
-	log_debug("looking up %s (A)", hostname);
-	rr = cache_lookup(hostname, T_A, C_IN);
-	/* cache hit */
-	if (rr != NULL) {
-		log_debug("hostname %s: %s", hostname, inet_ntoa(rr->rdata.A));
-		mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
-		    &rr->rdata.A, sizeof(rr->rdata.A));
+	
+	memcpy(&mlkup, imsg->data, sizeof(mlkup));
+	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0'; /* assure clients are nice */
+	
+	if (mlkup.type != T_A && mlkup.type != T_PTR && mlkup.type != T_HINFO) {
+		log_warnx("Lookup type %d not supported/implemented",
+		    mlkup.type);
 		return;
 	}
-	/* cache miss */
-	if ((mq = calloc(1, sizeof(*mq))) == NULL)
-		fatal("calloc");
-	question_set(mq, hostname, T_A, C_IN, 0, 0);
-	pkt_init(&pkt);
-	pkt_add_question(&pkt, mq);
-	if (pkt_send_allif(&pkt) == -1)
-		log_debug("can't send packet to all interfaces");
-	c->q = query_place(QUERY_LOOKUP, mq, c);
-}
-
-static void
-control_lookupaddr(struct ctl_conn *c, struct imsg *imsg)
-{
-	struct rr		*rr;
-	struct pkt		 pkt;
-	struct question 	*mq;
-	struct in_addr		 addr;
-	char			 name[MAXHOSTNAMELEN];
 	
-	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(struct in_addr))
-		return;
-
-	memcpy(&addr, imsg->data, imsg->hdr.len - IMSG_HEADER_SIZE);
-	reversstr(name, &addr);
-	rr = cache_lookup(name, T_PTR, C_IN);
-	/* cache hit */
-	if (rr != NULL) {
-		log_debug("PTR name %s: %s", rr->rdata.PTR, inet_ntoa(rr->rdata.A));
-		mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
-		    &rr->rdata.PTR, sizeof(rr->rdata.PTR));
+	if (mlkup.class != C_IN) {
+		log_warnx("Lookup class %d not supported/implemented",
+		    mlkup.class);
 		return;
 	}
-	/* cache miss */
-	if ((mq = calloc(1, sizeof(*mq))) == NULL)
-		fatal("calloc");
-	question_set(mq, name, T_PTR, C_IN, 0, 0);
-	pkt_init(&pkt);
-	pkt_add_question(&pkt, mq);
-	if (pkt_send_allif(&pkt) == -1)
-		log_debug("can't send packet to all interfaces");
-	c->q = query_place(QUERY_LOOKUP_ADDR, mq, c);
-}
-
-static void
-control_lookuphinfo(struct ctl_conn *c, struct imsg *imsg)
-{
-	struct pkt		 pkt;
-	struct rr		*rr;
-	struct question 	*mq;
-	char			 hostname[MAXHOSTNAMELEN];
+	    
+	log_debug("looking up %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
+	    mlkup.class);
 	
-	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(hostname))
-		return;
-
-	memcpy(hostname, imsg->data, sizeof(hostname));
-	rr = cache_lookup(hostname, T_HINFO, C_IN);
+	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
 	/* cache hit */
 	if (rr != NULL) {
-		mdnsd_imsg_compose_ctl(c, IMSG_CTL_LOOKUP_HINFO,
-		    &rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
+		switch (mlkup.type) {
+		case T_A:
+			mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
+			    &rr->rdata.A, sizeof(rr->rdata.A));
+			return;
+		case T_HINFO:
+			mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
+			    &rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
+			return;
+		case T_PTR:
+			mdnsd_imsg_compose_ctl(c, imsg->hdr.type,
+			    &rr->rdata.PTR, sizeof(rr->rdata.PTR));
+		default:
+			log_warnx("Unknown type, report this");
+			return;
+		}
 		return;
 	}
+	
 	/* cache miss */
-	if ((mq = calloc(1, sizeof(*mq))) == NULL)
-		fatal("calloc");
-	question_set(mq, hostname, T_HINFO, C_IN, 0, 0);
-	pkt_init(&pkt);
-	pkt_add_question(&pkt, mq);
-	if (pkt_send_allif(&pkt) == -1)
-		log_debug("can't send packet to all interfaces");
-	c->q = query_place(QUERY_LOOKUP_HINFO, mq, c);
+	if ((slot = control_freeq(c)) == -1) {
+		log_debug("No more free control queries");
+		/* XXX grow buffer  */
+		return;
+	}
+	
+	c->qlist[slot] = query_place(QUERY_SINGLE, mlkup.dname, mlkup.type,
+	    mlkup.class);
+	if (c->qlist[slot] == NULL)
+		log_warnx("Can't place query");
 }
 
 int
@@ -267,6 +235,7 @@ void
 control_close(int fd)
 {
 	struct ctl_conn	*c;
+	int i;
 	
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_close: fd %d: not found", fd);
@@ -277,7 +246,12 @@ control_close(int fd)
 
 	event_del(&c->iev.ev);
 	close(c->iev.ibuf.fd);
-	query_cleanbyconn(c);
+	for (i = 0; i < MAXCTLQRY; i++) {
+		if (c->qlist[i] == NULL)
+			continue;
+		query_remove(c->qlist[i]);
+		c->qlist[i] = NULL;
+	}
 	free(c);
 }
 
@@ -320,12 +294,6 @@ control_dispatch_imsg(int fd, short event, void *bula)
 		case IMSG_CTL_LOOKUP:
 			control_lookup(c, &imsg);
 			break;
-		case IMSG_CTL_LOOKUP_ADDR:
-			control_lookupaddr(c, &imsg);
-			break;
-		case IMSG_CTL_LOOKUP_HINFO:
-			control_lookuphinfo(c, &imsg);
-			break;
 		default:
 			log_debug("control_dispatch_imsg: "
 			    "error handling imsg %d", imsg.hdr.type);
@@ -352,5 +320,25 @@ session_socket_blockmode(int fd, enum blockmodes bm)
 
 	if ((flags = fcntl(fd, F_SETFL, flags)) == -1)
 		fatal("fcntl F_SETFL");
+}
+
+int
+control_freeq(struct ctl_conn *c)
+{
+	int i;
+	for (i = 0; i < MAXCTLQRY; i++)
+		if (c->qlist[i] == NULL)
+			return (i);
+	return (-1);
+}
+
+int
+control_hasq(struct ctl_conn *c, struct query *q)
+{
+	int i;
+	for (i = 0; i < MAXCTLQRY; i++)
+		if (c->qlist[i] == q)
+			return (1);
+	return (0);
 }
 
