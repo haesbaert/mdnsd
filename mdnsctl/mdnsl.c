@@ -34,6 +34,7 @@ struct mdns_state {
 static void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 static int	mdns_connect(struct mdns_state *);
 static void	mdns_finish(struct mdns_state *);
+static int	mdns_lkup_do(const char *, u_int16_t, void *, size_t);
 static int	ibuf_read_imsg(struct imsgbuf *, struct imsg *);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
@@ -42,244 +43,48 @@ static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
 int
 mdns_lkup(const char *hostname, struct in_addr *addr)
 {
-	struct imsg imsg;
-	struct mdns_msg_lkup mlkup;
-	struct mdns_state mst;
-	int err;
-	
-	if (strlen(hostname) > MAXHOSTNAMELEN) {
-		errno = ENAMETOOLONG;
-		return (-1);
-	}
-	if (mdns_connect(&mst) == -1)
-		return (-1);
-
-	bzero(&mlkup, sizeof(mlkup));
-	strlcpy(mlkup.dname, hostname, sizeof(mlkup.dname));
-	mlkup.type  = T_A;
-	mlkup.class = C_IN;
-	
-	if (ibuf_send_imsg(&mst.ibuf, IMSG_CTL_LOOKUP,
-	    &mlkup, sizeof(mlkup)) == -1)
-		return (-1);	/* XXX: set errno */
-	if (ibuf_read_imsg(&mst.ibuf, &imsg) == -1) {
-		err = errno;
-		mdns_finish(&mst);
-		if (err == ETIMEDOUT) 
-			return (0);
-		return (-1);
-	}
-	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
-		errno = EMSGSIZE; /* think of a better errno */
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	if (imsg.hdr.len - IMSG_HEADER_SIZE !=
-	    sizeof(struct in_addr)) {
-		errno = EMSGSIZE;
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	memcpy(addr, imsg.data, imsg.hdr.len - IMSG_HEADER_SIZE);
-	imsg_free(&imsg);
-	mdns_finish(&mst);
-	
-	return (1);
+	return (mdns_lkup_do(hostname, T_A, addr, sizeof(*addr)));
 }
-	
+
 int
 mdns_lkup_hinfo(const char *hostname, struct hinfo *h)
 {
-	struct mdns_msg_lkup mlkup;
-	struct mdns_state mst;
-	struct imsg imsg;
-	int err;
-	
-	if (strlen(hostname) > MAXHOSTNAMELEN) {
-		errno = ENAMETOOLONG;
-		return (-1);
-	}
-	if (mdns_connect(&mst) == -1)
-		return (-1);
-
-	bzero(&mlkup, sizeof(mlkup));
-	strlcpy(mlkup.dname, hostname, sizeof(mlkup.dname));
-	mlkup.type  = T_HINFO;
-	mlkup.class = C_IN;
-	
-	if (ibuf_send_imsg(&mst.ibuf, IMSG_CTL_LOOKUP,
-	    &mlkup, sizeof(mlkup)) == -1)
-		return (-1);
-	if (ibuf_read_imsg(&mst.ibuf, &imsg) == -1) {
-		err = errno;
-		mdns_finish(&mst);
-		if (err == ETIMEDOUT)
-			return (0);
-		return (-1);
-	}
-	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
-		errno = EMSGSIZE; /* think of a better errno */
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	if (imsg.hdr.len - IMSG_HEADER_SIZE !=  sizeof(struct hinfo)) {
-		errno = EMSGSIZE;
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	memcpy(h, imsg.data, imsg.hdr.len - IMSG_HEADER_SIZE);
-	mdns_finish(&mst);
-	imsg_free(&imsg);
-	return (1);
+	return (mdns_lkup_do(hostname, T_HINFO, h, sizeof(*h)));
 }
 
 int
 mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
 {
-	struct mdns_msg_lkup mlkup;
-	struct mdns_state mst;
-	struct imsg imsg;
-	int err;
+	char	name[MAXHOSTNAMELEN];
+	char	res[MAXHOSTNAMELEN];
+	int	r;
 	
-	if (mdns_connect(&mst) == -1)
-		return (-1);
-
-	bzero(&mlkup, sizeof(mlkup));
-	reversstr(mlkup.dname, addr);
-	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0';
-	mlkup.type  = T_PTR;
-	mlkup.class = C_IN;
+	reversstr(name, addr);
+	name[sizeof(name) - 1] = '\0';
+	r = mdns_lkup_do(name, T_PTR, res, sizeof(res));
+	if (r == 1)
+		strlcpy(hostname, res, len);
 	
-	if (ibuf_send_imsg(&mst.ibuf, IMSG_CTL_LOOKUP,
-	    &mlkup, sizeof(mlkup)) == -1)
-		return (-1);
-	if (ibuf_read_imsg(&mst.ibuf, &imsg) == -1) {
-		err = errno;
-		mdns_finish(&mst);
-		if (err == ETIMEDOUT)
-			return (0);
-		return (-1);
-	}
-	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
-		errno = EMSGSIZE; /* think of a better errno */
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	if (imsg.hdr.len - IMSG_HEADER_SIZE != MAXHOSTNAMELEN) {
-		errno = EMSGSIZE;
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	strlcpy(hostname, imsg.data, len);
-	mdns_finish(&mst);
-	imsg_free(&imsg);
-	return (1);
+	return (r);
 }
 
 int
 mdns_lkup_srv(const char *hostname, struct srv *srv)
 {
-	struct imsg imsg;
-	struct mdns_msg_lkup mlkup;
-	struct mdns_state mst;
-	int err;
-	
-	if (strlen(hostname) > MAXHOSTNAMELEN) {
-		errno = ENAMETOOLONG;
-		return (-1);
-	}
-	if (mdns_connect(&mst) == -1)
-		return (-1);
-
-	bzero(&mlkup, sizeof(mlkup));
-	strlcpy(mlkup.dname, hostname, sizeof(mlkup.dname));
-	mlkup.type  = T_SRV;
-	mlkup.class = C_IN;
-	
-	if (ibuf_send_imsg(&mst.ibuf, IMSG_CTL_LOOKUP,
-	    &mlkup, sizeof(mlkup)) == -1)
-		return (-1);	/* XXX: set errno */
-	if (ibuf_read_imsg(&mst.ibuf, &imsg) == -1) {
-		err = errno;
-		mdns_finish(&mst);
-		if (err == ETIMEDOUT) 
-			return (0);
-		return (-1);
-	}
-	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
-		errno = EMSGSIZE; /* think of a better errno */
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	if (imsg.hdr.len - IMSG_HEADER_SIZE !=
-	    sizeof(struct srv)) {
-		errno = EMSGSIZE;
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	memcpy(srv, imsg.data, imsg.hdr.len - IMSG_HEADER_SIZE);
-	imsg_free(&imsg);
-	mdns_finish(&mst);
-	
-	return (1);
-
+	return (mdns_lkup_do(hostname, T_SRV, srv, sizeof(*srv)));
 }
+
 int
 mdns_lkup_txt(const char *hostname, char *txt, size_t len)
 {
-	struct imsg imsg;
-	struct mdns_msg_lkup mlkup;
-	struct mdns_state mst;
-	int err;
+	char	res[MAXHOSTNAMELEN];
+	int	r;
 	
-	if (strlen(hostname) > MAXHOSTNAMELEN) {
-		errno = ENAMETOOLONG;
-		return (-1);
-	}
-	if (mdns_connect(&mst) == -1)
-		return (-1);
-
-	bzero(&mlkup, sizeof(mlkup));
-	strlcpy(mlkup.dname, hostname, sizeof(mlkup.dname));
-	mlkup.type  = T_TXT;
-	mlkup.class = C_IN;
+	r = mdns_lkup_do(hostname, T_TXT, res, sizeof(res));
+	if (r == 1)
+		strlcpy(txt, res, len);
 	
-	if (ibuf_send_imsg(&mst.ibuf, IMSG_CTL_LOOKUP,
-	    &mlkup, sizeof(mlkup)) == -1)
-		return (-1);	/* XXX: set errno */
-	if (ibuf_read_imsg(&mst.ibuf, &imsg) == -1) {
-		err = errno;
-		mdns_finish(&mst);
-		if (err == ETIMEDOUT) 
-			return (0);
-		return (-1);
-	}
-	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
-		errno = EMSGSIZE; /* think of a better errno */
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	if (imsg.hdr.len - IMSG_HEADER_SIZE !=
-	    MAX_CHARSTR) {
-		errno = EMSGSIZE;
-		mdns_finish(&mst);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	strlcpy(txt, imsg.data, len);
-	imsg_free(&imsg);
-	mdns_finish(&mst);
-	
-	return (1);
+	return (r);
 }
 
 static int
@@ -376,4 +181,65 @@ reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
 	(void) snprintf(str, MAXHOSTNAMELEN, "%u.%u.%u.%u.in-addr.arpa",
 	    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
 	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
+}
+
+static int
+mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
+{
+	struct imsg imsg;
+	struct mdns_msg_lkup mlkup;
+	struct mdns_state mst;
+	int err;
+	
+	switch (type) {
+	case T_A:		/* FALLTHROUGH */
+	case T_HINFO:		/* FALLTHROUGH */
+	case T_PTR:		/* FALLTHROUGH */
+	case T_SRV:		/* FALLTHROUGH */
+	case T_TXT:		/* FALLTHROUGH */
+		break;
+	default:
+		errno = EINVAL;
+		return (-1);
+	}
+
+	if (strlen(name) > MAXHOSTNAMELEN) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
+	
+	if (mdns_connect(&mst) == -1)
+		return (-1);
+
+	bzero(&mlkup, sizeof(mlkup));
+	strlcpy(mlkup.dname, name, sizeof(mlkup.dname));
+	mlkup.type  = type;
+	mlkup.class = C_IN;
+	if (ibuf_send_imsg(&mst.ibuf, IMSG_CTL_LOOKUP,
+	    &mlkup, sizeof(mlkup)) == -1)
+		return (-1); /* XXX: set errno */
+	if (ibuf_read_imsg(&mst.ibuf, &imsg) == -1) {
+		err = errno;
+		mdns_finish(&mst);
+		if (err == ETIMEDOUT) 
+			return (0);
+		return (-1);
+	}
+	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
+		errno = EMSGSIZE; /* think of a better errno */
+		mdns_finish(&mst);
+		imsg_free(&imsg);
+		return (-1);
+	}
+	if (imsg.hdr.len - IMSG_HEADER_SIZE != len) {
+		errno = EMSGSIZE;
+		mdns_finish(&mst);
+		imsg_free(&imsg);
+		return (-1);
+	}
+	
+	memcpy(data, imsg.data, len);
+	imsg_free(&imsg);
+	mdns_finish(&mst);
+	return (1);
 }
