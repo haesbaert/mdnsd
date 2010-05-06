@@ -20,20 +20,17 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 
+#include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "mdns.h"
-
-struct mdns_state {
-	struct imsgbuf ibuf;
-};
+#include "imsg.h"
 
 static void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
-static int	mdns_connect(struct mdns_state *);
-static void	mdns_finish(struct mdns_state *);
+static int	mdns_connect(void);
 static int	mdns_lkup_do(const char *, u_int16_t, void *, size_t);
 static int	ibuf_read_imsg(struct imsgbuf *, struct imsg *);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
@@ -87,14 +84,19 @@ mdns_lkup_txt(const char *hostname, char *txt, size_t len)
 }
 
 static int
-mdns_connect(struct mdns_state *mst)
+mdns_connect(void)
 {
 	struct sockaddr_un	sun;
 	int			sockfd;
+	int			flags;
 	
-	bzero(mst, sizeof(struct mdns_state));
 	bzero(&sun, sizeof(sun));
 	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
+		return (-1);
+	/* use nonblocking mode so we can use it with edge triggered syscalls */
+	if ((flags = fcntl(sockfd, F_GETFL, 0)) == -1)
+		return (-1);
+	if ((flags = fcntl(sockfd, F_SETFL, flags |= O_NONBLOCK)) == -1)
 		return (-1);
 	sun.sun_family = AF_UNIX;
 	strlcpy(sun.sun_path, MDNSD_SOCKET, sizeof(sun.sun_path));
@@ -104,15 +106,7 @@ mdns_connect(struct mdns_state *mst)
 		return (-1);
 	}
 	
-	imsg_init(&mst->ibuf, sockfd);
-	
-	return (0);
-}
-
-static void
-mdns_finish(struct mdns_state *mst)
-{
-	imsg_clear(&mst->ibuf);
+	return (sockfd);
 }
 
 static int
@@ -185,10 +179,10 @@ reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
 static int
 mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 {
-	struct imsg imsg;
-	struct mdns_msg_lkup mlkup;
-	struct mdns_state mst;
-	int err;
+	struct imsg		imsg;
+	struct mdns_msg_lkup	mlkup;
+	struct imsgbuf		ibuf;
+	int			err, sockfd;
 	
 	switch (type) {
 	case T_A:		/* FALLTHROUGH */
@@ -207,38 +201,40 @@ mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 		return (-1);
 	}
 	
-	if (mdns_connect(&mst) == -1)
+	if ((sockfd = (mdns_connect())) == -1)
 		return (-1);
+	
+	imsg_init(&ibuf, sockfd);
 
 	bzero(&mlkup, sizeof(mlkup));
 	strlcpy(mlkup.dname, name, sizeof(mlkup.dname));
 	mlkup.type  = type;
 	mlkup.class = C_IN;
-	if (ibuf_send_imsg(&mst.ibuf, IMSG_CTL_LOOKUP,
+	if (ibuf_send_imsg(&ibuf, IMSG_CTL_LOOKUP,
 	    &mlkup, sizeof(mlkup)) == -1)
 		return (-1); /* XXX: set errno */
-	if (ibuf_read_imsg(&mst.ibuf, &imsg) == -1) {
+	if (ibuf_read_imsg(&ibuf, &imsg) == -1) {
 		err = errno;
-		mdns_finish(&mst);
+		imsg_clear(&ibuf);
 		if (err == ETIMEDOUT) 
 			return (0);
 		return (-1);
 	}
 	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
 		errno = EMSGSIZE; /* think of a better errno */
-		mdns_finish(&mst);
+		imsg_clear(&ibuf);
 		imsg_free(&imsg);
 		return (-1);
 	}
 	if (imsg.hdr.len - IMSG_HEADER_SIZE != len) {
 		errno = EMSGSIZE;
-		mdns_finish(&mst);
+		imsg_clear(&ibuf);
 		imsg_free(&imsg);
 		return (-1);
 	}
 	
 	memcpy(data, imsg.data, len);
 	imsg_free(&imsg);
-	mdns_finish(&mst);
+	imsg_clear(&ibuf);
 	return (1);
 }

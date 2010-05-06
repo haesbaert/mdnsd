@@ -23,8 +23,6 @@
 #include <event.h>
 #include <string.h>
 
-#include "imsg.h"	/* XXX this shouldn't be here */
-
 #define MDNSD_SOCKET		"/var/run/mdnsd.sock"
 #define ALL_MDNS_DEVICES	"224.0.0.251"
 #define MDNS_TIMEOUT 		3
