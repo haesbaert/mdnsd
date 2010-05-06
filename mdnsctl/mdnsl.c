@@ -39,7 +39,6 @@ static int	ibuf_read_imsg(struct imsgbuf *, struct imsg *);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
 
-/* TODO: unify all this code */
 int
 mdns_lkup(const char *hostname, struct in_addr *addr)
 {

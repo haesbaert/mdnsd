@@ -134,7 +134,7 @@ main(int argc, char *argv[])
 		}
 		break;
 	case BROWSE_PROTO:
-		errx(1, "implement me");
+		errx(1, "proto = %s, implement me", res->proto);
 		break;
 	}
 	

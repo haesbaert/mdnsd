@@ -49,7 +49,7 @@ struct imsgev {
 struct ctl_conn {
 	TAILQ_ENTRY(ctl_conn)	entry;
 	struct imsgev		iev;
-	struct query 		*qlist[MAXCTLQRY];
+	struct query		*qlist[MAXCTLQRY];
 };
 
 int	control_init(void);

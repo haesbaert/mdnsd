@@ -38,7 +38,8 @@ enum token_type {
 	ADDRESS,
 	FLAGS,
 	HOSTNAME,
-	PROTO
+	PROTO,
+	APPPROTO
 };
 
 struct token {
@@ -50,11 +51,13 @@ struct token {
 
 static const struct token t_main[];
 static const struct token t_lkup[];
-static const struct token t_br[];
+static const struct token t_browse[];
+static const struct token t_browse_app[];
+
 
 static const struct token t_main[] = {
 	{KEYWORD,	"lkup",		NONE,		t_lkup},
-	{KEYWORD,	"browse",	NONE,		t_br},
+	{KEYWORD,	"browse",	NONE,		t_browse},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -65,8 +68,14 @@ static const struct token t_lkup[] = {
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_br[] = {
-	{ PROTO,	"",		BROWSE_PROTO,	NULL},
+static const struct token t_browse[] = {
+	{ PROTO,	"tcp",		NONE,		t_browse_app},
+	{ PROTO,	"udp",		NONE,		t_browse_app},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_browse_app[] = {
+	{ APPPROTO,	"",		BROWSE_PROTO,	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -137,6 +146,16 @@ match_token(const char *word, const struct token *table)
 					res.action = t->value;
 			}
 			break;
+		case PROTO:
+			if (word != NULL && strcmp(word, table[i].keyword)
+			    == 0) {
+				res.proto = word;
+				match++;
+				t = &table[i];
+				if (t->value)
+					res.action = t->value;
+			}
+			break;
 		case ADDRESS:
 			if (parse_addr(word, &res.addr)) {
 				match++;
@@ -153,8 +172,8 @@ match_token(const char *word, const struct token *table)
 					res.action = t->value;
 			}
 			break;
-		case PROTO:
-			if (parse_proto(word, res.proto)) {
+		case APPPROTO:
+			if (word) {
 				match++;
 				t = &table[i];
 				if (t->value)
@@ -191,14 +210,17 @@ show_valid_args(const struct token *table)
 		case KEYWORD:
 			fprintf(stderr, "  %s\n", table[i].keyword);
 			break;
+		case PROTO:
+			fprintf(stderr, "  %s\n", table[i].keyword);
+			break;
 		case ADDRESS:
 			fprintf(stderr, "  <address>\n");
 			break;
 		case HOSTNAME:
 			fprintf(stderr, "  <hostname.local>\n");
 			break;
-		case PROTO:
-			fprintf(stderr, "  <_appproto._(tcp|udp).local>\n");
+		case APPPROTO:
+			fprintf(stderr, "  <application protocol>\n");
 			break;
 		case FLAGS:
 			fprintf(stderr, "  <-ahst>\n");
@@ -276,24 +298,4 @@ parse_flags(const char *word, int *flags)
 	}
 	
 	return (r);
-}
-
-/* XXX: improve this parsing, lala.tcp_ shouldn't be accepted */
-int
-parse_proto(const char *word, char proto[MAXHOSTNAMELEN])
-{
-	char *p;
-
-	if (word == NULL || strlen(word) < 6)
-		return (0);
-	
-	if ((p = strstr(word, ".")) == NULL)
-		return (0);
-	if (strlen(p) != 11)
-		return (0);
-	if (strcmp(p, "._tcp.local") != 0 && strcmp(p, "._udp.local") != 0)
-		return (0);
-	strlcpy(proto, word, MAXHOSTNAMELEN);
-	
-	return (1);
 }

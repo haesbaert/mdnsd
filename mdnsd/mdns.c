@@ -27,11 +27,11 @@
 #include "log.h"
 
 #define INTERVAL_PROBETIME	250000
-#define RANDOM_PROBETIME 	arc4random_uniform((u_int32_t) 250000)
+#define RANDOM_PROBETIME	arc4random_uniform((u_int32_t) 250000)
 
 struct query_node {
 	RB_ENTRY(query_node)	entry;
-	struct query	 	q;
+	struct query		q;
 };
 
 static void	publish_fsm(int, short, void *_pub);
@@ -74,10 +74,10 @@ publish_init(void)
 	struct iface	*iface;
 	struct rr	*rr;
 	char		 revaddr[MAXHOSTNAMELEN];
-	
+
 	/* init probing list used in name conflicts */
 	LIST_INIT(&probing_list);
-	
+
 	/* insert default records in all our interfaces */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		/* myname */
@@ -96,7 +96,7 @@ publish_init(void)
 		    conf->myname, sizeof(conf->myname));
 		if (publish_insert(iface, rr) == -1)
 			log_debug("publish_init: can't insert rr");
-		
+
 		/* publish hinfo */
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
@@ -104,7 +104,7 @@ publish_init(void)
 		    &conf->hi, sizeof(conf->hi));
 		if (publish_insert(iface, rr) == -1)
 			log_debug("publish_init: can't insert rr");
- 	}
+	}
 }
 
 void
@@ -115,7 +115,7 @@ publish_allrr(struct iface *iface)
 	struct publish		*pub;
 	struct rrt_node		*n;
 	struct timeval		 tv;
-	
+
 	/* start a publish thingy */
 	if ((pub = calloc(1, sizeof(*pub))) == NULL)
 		fatal("calloc");
@@ -125,7 +125,7 @@ publish_allrr(struct iface *iface)
 		fatal("calloc");
 	question_set(mq, conf->myname, T_ANY, C_IN, 1, 1);
 	pkt_add_question(&pub->pkt, mq);
-	
+
 	RB_FOREACH(n, rrt_tree, &iface->rrt) {
 		/* now go through all our rr and add to the same packet */
 		LIST_FOREACH(rr, &n->hrr, entry) {
@@ -135,7 +135,7 @@ publish_allrr(struct iface *iface)
 			pkt_add_nsrr(&pub->pkt, rrcopy);
 		}
 	}
-	
+
 	timerclear(&tv);
 	tv.tv_usec = RANDOM_PROBETIME;
 	evtimer_set(&pub->timer, publish_fsm, pub);
@@ -148,13 +148,13 @@ publish_delete(struct iface *iface, struct rr *rr)
 	struct rr	*rraux, *next;
 	struct rrt_node	*s;
 	int		 n = 0;
-	
+
 	log_debug("publish_delete: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
 	s = rrt_lookup_node(&iface->rrt, rr->dname, rr->type, rr->class);
 	if (s == NULL)
 		return (0);
-	
+
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
 		next = LIST_NEXT(rraux, entry);
 		if (RR_UNIQ(rr) || /* XXX: Revise this */
@@ -164,13 +164,13 @@ publish_delete(struct iface *iface, struct rr *rr)
 			free(rraux);
 			n++;
 		}
-	}	
-	
+	}
+
 	if (LIST_EMPTY(&s->hrr)) {
 		RB_REMOVE(rrt_tree, &iface->rrt, s);
 		free(s);
 	}
-	
+
 	return (n);
 }
 
@@ -180,23 +180,23 @@ publish_insert(struct iface *iface, struct rr *rr)
 	struct rr_head	*hrr;
 	struct rrt_node *n;
 	struct rr	*rraux;
-	
+
 	log_debug("publish_insert: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
-	
+
 	hrr = rrt_lookup_head(&iface->rrt, rr->dname, rr->type, rr->class);
 	if (hrr == NULL) {
 		if ((n = calloc(1, sizeof(*n))) == NULL)
 			fatal("calloc");
-		
+
 		LIST_INIT(&n->hrr);
 		LIST_INSERT_HEAD(&n->hrr, rr, entry);
 		if (RB_INSERT(rrt_tree, &iface->rrt, n) != NULL)
 			fatal("rrt_insert: RB_INSERT");
-		
+
 		return (0);
 	}
-		
+
 	/* if an unique record, clean all previous and substitute */
 	if (RR_UNIQ(rr)) {
 		while ((rraux = LIST_FIRST(hrr)) != NULL) {
@@ -204,13 +204,13 @@ publish_insert(struct iface *iface, struct rr *rr)
 			free(rraux);
 		}
 		LIST_INSERT_HEAD(hrr, rr, entry);
-		
+
 		return (0);
 	}
-	
+
 	/* not unique, just add */
 	LIST_INSERT_HEAD(hrr, rr, entry);
-	
+
 	return (0);
 }
 
@@ -219,13 +219,13 @@ publish_lookupall(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct iface	*iface;
 	struct rr	*rr;
-	
+
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		rr = rrt_lookup(&iface->rrt, dname, type, class);
 		if (rr != NULL)
 			return (rr);
 	}
-	
+
 	return (NULL);
 }
 
@@ -239,7 +239,7 @@ publish_fsm(int unused, short event, void *v_pub)
 	static unsigned long	pubid;
 
 	switch (pub->state) {
-	case PUB_INITIAL:	
+	case PUB_INITIAL:
 		pub->state = PUB_PROBE;
 		pub->id = ++pubid;
 		/* Register probing in our probing list so we can deal with
@@ -288,7 +288,7 @@ publish_fsm(int unused, short event, void *v_pub)
 			evtimer_add(&pub->timer, &tv);
 			return;
 		}
-		
+
 		/* sent announcement three times, finish */
 		pub->state = PUB_DONE;
 		publish_fsm(unused, event, pub);
@@ -341,10 +341,10 @@ cache_process(struct rr *rr)
 		return (cache_delete(rr));
 	if (cache_insert(rr) == -1)
 		return (-1);
-	
+
 	return (0);
 }
-	
+
 struct rr *
 cache_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
@@ -357,25 +357,25 @@ cache_insert(struct rr *rr)
 	struct rr_head	*hrr;
 	struct rrt_node *n;
 	struct rr	*rraux;
-	
+
 	log_debug("cache_insert: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
-	
+
 	hrr = rrt_lookup_head(&rrt_cache, rr->dname, rr->type, rr->class);
 	if (hrr == NULL) {
 		if ((n = calloc(1, sizeof(*n))) == NULL)
 			fatal("calloc");
-		
+
 		LIST_INIT(&n->hrr);
 		LIST_INSERT_HEAD(&n->hrr, rr, entry);
 		if (RB_INSERT(rrt_tree, &rrt_cache, n) != NULL)
 			fatal("rrt_insert: RB_INSERT");
 		cache_schedrev(rr);
 		query_notifyin(rr);
-		
+
 		return (0);
 	}
-		
+
 	/* if an unique record, clean all previous and substitute */
 	if (RR_UNIQ(rr)) {
 		while ((rraux = LIST_FIRST(hrr)) != NULL) {
@@ -387,10 +387,10 @@ cache_insert(struct rr *rr)
 		LIST_INSERT_HEAD(hrr, rr, entry);
 		cache_schedrev(rr);
 		query_notifyin(rr);
-		
+
 		return (0);
 	}
-	
+
 	/* rr is not unique, see if this is a cache refresh */
 	LIST_FOREACH(rraux, hrr, entry) {
 		if (memcmp(&rr->rdata, &rraux->rdata, rraux->rdlen) == 0) {
@@ -398,16 +398,16 @@ cache_insert(struct rr *rr)
 			rraux->revision = 0;
 			cache_schedrev(rraux);
 			free(rr);
-			
+
 			return (0);
 		}
 	}
-	
+
 	/* not a refresh, so add */
 	LIST_INSERT_HEAD(hrr, rr, entry);
 	query_notifyin(rr);
 	/* XXX: should we cache_schedrev ? */
-	
+
 	return (0);
 }
 
@@ -417,13 +417,13 @@ cache_delete(struct rr *rr)
 	struct rr	*rraux, *next;
 	struct rrt_node	*s;
 	int		 n = 0;
-	
+
 	log_debug("cache_delete: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
 	s = rrt_lookup_node(&rrt_cache, rr->dname, rr->type, rr->class);
 	if (s == NULL)
 		return (0);
-	
+
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
 		next = LIST_NEXT(rraux, entry);
 		if (RR_UNIQ(rr) ||
@@ -441,7 +441,7 @@ cache_delete(struct rr *rr)
 		RB_REMOVE(rrt_tree, &rrt_cache, s);
 		free(s);
 	}
-	
+
 	return (n);
 }
 
@@ -449,11 +449,11 @@ static void
 cache_schedrev(struct rr *rr)
 {
 	struct timeval tv;
-	
+
 	timerclear(&tv);
-	
+
 	switch (rr->revision) {
-	case 0: 		
+	case 0:
 		tv.tv_sec = rr->ttl * 0.8;
 		break;
 	case 1:
@@ -466,12 +466,14 @@ cache_schedrev(struct rr *rr)
 		tv.tv_sec = 1;
 		break;
 	}
-	
+
 	log_debug("cache_schedrev: schedule rr type: %s, name: %s (%d)",
 	    rr_type_name(rr->type), rr->dname, tv.tv_sec);
 
 	rr->revision++;
-	
+
+	if (evtimer_pending(&rr->rev_timer, NULL))
+		evtimer_del(&rr->rev_timer);
 	if (evtimer_add(&rr->rev_timer, &tv) == -1)
 		fatal("rrt_sched_rev");
 }
@@ -479,17 +481,25 @@ cache_schedrev(struct rr *rr)
 static void
 cache_rev(int unused, short event, void *v_rr)
 {
-	struct rr *rr = v_rr;
-	
+	struct rr	*rr = v_rr;
+	struct query	*q;
+	struct pkt	 pkt;
+
 	log_debug("cache_rev: timeout rr type: %s, name: %s (%u)",
 	    rr_type_name(rr->type), rr->dname, rr->ttl);
+
+	/* If we have an active query, try to renew the answer */
+	if ((q = query_lookup(rr->dname, rr->type, rr->class)) != NULL) {
+		pkt_init(&pkt);
+		pkt_add_question(&pkt, &q->mq);
+		if (pkt_send_allif(&pkt) == -1)
+			log_warnx("can't send packet to all interfaces");
+	}
 	
-/* 	if (rr->active && rr->revision <= 3) */
 	if (rr->revision <= 3)
 		cache_schedrev(rr);
 	else
 		cache_delete(rr);
-/* 	rrt_dump(); */
 }
 
 /*
@@ -515,11 +525,11 @@ rrt_lookup_head(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN],
     u_int16_t type, u_int16_t class)
 {
 	struct rrt_node	*tmp;
-	
+
 	tmp = rrt_lookup_node(rrt, dname, type, class);
 	if (tmp == NULL)
 		return (NULL);
-	
+
 	return (&tmp->hrr);
 }
 
@@ -527,7 +537,7 @@ static struct rr *
 rrt_lookup(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct rr_head	*hrr;
-	
+
 	hrr = rrt_lookup_head(rrt, dname, type, class);
 	if (hrr)
 		return (LIST_FIRST(hrr));
@@ -539,7 +549,7 @@ rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type
 {
 	struct rrt_node	s, *tmp;
 	struct rr	rr;
-	
+
 	bzero(&s, sizeof(s));
 	bzero(&rr, sizeof(rr));
 	rr.type	 = type;
@@ -548,11 +558,11 @@ rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type
 
 	LIST_INIT(&s.hrr);
 	LIST_INSERT_HEAD(&s.hrr, &rr, entry);
-	
+
 	tmp = RB_FIND(rrt_tree, rrt, &s);
 	if (tmp == NULL)
 		return (NULL);
-	
+
 	return (tmp);
 }
 
@@ -560,10 +570,10 @@ static int
 rrt_compare(struct rrt_node *a, struct rrt_node *b)
 {
 	struct rr *rra, *rrb;
-	
+
 	rra = LIST_FIRST(&a->hrr);
 	rrb = LIST_FIRST(&b->hrr);
-	
+
 	if (rra->class < rrb->class)
 		return (-1);
 	if (rra->class > rrb->class)
@@ -572,7 +582,7 @@ rrt_compare(struct rrt_node *a, struct rrt_node *b)
 		return (-1);
 	if (rra->type > rrb->type)
 		return (1);
-	
+
 	return (strcmp(rra->dname, rrb->dname));
 }
 
@@ -590,7 +600,7 @@ struct query *
 query_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct query_node *qn;
-	
+
 	qn = query_lookup_node(dname, type, class);
 	if (qn != NULL)
 		return (&qn->q);
@@ -604,7 +614,7 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	struct query_node	*qn;
 	struct pkt		 pkt;
 	struct timeval		 tv;
-	
+
 	q = query_lookup(dname, type, class);
 	if (q != NULL) {
 		if (s != q->style) {
@@ -631,14 +641,14 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	if (pkt_send_allif(&pkt) == -1)
 		log_warnx("can't send packet to all interfaces");
 	q->sent++;
-	
+
 	if (q->style == QUERY_CONTINUOUS) {
 		timerclear(&tv);
 		tv.tv_sec = 1;
-/* 		evtimer_set(&q->timer, query_fsm, q); */
-/* 		evtimer_add(&q->timer, &tv); */
+/*		evtimer_set(&q->timer, query_fsm, q); */
+/*		evtimer_add(&q->timer, &tv); */
 	}
-	
+
 	return (q);
 }
 
@@ -647,7 +657,7 @@ query_remove(struct query *qrem)
 {
 	struct query *qfound;
 	struct query_node *qn;
-	
+
 	qn = query_lookup_node(qrem->mq.dname, qrem->mq.qtype, qrem->mq.qclass);
 	if (qn == NULL)
 		return;
@@ -664,7 +674,8 @@ query_notifyin(struct rr *rr)
 	struct ctl_conn *c;
 	struct query	*q;
 	int		 tosee;
-	
+	int		 msgtype;
+
 	q = query_lookup(rr->dname, rr->type, rr->class);
 	if (q == NULL)
 		return (0);
@@ -681,33 +692,20 @@ query_notifyin(struct rr *rr)
 			return (0);
 		}
 		/* notify controller */
-		if (query_answer(c, rr, q->style) == -1)
-			log_warnx("query_answer error");
+		msgtype = q->style == QUERY_SINGLE ?
+		    IMSG_CTL_LOOKUP : IMSG_CTL_BROWSE_ADD;
+		if (query_answerctl(c, rr, msgtype) == -1)
+			log_warnx("query_answerctl error");
 	}
-	
+
 	/* number of notified controllers */
 	return (q->active - tosee);
 }
 
 int
-query_answer(struct ctl_conn *c, struct rr *rr, int style)
+query_answerctl(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
-	int msgtype;
-	
-	/* XXX this is a design error :-( */
-	switch (style) {
-	case QUERY_SINGLE:
-		msgtype = IMSG_CTL_LOOKUP;
-		break;
-	case QUERY_CONTINUOUS:
-		msgtype = IMSG_CTL_BROWSE_NEW;
-		break;
-	default:
-		log_warnx("Unknown query style, report this");
-		return (-1);
-		break;	/* NOTREACHED */
-	}
-		
+	log_debug("respondendo com msgtype = %d", msgtype);
 	switch (rr->type) {
 	case T_A:
 		mdnsd_imsg_compose_ctl(c, msgtype,
@@ -734,7 +732,7 @@ query_answer(struct ctl_conn *c, struct rr *rr, int style)
 		return (-1);
 		break;		/* NOTREACHED */
 	}
-	
+
 	return (0);
 }
 
@@ -756,10 +754,9 @@ static struct query_node *
 query_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct query_node qn;
-	
+
 	bzero(&qn, sizeof(qn));
 	question_set(&qn.q.mq, dname, type, class, 0, 0);
-	
+
 	return (RB_FIND(query_tree, &qtree, &qn));
 }
-

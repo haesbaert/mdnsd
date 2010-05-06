@@ -40,6 +40,7 @@ struct ctl_conn	*control_connbyfd(int);
 struct ctl_conn	*control_connbypid(pid_t);
 void		 control_close(int);
 void		 control_lookup(struct ctl_conn *, struct imsg *);
+void		 control_browse_add(struct ctl_conn *, struct imsg *);
 int		 control_freeq(struct ctl_conn *);
 
 void
@@ -48,7 +49,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	struct mdns_msg_lkup	 mlkup;
 	struct rr		*rr;
 	int			 slot;
-	
+
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
 
@@ -67,7 +68,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		    mlkup.type);
 		return;
 	}
-	
+
 	if (mlkup.class != C_IN) {
 		log_warnx("Lookup class %d not supported/implemented",
 		    mlkup.class);
@@ -80,7 +81,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
 	/* cache hit */
 	if (rr != NULL)
-	    if (query_answer(c, rr, QUERY_SINGLE) == -1)
+	    if (query_answerctl(c, rr, IMSG_CTL_LOOKUP) == -1)
 		    log_warnx("query_answer error");
 
 	/* cache miss */
@@ -89,11 +90,57 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		/* XXX grow buffer  */
 		return;
 	}
-	
+
 	c->qlist[slot] = query_place(QUERY_SINGLE, mlkup.dname, mlkup.type,
 	    mlkup.class);
 	if (c->qlist[slot] == NULL)
 		log_warnx("Can't place query");
+}
+
+void
+control_browse_add(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct mdns_msg_lkup	 mlkup;
+	struct rr		*rr;
+	int			 slot;
+
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
+		return;
+
+	memcpy(&mlkup, imsg->data, sizeof(mlkup));
+	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0'; /* assure clients were nice */
+
+	if (mlkup.type != T_PTR) {
+		log_warnx("Browse type %d not supported/implemented",
+		    mlkup.type);
+	}
+		
+	if (mlkup.class != C_IN) {
+		log_warnx("Browse class %d not supported/implemented",
+		    mlkup.class);
+		return;
+	}
+
+	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
+	    mlkup.class);
+
+	
+	if ((slot = control_freeq(c)) == -1) {
+		log_debug("No more free control queries");
+		/* XXX grow buffer  */
+		return;
+	}
+	
+	c->qlist[slot] = query_place(QUERY_CONTINUOUS, mlkup.dname, mlkup.type,
+	    mlkup.class);
+	if (c->qlist[slot] == NULL)
+		log_warnx("Can't place query");
+	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
+	while (rr != NULL) {
+		if (query_answerctl(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
+			log_warnx("query_answerctl error");
+		rr = LIST_NEXT(rr, entry);
+	}
 }
 
 int
@@ -285,6 +332,11 @@ control_dispatch_imsg(int fd, short event, void *bula)
 		case IMSG_CTL_LOOKUP:
 			control_lookup(c, &imsg);
 			break;
+		case IMSG_CTL_BROWSE_ADD:
+			control_browse_add(c, &imsg);
+			break;
+		case IMSG_CTL_BROWSE_DEL:
+			break;
 		default:
 			log_debug("control_dispatch_imsg: "
 			    "error handling imsg %d", imsg.hdr.type);
@@ -332,4 +384,3 @@ control_hasq(struct ctl_conn *c, struct query *q)
 			return (1);
 	return (0);
 }
-

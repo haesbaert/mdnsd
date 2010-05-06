@@ -65,7 +65,6 @@ struct rr {
 		struct hinfo 	HINFO;
 
 	} rdata;
-	int		active;	   	/* should we try to renew this ? */
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
 	struct event 	rev_timer; 	/* cache revision timer */
 	
@@ -269,10 +268,9 @@ struct rr *	 publish_lookupall(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 void		 query_init(void);
 struct query *	 query_place(int, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 struct query *	 query_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
-int		 query_answer(struct ctl_conn *, struct rr *, int);
+int		 query_answerctl(struct ctl_conn *, struct rr *, int);
 int		 query_notifyin(struct rr *);
 void		 query_remove(struct query *);
-/* void		 query_cleanbyconn(struct ctl_conn *); */
 void		 cache_init(void);
 int		 cache_process(struct rr *);
 struct rr	*cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);

@@ -35,8 +35,8 @@ enum imsg_type {
 	IMSG_NONE,
 	IMSG_CTL_END,
 	IMSG_CTL_LOOKUP,
-	IMSG_CTL_BROWSE_NEW,
-	IMSG_CTL_BROWSE_OUT,
+	IMSG_CTL_BROWSE_ADD,
+	IMSG_CTL_BROWSE_DEL,
 };
 
 struct mdns_msg_lkup {
