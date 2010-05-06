@@ -30,7 +30,6 @@
 #define MDNS_TIMEOUT 		3
 #define MAX_CHARSTR		256	/* we swap the length byter per the null byte */
 
-/* XXX remove CTL infix */
 enum imsg_type {
 	IMSG_NONE,
 	IMSG_CTL_END,
