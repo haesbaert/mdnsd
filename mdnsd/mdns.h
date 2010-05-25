@@ -36,6 +36,11 @@ enum imsg_type {
 	IMSG_CTL_BROWSE_DEL,
 };
 
+enum browse_events {
+	SERVICE_DOWN,
+	SERVICE_UP,
+};
+
 struct mdns_msg_lkup {
 	char		dname[MAXHOSTNAMELEN];
 	u_int16_t	type;
@@ -54,6 +59,14 @@ struct srv {
 	u_int16_t	port;
 	char		dname[MAXHOSTNAMELEN];
 };
+
+typedef void (*browse_cb) (char [MAXHOSTNAMELEN], int, void *);
+
+int	mdns_browse_sock(void);
+int	mdns_browse_add(int, const char *, const char *);
+int	mdns_browse_del(int, const char *, const char *);
+int	mdns_browse_read(int, browse_cb, void *);
+char *	mdns_browse_evstr(int);
 
 int	mdns_lkup(const char *, struct in_addr *);
 int	mdns_lkup_hinfo(const char *, struct hinfo *);

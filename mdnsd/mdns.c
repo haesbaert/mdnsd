@@ -622,7 +622,7 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 			return NULL;
 		}
 		q->active++;
-		log_debug("existing query %d active", q->active);
+		log_debug("existing query active = %d", q->active);
 		return (q);
 	}
 	/* no query, make a new one */
@@ -645,8 +645,8 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	if (q->style == QUERY_CONTINUOUS) {
 		timerclear(&tv);
 		tv.tv_sec = 1;
-/*		evtimer_set(&q->timer, query_fsm, q); */
-/*		evtimer_add(&q->timer, &tv); */
+/* 		evtimer_set(&q->timer, query_fsm, q); */
+/* 		evtimer_add(&q->timer, &tv); */
 	}
 
 	return (q);

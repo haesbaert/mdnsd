@@ -43,6 +43,7 @@ struct parse_result {
 	enum actions	action;
 	char		hostname[MAXHOSTNAMELEN];
 	const char	*proto;
+	const char	*app;
 };
 
 struct parse_result	*parse(int, char *[]);

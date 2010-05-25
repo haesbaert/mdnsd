@@ -36,6 +36,7 @@
 #include "parser.h"
 
 __dead void	 usage(void);
+static void	 browse_hook(char [MAXHOSTNAMELEN], int, void *);
 
 __dead void
 usage(void)
@@ -49,7 +50,7 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	int			 r, done = 0;
+	int			 brsock, r = 0, done = 0;
 	struct in_addr		 addr;
 	struct hinfo		 hi;
 	struct srv		 srv;
@@ -134,10 +135,27 @@ main(int argc, char *argv[])
 		}
 		break;
 	case BROWSE_PROTO:
-		errx(1, "proto = %s, implement me", res->proto);
-		break;
+		if ((brsock = mdns_browse_sock()) == -1)
+			err(1, "mdns_browse_sock");
+		if (mdns_browse_add(brsock, res->app, res->proto) == -1)
+			err(1, "mdns_browse_add");
+		if (r == -1) 
+			err(1, "select");
+		for (; ;) {
+			r = mdns_browse_read(brsock, browse_hook, NULL);
+			if (r == -1)
+				errx(1, "mdns_browse_read");
+			else if (r == 0)
+				errx(1, "Server closed socket");
+		}
+		break;		/* NOTREACHED */
 	}
 	
 	return (0);		/* NOTREACHED */
 }
 
+static void
+browse_hook(char name[MAXHOSTNAMELEN], int ev, void *udata)
+{
+	printf("%s : %s", name, mdns_browse_evstr(ev));
+}

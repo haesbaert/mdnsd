@@ -80,9 +80,11 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 
 	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
 	/* cache hit */
-	if (rr != NULL)
-	    if (query_answerctl(c, rr, IMSG_CTL_LOOKUP) == -1)
-		    log_warnx("query_answer error");
+	if (rr != NULL) {
+		if (query_answerctl(c, rr, IMSG_CTL_LOOKUP) == -1) 
+			log_warnx("query_answer error");
+		return;
+	}
 
 	/* cache miss */
 	if ((slot = control_freeq(c)) == -1) {
@@ -113,6 +115,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	if (mlkup.type != T_PTR) {
 		log_warnx("Browse type %d not supported/implemented",
 		    mlkup.type);
+		return;
 	}
 		
 	if (mlkup.class != C_IN) {
@@ -123,10 +126,9 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
-
 	
 	if ((slot = control_freeq(c)) == -1) {
-		log_debug("No more free control queries");
+		log_warnx("No more free control queries");
 		/* XXX grow buffer  */
 		return;
 	}
@@ -210,7 +212,6 @@ control_cleanup(void)
 	unlink(MDNSD_SOCKET);
 }
 
-/* ARGSUSED */
 void
 control_accept(int listenfd, short event, void *bula)
 {
@@ -251,7 +252,7 @@ control_connbyfd(int fd)
 	struct ctl_conn	*c;
 
 	for (c = TAILQ_FIRST(&ctl_conns); c != NULL && c->iev.ibuf.fd != fd;
-	    c = TAILQ_NEXT(c, entry))
+	     c = TAILQ_NEXT(c, entry))
 		;	/* nothing */
 
 	return (c);
@@ -263,7 +264,7 @@ control_connbypid(pid_t pid)
 	struct ctl_conn	*c;
 
 	for (c = TAILQ_FIRST(&ctl_conns); c != NULL && c->iev.ibuf.pid != pid;
-	    c = TAILQ_NEXT(c, entry))
+	     c = TAILQ_NEXT(c, entry))
 		;	/* nothing */
 
 	return (c);

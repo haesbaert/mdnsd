@@ -51,13 +51,13 @@ struct token {
 
 static const struct token t_main[];
 static const struct token t_lkup[];
-static const struct token t_browse[];
+static const struct token t_browse_proto[];
 static const struct token t_browse_app[];
 
 
 static const struct token t_main[] = {
 	{KEYWORD,	"lkup",		NONE,		t_lkup},
-	{KEYWORD,	"browse",	NONE,		t_browse},
+	{KEYWORD,	"browse",	NONE,		t_browse_app},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -68,14 +68,14 @@ static const struct token t_lkup[] = {
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_browse[] = {
-	{ PROTO,	"tcp",		NONE,		t_browse_app},
-	{ PROTO,	"udp",		NONE,		t_browse_app},
+static const struct token t_browse_app[] = {
+	{ APPPROTO,	"",		NONE,		t_browse_proto},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_browse_app[] = {
-	{ APPPROTO,	"",		BROWSE_PROTO,	NULL},
+static const struct token t_browse_proto[] = {
+	{ PROTO,	"tcp",		BROWSE_PROTO,	NULL},
+	{ PROTO,	"udp",		BROWSE_PROTO,	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -174,6 +174,7 @@ match_token(const char *word, const struct token *table)
 			break;
 		case APPPROTO:
 			if (word) {
+				res.app = word;
 				match++;
 				t = &table[i];
 				if (t->value)

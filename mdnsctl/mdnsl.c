@@ -29,9 +29,11 @@
 #include "mdns.h"
 #include "imsg.h"
 
+static int	mksrvstr(char [MAXHOSTNAMELEN], const char *, const char *);
 static void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 static int	mdns_connect(void);
 static int	mdns_lkup_do(const char *, u_int16_t, void *, size_t);
+static int	mdns_browse_adddel(int, const char *, const char *, int);
 static int	ibuf_read_imsg(struct imsgbuf *, struct imsg *);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
@@ -83,21 +85,107 @@ mdns_lkup_txt(const char *hostname, char *txt, size_t len)
 	return (r);
 }
 
+/* A better name to be used outside */
+int
+mdns_browse_sock(void)
+{
+	return (mdns_connect());
+}
+
+int
+mdns_browse_add(int brsock, const char *app, const char *proto)
+{
+	printf("app: %s\nproto: %s\n", app, proto);
+	return (mdns_browse_adddel(brsock, app, proto, 1));
+}
+
+int
+mdns_browse_del(int brsock, const char *app, const char *proto)
+{
+	return (mdns_browse_adddel(brsock, app, proto, 0));
+}
+
+int
+mdns_browse_read(int brsock, browse_cb brcb, void *udata)
+{
+	char		name[MAXHOSTNAMELEN];
+	int		ev, r = 0;
+	ssize_t		n;
+	struct imsg	imsg;
+	struct imsgbuf	ibuf;
+	
+	imsg_init(&ibuf, brsock);
+	n = imsg_read(&ibuf);
+	
+	if (n == -1 || n == 0)
+		return (n);
+	
+	for (r = 0; (n = imsg_get(&ibuf, &imsg)) > 0; r++) {
+		if (imsg.hdr.type != IMSG_CTL_BROWSE_ADD ||
+		    imsg.hdr.type != IMSG_CTL_BROWSE_DEL)
+			return (-1);
+		if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(name))
+			return (-1);
+		ev = imsg.hdr.type == IMSG_CTL_BROWSE_ADD ? SERVICE_UP : SERVICE_DOWN;
+		brcb(name, ev, udata);
+		r++;
+	}
+	
+	return (r);
+}
+
+char *
+mdns_browse_evstr(int ev)
+{
+	if (ev == SERVICE_UP)
+		return ("SERVICE_UP");
+	else if(ev == SERVICE_DOWN)
+		return ("SERVICE_DOWN");
+	return ("UNKNOWN");
+}
+
+static int
+mdns_browse_adddel(int brsock, const char *app, const char *proto, int add)
+{
+	struct mdns_msg_lkup	mlkup;
+	struct imsgbuf		ibuf;
+	int			msgtype;
+
+	msgtype = add ? IMSG_CTL_BROWSE_ADD : IMSG_CTL_BROWSE_DEL;
+ 	if (strlen(app) > MAXHOSTNAMELEN) {
+ 		errno = ENAMETOOLONG;
+ 		return (-1);
+ 	}
+ 	
+ 	imsg_init(&ibuf, brsock);
+ 	bzero(&mlkup, sizeof(mlkup));
+	if (mksrvstr(mlkup.dname, app, proto) == -1)
+		return (-1);
+ 	mlkup.type  = T_PTR;
+ 	mlkup.class = C_IN;
+ 	if (ibuf_send_imsg(&ibuf, msgtype,
+ 	    &mlkup, sizeof(mlkup)) == -1)
+ 		return (-1); /* XXX: set errno */
+	
+	return (0);
+}
+
+
 static int
 mdns_connect(void)
 {
 	struct sockaddr_un	sun;
 	int			sockfd;
-	int			flags;
+/* 	int			flags; */
 	
 	bzero(&sun, sizeof(sun));
 	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
 		return (-1);
 	/* use nonblocking mode so we can use it with edge triggered syscalls */
-	if ((flags = fcntl(sockfd, F_GETFL, 0)) == -1)
-		return (-1);
-	if ((flags = fcntl(sockfd, F_SETFL, flags |= O_NONBLOCK)) == -1)
-		return (-1);
+/* 	if ((flags = fcntl(sockfd, F_GETFL, 0)) == -1) */
+/* 		return (-1); */
+/* 	if ((flags = fcntl(sockfd, F_SETFL, flags |= O_NONBLOCK)) == -1) */
+/* 		return (-1); */
 	sun.sun_family = AF_UNIX;
 	strlcpy(sun.sun_path, MDNSD_SOCKET, sizeof(sun.sun_path));
 	if (connect(sockfd, (struct sockaddr *)&sun, sizeof(sun)) == -1) {
@@ -237,4 +325,33 @@ mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 	imsg_free(&imsg);
 	imsg_clear(&ibuf);
 	return (1);
+}
+
+static int
+mksrvstr(char name[MAXHOSTNAMELEN], const char *app, const char *proto)
+{
+ 	if (strlcpy(name, "_", MAXHOSTNAMELEN)
+	    >= MAXHOSTNAMELEN)
+		goto toolong;
+ 	if (strlcat(name, app, MAXHOSTNAMELEN)
+	    >= MAXHOSTNAMELEN)
+		goto toolong;
+ 	if (strlcat(name, ".", MAXHOSTNAMELEN)
+	    >= MAXHOSTNAMELEN)
+		goto toolong;
+ 	if (strlcat(name, "_", MAXHOSTNAMELEN)
+	    >= MAXHOSTNAMELEN)
+		goto toolong;
+ 	if (strlcat(name, proto, MAXHOSTNAMELEN)
+	    >= MAXHOSTNAMELEN)
+		goto toolong;
+ 	if (strlcat(name, ".local", MAXHOSTNAMELEN)
+	    >= MAXHOSTNAMELEN)
+		goto toolong;
+
+	return (0);
+toolong:
+	errno = ENAMETOOLONG;
+	return (-1);
+	
 }
