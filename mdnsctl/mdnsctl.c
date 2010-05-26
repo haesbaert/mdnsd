@@ -157,5 +157,5 @@ main(int argc, char *argv[])
 static void
 browse_hook(char name[MAXHOSTNAMELEN], int ev, void *udata)
 {
-	printf("%s : %s", name, mdns_browse_evstr(ev));
+	printf("%s : %s\n", name, mdns_browse_evstr(ev));
 }
