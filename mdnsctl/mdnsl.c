@@ -108,29 +108,29 @@ mdns_browse_del(int brsock, const char *app, const char *proto)
 int
 mdns_browse_read(int brsock, browse_cb brcb, void *udata)
 {
-	char		name[MAXHOSTNAMELEN];
 	int		ev, r = 0;
 	ssize_t		n;
 	struct imsg	imsg;
 	struct imsgbuf	ibuf;
-	
+
 	imsg_init(&ibuf, brsock);
 	n = imsg_read(&ibuf);
-	
+
 	if (n == -1 || n == 0)
 		return (n);
-	
+
 	for (r = 0; (n = imsg_get(&ibuf, &imsg)) > 0; r++) {
-		if (imsg.hdr.type != IMSG_CTL_BROWSE_ADD ||
+		if (imsg.hdr.type != IMSG_CTL_BROWSE_ADD &&
 		    imsg.hdr.type != IMSG_CTL_BROWSE_DEL)
 			return (-1);
-		if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(name))
+		if ((imsg.hdr.len - IMSG_HEADER_SIZE) != MAXHOSTNAMELEN)
 			return (-1);
-		ev = imsg.hdr.type == IMSG_CTL_BROWSE_ADD ? SERVICE_UP : SERVICE_DOWN;
-		brcb(name, ev, udata);
+		ev = imsg.hdr.type == IMSG_CTL_BROWSE_ADD ?
+		    SERVICE_UP : SERVICE_DOWN;
+		brcb(imsg.data, ev, udata);
 		r++;
 	}
-	
+
 	return (r);
 }
 
