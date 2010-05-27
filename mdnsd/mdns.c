@@ -371,7 +371,7 @@ cache_insert(struct rr *rr)
 		if (RB_INSERT(rrt_tree, &rrt_cache, n) != NULL)
 			fatal("rrt_insert: RB_INSERT");
 		cache_schedrev(rr);
-		query_notifyin(rr);
+		query_notify(rr, 1);
 
 		return (0);
 	}
@@ -386,7 +386,7 @@ cache_insert(struct rr *rr)
 		}
 		LIST_INSERT_HEAD(hrr, rr, entry);
 		cache_schedrev(rr);
-		query_notifyin(rr);
+		query_notify(rr, 1);
 
 		return (0);
 	}
@@ -405,7 +405,7 @@ cache_insert(struct rr *rr)
 
 	/* not a refresh, so add */
 	LIST_INSERT_HEAD(hrr, rr, entry);
-	query_notifyin(rr);
+	query_notify(rr, 1);
 	/* XXX: should we cache_schedrev ? */
 
 	return (0);
@@ -421,6 +421,7 @@ cache_delete(struct rr *rr)
 	log_debug("cache_delete: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
 	s = rrt_lookup_node(&rrt_cache, rr->dname, rr->type, rr->class);
+	query_notify(rr, 0);
 	if (s == NULL)
 		return (0);
 
@@ -616,6 +617,7 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	struct timeval		 tv;
 
 	q = query_lookup(dname, type, class);
+	/* existing query, increase active */
 	if (q != NULL) {
 		if (s != q->style) {
 			log_warnx("trying to change a query style");
@@ -668,8 +670,9 @@ query_remove(struct query *qrem)
 	}
 }
 
+/* RR in/out, 1 = in, 0 = out */
 int
-query_notifyin(struct rr *rr)
+query_notify(struct rr *rr, int in)
 {
 	struct ctl_conn *c;
 	struct query	*q;
@@ -692,10 +695,20 @@ query_notifyin(struct rr *rr)
 			return (0);
 		}
 		/* notify controller */
-		msgtype = q->style == QUERY_SINGLE ?
-		    IMSG_CTL_LOOKUP : IMSG_CTL_BROWSE_ADD;
+		switch (q->style) {
+		case QUERY_SINGLE:
+			msgtype = IMSG_CTL_LOOKUP;
+			break;
+		case QUERY_CONTINUOUS:
+			msgtype = in ? IMSG_CTL_BROWSE_ADD
+			    : IMSG_CTL_BROWSE_DEL;
+			break;
+		default:
+			log_warnx("Unknown query style");
+			return (-1);
+		}
 		if (query_answerctl(c, rr, msgtype) == -1)
-			log_warnx("query_answerctl error");
+			log_warnx("Query_answerctl error");
 	}
 
 	/* number of notified controllers */
@@ -705,7 +718,6 @@ query_notifyin(struct rr *rr)
 int
 query_answerctl(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
-	log_debug("respondendo com msgtype = %d", msgtype);
 	switch (rr->type) {
 	case T_A:
 		mdnsd_imsg_compose_ctl(c, msgtype,

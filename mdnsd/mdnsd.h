@@ -269,7 +269,7 @@ void		 query_init(void);
 struct query *	 query_place(int, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 struct query *	 query_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 int		 query_answerctl(struct ctl_conn *, struct rr *, int);
-int		 query_notifyin(struct rr *);
+int		 query_notify(struct rr *, int);
 void		 query_remove(struct query *);
 void		 cache_init(void);
 int		 cache_process(struct rr *);
