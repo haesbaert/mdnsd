@@ -621,7 +621,7 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	if (q != NULL) {
 		if (s != q->style) {
 			log_warnx("trying to change a query style");
-			return NULL;
+			return (NULL);
 		}
 		q->active++;
 		log_debug("existing query active = %d", q->active);
