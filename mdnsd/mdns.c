@@ -19,6 +19,7 @@
 #include <sys/utsname.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <err.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +29,7 @@
 
 #define INTERVAL_PROBETIME	250000
 #define RANDOM_PROBETIME	arc4random_uniform((u_int32_t) 250000)
+#define MAX_QUERYTIME		(60 * 60) /* one hour */
 
 struct query_node {
 	RB_ENTRY(query_node)	entry;
@@ -51,8 +53,9 @@ static struct rrt_node	*rrt_lookup_node(struct rrt_tree *,
     char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 
 static int	query_node_compare(struct query_node *, struct query_node *);
-static struct query_node *query_lookup_node(char [MAXHOSTNAMELEN],
-    u_int16_t, u_int16_t);
+static void	query_fsm(int, short, void *);
+static struct query_node *query_lookup_node(char [MAXHOSTNAMELEN], u_int16_t,
+    u_int16_t);
 
 RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_compare);
 
@@ -329,7 +332,81 @@ publish_fsm(int unused, short event, void *v_pub)
 void
 cache_init(void)
 {
+#ifdef DUMMY_ENTRIES
+	char **nptr;
+	struct rr *rr;
+	char *tnames[] = {
+		"teste1.local",
+		"teste2.local",
+		"teste3.local",
+		"teste4.local",
+		"teste5.local",
+		"teste6.local",
+		"teste7.local",
+		"teste8.local",
+		"teste9.local",
+		"teste10.local",
+		"teste11.local",
+		"teste12.local",
+		"teste13.local",
+		"teste14.local",
+		"teste15.local",
+		"teste16.local",
+		"teste17.local",
+		"teste18.local",
+		"teste19.local",
+		"teste20.local",
+		"teste21.local",
+		"teste22.local",
+		"teste23.local",
+		"teste24.local",
+		"teste25.local",
+		"teste26.local",
+		"teste27.local",
+		"teste28.local",
+		"teste29.local",
+		"teste30.local",
+		"teste31.local",
+		"teste32.local",
+		"teste33.local",
+		"teste34.local",
+		"teste35.local",
+		"teste36.local",
+		"teste37.local",
+		"teste38.local",
+		"teste39.local",
+		"teste40.local",
+		"teste41.local",
+		"teste42.local",
+		"teste43.local",
+		"teste44.local",
+		"teste45.local",
+		"teste46.local",
+		"teste47.local",
+		"teste48.local",
+		"teste49.local",
+		"teste50.local",
+		0
+	};
+#endif
 	RB_INIT(&rrt_cache);
+#ifdef DUMMY_ENTRIES
+	for (nptr = tnames; *nptr != NULL; nptr++) {
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			err(1, "calloc");
+		strlcpy(rr->dname, "_http._tcp.local", sizeof(rr->dname));
+		rr->type = T_PTR;
+		rr->class = C_IN;
+		rr->ttl = 60;
+		strlcpy(rr->rdata.PTR, *nptr, sizeof(rr->rdata.PTR));
+		rr->rdlen = strlen(*nptr);
+		evtimer_set(&rr->rev_timer, cache_rev, rr);
+		cache_insert(rr);
+		
+	}
+	
+#endif
+	
 }
 
 int
@@ -404,8 +481,10 @@ cache_insert(struct rr *rr)
 	}
 
 	/* not a refresh, so add */
+	log_debug("shared record");
 	LIST_INSERT_HEAD(hrr, rr, entry);
 	query_notify(rr, 1);
+	cache_schedrev(rr);
 	/* XXX: should we cache_schedrev ? */
 
 	return (0);
@@ -613,8 +692,6 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct query		*q;
 	struct query_node	*qn;
-	struct pkt		 pkt;
-	struct timeval		 tv;
 
 	q = query_lookup(dname, type, class);
 	/* existing query, increase active */
@@ -637,20 +714,8 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	q->active++;
 	if (RB_INSERT(query_tree, &qtree, qn) != NULL)
 		fatal("query_place: RB_INSERT");
-	/* send packet */
-	pkt_init(&pkt);
-	pkt_add_question(&pkt, &q->mq);
-	if (pkt_send_allif(&pkt) == -1)
-		log_warnx("can't send packet to all interfaces");
-	q->sent++;
-
-	if (q->style == QUERY_CONTINUOUS) {
-		timerclear(&tv);
-		tv.tv_sec = 1;
-/* 		evtimer_set(&q->timer, query_fsm, q); */
-/* 		evtimer_add(&q->timer, &tv); */
-	}
-
+	/* start the sending machine */
+	event_once(-1, EV_TIMEOUT, query_fsm, q, NULL); /* THIS IS PROBABLY WRONG */
 	return (q);
 }
 
@@ -666,6 +731,8 @@ query_remove(struct query *qrem)
 	qfound = &qn->q;
 	if (--qfound->active == 0) {
 		RB_REMOVE(query_tree, &qtree, qn);
+		if (evtimer_pending(&qn->q.timer, NULL))
+			evtimer_del(&qn->q.timer);
 		free(qn);
 	}
 }
@@ -718,6 +785,7 @@ query_notify(struct rr *rr, int in)
 int
 query_answerctl(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
+	log_debug("query_answerctl %s", rr->dname);
 	switch (rr->type) {
 	case T_A:
 		mdnsd_imsg_compose_ctl(c, msgtype,
@@ -748,6 +816,37 @@ query_answerctl(struct ctl_conn *c, struct rr *rr, int msgtype)
 	return (0);
 }
 
+static void
+query_fsm(int unused, short event, void *v_query)
+{
+	struct pkt	 pkt;
+	struct timeval	 tv;
+	struct query	*q;
+	
+	q = v_query;
+	if (q->style == QUERY_CONTINUOUS) {
+		/* this will send at seconds 0, 1, 2, 4, 8, 16... */
+		if (!q->sleep)
+			q->sleep = 1;
+		else
+			q->sleep = q->sleep * 2;
+		if (q->sleep > MAX_QUERYTIME)
+			q->sleep = MAX_QUERYTIME;
+		timerclear(&tv);
+		tv.tv_sec = q->sleep;
+		log_debug("proximo daqui a %d secs", tv.tv_sec);
+		evtimer_set(&q->timer, query_fsm, q);
+		evtimer_add(&q->timer, &tv);
+	}
+	
+	log_debug("sending query...");
+	pkt_init(&pkt);
+	pkt_add_question(&pkt, &q->mq);
+	if (pkt_send_allif(&pkt) == -1)
+		log_warnx("can't send packet to all interfaces");
+	q->sleep++;
+}
+	
 static int
 query_node_compare(struct query_node *a, struct query_node *b)
 {

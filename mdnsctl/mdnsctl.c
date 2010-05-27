@@ -36,7 +36,7 @@
 #include "parser.h"
 
 __dead void	 usage(void);
-static void	 browse_hook(char [MAXHOSTNAMELEN], int, void *);
+static void	 bhook(char [MAXHOSTNAMELEN], int, void *);
 
 __dead void
 usage(void)
@@ -51,6 +51,7 @@ int
 main(int argc, char *argv[])
 {
 	int			 brsock, r = 0, done = 0;
+	struct mdns_browse	 mb;
 	struct in_addr		 addr;
 	struct hinfo		 hi;
 	struct srv		 srv;
@@ -135,18 +136,22 @@ main(int argc, char *argv[])
 		}
 		break;
 	case BROWSE_PROTO:
-		if ((brsock = mdns_browse_sock()) == -1)
-			err(1, "mdns_browse_sock");
-		if (mdns_browse_add(brsock, res->app, res->proto) == -1)
+		if ((brsock = mdns_browse_open(&mb, bhook, NULL)) == -1)
+			err(1, "mdns_browse_open");
+		if (mdns_browse_add(&mb, res->app, res->proto) == -1)
 			err(1, "mdns_browse_add");
 		if (r == -1) 
 			err(1, "select");
 		for (; ;) {
-			r = mdns_browse_read(brsock, browse_hook, NULL);
-			if (r == -1)
+			r = mdns_browse_read(&mb);
+			if (r == -1) {
+				mdns_browse_close(&mb);
 				errx(1, "mdns_browse_read");
-			else if (r == 0)
+			}
+			else if (r == 0) {
+				mdns_browse_close(&mb);
 				errx(1, "Server closed socket");
+			}
 		}
 		break;		/* NOTREACHED */
 	}
@@ -155,7 +160,7 @@ main(int argc, char *argv[])
 }
 
 static void
-browse_hook(char name[MAXHOSTNAMELEN], int ev, void *udata)
+bhook(char name[MAXHOSTNAMELEN], int ev, void *udata)
 {
 	printf("%s : %s\n", name, mdns_browse_evstr(ev));
 }

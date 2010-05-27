@@ -33,7 +33,8 @@ static int	mksrvstr(char [MAXHOSTNAMELEN], const char *, const char *);
 static void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 static int	mdns_connect(void);
 static int	mdns_lkup_do(const char *, u_int16_t, void *, size_t);
-static int	mdns_browse_adddel(int, const char *, const char *, int);
+static int	mdns_browse_adddel(struct mdns_browse *, const char *,
+    const char *, int);
 static int	ibuf_read_imsg(struct imsgbuf *, struct imsg *);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
@@ -87,39 +88,51 @@ mdns_lkup_txt(const char *hostname, char *txt, size_t len)
 
 /* A better name to be used outside */
 int
-mdns_browse_sock(void)
+mdns_browse_open(struct mdns_browse *mb, browse_hook bhk, void *udata)
 {
-	return (mdns_connect());
+	int sockfd;
+	
+	if ((sockfd = mdns_connect()) == -1)
+		return (-1);
+	imsg_init(&mb->ibuf, sockfd);
+	mb->bhk = bhk;
+	mb->udata = udata;
+	return (sockfd);
+}
+
+void
+mdns_browse_close(struct mdns_browse *mb)
+{
+	imsg_clear(&mb->ibuf);
 }
 
 int
-mdns_browse_add(int brsock, const char *app, const char *proto)
+mdns_browse_add(struct mdns_browse *mb, const char *app, const char *proto)
 {
 	printf("app: %s\nproto: %s\n", app, proto);
-	return (mdns_browse_adddel(brsock, app, proto, 1));
+	return (mdns_browse_adddel(mb, app, proto, 1));
 }
 
 int
-mdns_browse_del(int brsock, const char *app, const char *proto)
+mdns_browse_del(struct mdns_browse *mb, const char *app, const char *proto)
 {
-	return (mdns_browse_adddel(brsock, app, proto, 0));
+	return (mdns_browse_adddel(mb, app, proto, 0));
 }
 
-int
-mdns_browse_read(int brsock, browse_cb brcb, void *udata)
+ssize_t
+mdns_browse_read(struct mdns_browse *mb)
 {
-	int		ev, r = 0;
+	int		ev, r;
 	ssize_t		n;
 	struct imsg	imsg;
-	struct imsgbuf	ibuf;
 
-	imsg_init(&ibuf, brsock);
-	n = imsg_read(&ibuf);
+	n = imsg_read(&mb->ibuf);
+	printf("read %zd\n", n);
 
-	if (n == -1 || n == 0)
+	if (n == -1 || n == 0) 
 		return (n);
 
-	for (r = 0; (n = imsg_get(&ibuf, &imsg)) > 0; r++) {
+	while ((r = imsg_get(&mb->ibuf, &imsg)) > 0) {
 		if (imsg.hdr.type != IMSG_CTL_BROWSE_ADD &&
 		    imsg.hdr.type != IMSG_CTL_BROWSE_DEL)
 			return (-1);
@@ -127,11 +140,14 @@ mdns_browse_read(int brsock, browse_cb brcb, void *udata)
 			return (-1);
 		ev = imsg.hdr.type == IMSG_CTL_BROWSE_ADD ?
 		    SERVICE_UP : SERVICE_DOWN;
-		brcb(imsg.data, ev, udata);
-		r++;
+		mb->bhk(imsg.data, ev, mb->udata);
+		imsg_free(&imsg);
 	}
-
-	return (r);
+	
+	if (r == -1)
+		return (-1);
+	
+	return (n);
 }
 
 char *
@@ -145,10 +161,9 @@ mdns_browse_evstr(int ev)
 }
 
 static int
-mdns_browse_adddel(int brsock, const char *app, const char *proto, int add)
+mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto, int add)
 {
 	struct mdns_msg_lkup	mlkup;
-	struct imsgbuf		ibuf;
 	int			msgtype;
 
 	msgtype = add ? IMSG_CTL_BROWSE_ADD : IMSG_CTL_BROWSE_DEL;
@@ -157,19 +172,17 @@ mdns_browse_adddel(int brsock, const char *app, const char *proto, int add)
  		return (-1);
  	}
  	
- 	imsg_init(&ibuf, brsock);
  	bzero(&mlkup, sizeof(mlkup));
 	if (mksrvstr(mlkup.dname, app, proto) == -1)
 		return (-1);
  	mlkup.type  = T_PTR;
  	mlkup.class = C_IN;
- 	if (ibuf_send_imsg(&ibuf, msgtype,
+ 	if (ibuf_send_imsg(&mb->ibuf, msgtype,
  	    &mlkup, sizeof(mlkup)) == -1)
  		return (-1); /* XXX: set errno */
 	
 	return (0);
 }
-
 
 static int
 mdns_connect(void)

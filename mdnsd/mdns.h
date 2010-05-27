@@ -23,10 +23,14 @@
 #include <event.h>
 #include <string.h>
 
+#include "imsg.h"
+
 #define MDNSD_SOCKET		"/var/run/mdnsd.sock"
 #define ALL_MDNS_DEVICES	"224.0.0.251"
 #define MDNS_TIMEOUT 		3
 #define MAX_CHARSTR		256	/* we swap the length byter per the null byte */
+
+typedef void (*browse_hook) (char [MAXHOSTNAMELEN], int, void *);
 
 enum imsg_type {
 	IMSG_NONE,
@@ -39,6 +43,12 @@ enum imsg_type {
 enum browse_events {
 	SERVICE_DOWN,
 	SERVICE_UP,
+};
+
+struct mdns_browse {
+	struct imsgbuf	 ibuf;
+	browse_hook	 bhk;
+	void		*udata;
 };
 
 struct mdns_msg_lkup {
@@ -60,12 +70,11 @@ struct srv {
 	char		dname[MAXHOSTNAMELEN];
 };
 
-typedef void (*browse_cb) (char [MAXHOSTNAMELEN], int, void *);
-
-int	mdns_browse_sock(void);
-int	mdns_browse_add(int, const char *, const char *);
-int	mdns_browse_del(int, const char *, const char *);
-int	mdns_browse_read(int, browse_cb, void *);
+int	mdns_browse_open(struct mdns_browse *, browse_hook, void *);
+void	mdns_browse_close(struct mdns_browse *);
+int	mdns_browse_add(struct mdns_browse *, const char *, const char *);
+int	mdns_browse_del(struct mdns_browse *, const char *, const char *);
+ssize_t	mdns_browse_read(struct mdns_browse *);
 char *	mdns_browse_evstr(int);
 
 int	mdns_lkup(const char *, struct in_addr *);
