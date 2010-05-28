@@ -834,12 +834,10 @@ query_fsm(int unused, short event, void *v_query)
 			q->sleep = MAX_QUERYTIME;
 		timerclear(&tv);
 		tv.tv_sec = q->sleep;
-		log_debug("proximo daqui a %d secs", tv.tv_sec);
 		evtimer_set(&q->timer, query_fsm, q);
 		evtimer_add(&q->timer, &tv);
 	}
 	
-	log_debug("sending query...");
 	pkt_init(&pkt);
 	pkt_add_question(&pkt, &q->mq);
 	if (pkt_send_allif(&pkt) == -1)
