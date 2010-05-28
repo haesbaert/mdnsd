@@ -247,8 +247,8 @@ struct publish {
 };
 
 enum query_style {
-	QUERY_SINGLE,
-	QUERY_CONTINUOUS,
+	QUERY_LKUP,
+	QUERY_BROWSE,
 };
 
 struct query {

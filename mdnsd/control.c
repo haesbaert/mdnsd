@@ -93,7 +93,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	}
 
-	c->qlist[slot] = query_place(QUERY_SINGLE, mlkup.dname, mlkup.type,
+	c->qlist[slot] = query_place(QUERY_LKUP, mlkup.dname, mlkup.type,
 	    mlkup.class);
 	if (c->qlist[slot] == NULL)
 		log_warnx("Can't place query");
@@ -133,7 +133,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	}
 	
-	c->qlist[slot] = query_place(QUERY_CONTINUOUS, mlkup.dname, mlkup.type,
+	c->qlist[slot] = query_place(QUERY_BROWSE, mlkup.dname, mlkup.type,
 	    mlkup.class);
 	if (c->qlist[slot] == NULL)
 		log_warnx("Can't place query");

@@ -763,10 +763,10 @@ query_notify(struct rr *rr, int in)
 		}
 		/* notify controller */
 		switch (q->style) {
-		case QUERY_SINGLE:
+		case QUERY_LKUP:
 			msgtype = IMSG_CTL_LOOKUP;
 			break;
-		case QUERY_CONTINUOUS:
+		case QUERY_BROWSE:
 			msgtype = in ? IMSG_CTL_BROWSE_ADD
 			    : IMSG_CTL_BROWSE_DEL;
 			break;
@@ -824,7 +824,7 @@ query_fsm(int unused, short event, void *v_query)
 	struct query	*q;
 	
 	q = v_query;
-	if (q->style == QUERY_CONTINUOUS) {
+	if (q->style == QUERY_BROWSE) {
 		/* this will send at seconds 0, 1, 2, 4, 8, 16... */
 		if (!q->sleep)
 			q->sleep = 1;
