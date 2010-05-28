@@ -127,7 +127,6 @@ mdns_browse_read(struct mdns_browse *mb)
 	struct imsg	imsg;
 
 	n = imsg_read(&mb->ibuf);
-	printf("read %zd\n", n);
 
 	if (n == -1 || n == 0) 
 		return (n);
