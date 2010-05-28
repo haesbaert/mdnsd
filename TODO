@@ -16,7 +16,8 @@ Setup
   
 Code
 -----------------
-  * Make browsing commands (DNS-SD).
+  * Use another message for browsing queries, must have the query
+  itself in it (app/proto/domain/type=PTR).
   * Make the queries dynamic in ctl_conn (grow the buffer when full).
   * Fetchmyname should use the return of strlcat to check truncation.
   * Write manual pages.
@@ -32,6 +33,7 @@ Code
   * Check if the signal handling code is correct.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
+  * Make browsing commands (DNS-SD). DONE.
   * Unify some code in mdnsl.c. DONE
   * Write a dummy README. DONE
   * Put prefix in mdns symbols. DONE
