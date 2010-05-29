@@ -36,7 +36,7 @@
 #include "parser.h"
 
 __dead void	 usage(void);
-static void	 bhook(char [MAXHOSTNAMELEN], int, void *);
+static void	 bhook(char *, char *, char *, int, void *);
 
 __dead void
 usage(void)
@@ -160,7 +160,9 @@ main(int argc, char *argv[])
 }
 
 static void
-bhook(char name[MAXHOSTNAMELEN], int ev, void *udata)
+bhook(char *name, char *app, char *proto, int ev, void *udata)
 {
-	printf("%s : %s\n", name, mdns_browse_evstr(ev));
+	char c = ev == SERVICE_UP ? '+' : '-';
+	
+	printf("%c%c%c %-48s %-20s %-3s\n", c, c, c, name, app, proto);
 }

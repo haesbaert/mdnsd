@@ -30,7 +30,7 @@
 #define MDNS_TIMEOUT 		3
 #define MAX_CHARSTR		256	/* we swap the length byter per the null byte */
 
-typedef void (*browse_hook) (char [MAXHOSTNAMELEN], int, void *);
+typedef void (*browse_hook) (char *, char *, char *, int, void *);
 
 enum imsg_type {
 	IMSG_NONE,

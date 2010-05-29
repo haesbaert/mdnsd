@@ -38,6 +38,8 @@ static int	mdns_browse_adddel(struct mdns_browse *, const char *,
 static int	ibuf_read_imsg(struct imsgbuf *, struct imsg *);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
+static int	splitdname(char [MAXHOSTNAMELEN], char [MAXHOSTNAMELEN],
+    char [MAXLABEL], char [4]);
 
 int
 mdns_lkup(const char *hostname, struct in_addr *addr)
@@ -109,7 +111,6 @@ mdns_browse_close(struct mdns_browse *mb)
 int
 mdns_browse_add(struct mdns_browse *mb, const char *app, const char *proto)
 {
-	printf("app: %s\nproto: %s\n", app, proto);
 	return (mdns_browse_adddel(mb, app, proto, 1));
 }
 
@@ -125,6 +126,7 @@ mdns_browse_read(struct mdns_browse *mb)
 	int		ev, r;
 	ssize_t		n;
 	struct imsg	imsg;
+	char		name[MAXHOSTNAMELEN], app[MAXLABEL], proto[4];
 
 	n = imsg_read(&mb->ibuf);
 
@@ -139,7 +141,9 @@ mdns_browse_read(struct mdns_browse *mb)
 			return (-1);
 		ev = imsg.hdr.type == IMSG_CTL_BROWSE_ADD ?
 		    SERVICE_UP : SERVICE_DOWN;
-		mb->bhk(imsg.data, ev, mb->udata);
+		if (splitdname(imsg.data, name, app, proto) == 0)
+			mb->bhk(name, app, proto, ev, mb->udata);
+
 		imsg_free(&imsg);
 	}
 	
@@ -367,3 +371,41 @@ toolong:
 	return (-1);
 	
 }
+
+/* XXX: Too ugly, code me again with love */
+static int
+splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
+    char app[MAXLABEL], char proto[4])
+{
+	char namecp[MAXHOSTNAMELEN];
+	char *p, *start;
+	
+/* 	ubuntu810desktop [00:0c:29:4d:22:ce]._workstation._tcp.local */
+	strlcpy(namecp, fname, sizeof(namecp));
+	if (strlen(namecp) < 15)
+		return (-1);
+	p = start = namecp;
+	
+	if ((p = strstr(start, "._")) == NULL)
+		return (-1);
+	*p++ = 0;
+	p++;
+	strlcpy(sname, start, MAXHOSTNAMELEN);
+	start = p;
+	
+	if ((p = strstr(start, "._")) == NULL)
+		return (-1);
+	*p++ = 0;
+	p++;
+	strlcpy(app, start, MAXLABEL);
+	start = p;
+	
+	if ((p = strstr(start, ".")) == NULL)
+		return (-1);
+	*p++ = 0;
+	strlcpy(proto, start, 4);
+	start = p;
+	
+	return (0);
+}
+
