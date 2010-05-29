@@ -111,13 +111,13 @@ mdns_browse_close(struct mdns_browse *mb)
 int
 mdns_browse_add(struct mdns_browse *mb, const char *app, const char *proto)
 {
-	return (mdns_browse_adddel(mb, app, proto, 1));
+	return (mdns_browse_adddel(mb, app, proto, IMSG_CTL_BROWSE_ADD));
 }
 
 int
 mdns_browse_del(struct mdns_browse *mb, const char *app, const char *proto)
 {
-	return (mdns_browse_adddel(mb, app, proto, 0));
+	return (mdns_browse_adddel(mb, app, proto, IMSG_CTL_BROWSE_DEL));
 }
 
 ssize_t
@@ -164,12 +164,11 @@ mdns_browse_evstr(int ev)
 }
 
 static int
-mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto, int add)
+mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto,
+    int msgtype)
 {
 	struct mdns_msg_lkup	mlkup;
-	int			msgtype;
 
-	msgtype = add ? IMSG_CTL_BROWSE_ADD : IMSG_CTL_BROWSE_DEL;
  	if (strlen(app) > MAXHOSTNAMELEN) {
  		errno = ENAMETOOLONG;
  		return (-1);
