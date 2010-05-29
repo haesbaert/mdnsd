@@ -1,0 +1,22 @@
+
+Funcionamento MDNS Básico (Sem DNS-SD)
+
+Semântica especial no domínio ".local".
+
+Queriers perguntam por nomes, Responders respondem :-).
+
+Perguntas são enviadas para a rede local via Multicast porta 5353.
+Respostas também, fate-sharing, uma resposta serve vários queriers.
+
+Querier:   Quem é arthur.local ? (A)
+Responder: Soy jo ! meu ip é 192.168.8.4
+
+Querier:   Qual o HINFO de lancelot.local ? (HINFO)
+Responder: OpenBSD 4.7/i386
+
+Querier:   Quem é 192.168.8.4 ? (PTR)
+Responder: É arthur.local.
+
+Pode ser usado para *qualquer* record de DNS: MX, TXT, SRV, A, AAAA,
+PTR....
+

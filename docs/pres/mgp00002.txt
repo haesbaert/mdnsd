@@ -1,0 +1,11 @@
+
+MDNS
+
+
+MDNS = Multicast Domain Name System
+Criado por Stuart Chesnire da Apple na transição
+Appletalk->Ipv4.
+Ainda um draft, expira em Setembro/2010.	 
+Faz parte do "Zeroconf", junto com DNS-SD.
+Presente na maioria das distribuições linux (Avahi).
+Popularizado pelo "Bonjour".

@@ -1,0 +1,7 @@
+
+Requisitos para Implementação
+
+ MDNS daemon (querier/responder).
+ Uma biblioteca (API).
+ Integração com a libc (gethostbyname e cia).
+ Programa controlador.	 	 

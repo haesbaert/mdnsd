@@ -1,0 +1,15 @@
+
+Perguntas ?
+
+
+Email: haesbaert@haesbaert.org
+
+MSN: cartucho@cartucho.org
+
+IRC:  haesbaert at irc.freenode.net
+SILC: haesbaert at peereboom.us #openbsd
+
+MDNS: http://github.com/haesbaert/mdnsd
+http://haesbaert.org/upload/mdns_pres
+
+

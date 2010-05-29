@@ -1,0 +1,14 @@
+
+As mensagens...
+
+struct mdns_msg_lkup { /* IMSG_CTL_LOOKUP */
+        char dname[MAXHOSTNAMELEN];
+        u_int16_t type;
+        u_int16_t class;
+};
+
+struct mdns_msg_browse { /* IMSG_CTL_BROWSER_ADD|DEL */
+        char dname[MAXHOSTNAMELEN]; /* request/reply */
+        char ptr[MAXHOSTNAMELEN]; /* reply */
+        int  up; /* reply */
+};

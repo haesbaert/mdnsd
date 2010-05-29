@@ -1,0 +1,10 @@
+
+Libmdns
+
+Dois conceitos, resolver e browser, futuramente publisher.
+Resolver síncrono enquanto browser assíncrono.
+Resolver faz apenas lookups.
+Browser adiciona/remove protocolos para browsing.
+Browser recebe notificações de serviço (browsing socket).
+Browser integra com poll/select/libevent e cia.
+Resolver e Browser em sockets distintos, simplifica muito a implementação.

@@ -1,0 +1,8 @@
+
+Relação com Zeroconf
+
+Zeroconf foi a buzzword dada a MDNS, DNS-SD e "link-local autoconf".
+MDNS sozinho apenas resolve/publica nomes de DNS por multicast.
+Ganha Network Browsing se usado com DNS-SD (DNS Service Discovery).
+"link-local address autoconf" como um substituto decentralizado e
+automático para DHCP.

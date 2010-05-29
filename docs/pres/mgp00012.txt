@@ -1,0 +1,13 @@
+
+Freedesktop's Avahi
+Popular no Linux.
+Implementa todo Zeroconf.
+Relativamente portavel.
+API compativel com bonjour.
+
+~57000 linhas.
+Licensa LGPL.
+API complexa.
+Muitas dependencias.
+Tipico codigo pseudo-OO dos gtk-folks.
+DBUS.

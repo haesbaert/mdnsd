@@ -1,0 +1,24 @@
+
+Funcionamento com DNS-SD
+
+Service Instance Enumeration (Browsing).
+
+Service Instance Name = <Instance> . <Service> . <Domain>
+
+Ainda todo feito em cima de MDNS básico com mesmos pacotes de DNS.
+
+Usuário faz PTR lookups para enumerar serviços, SRV/TXT para resolver.
+
+Exemplos:
+Querier:   Quem são os serviços do tipo _http._tcp.local (PTR) ?
+Querier:   LOOKUP PTR name=_http._tcp.local
+
+Responder: São estes:
+PTR name=_http._tcp.local   DATA=montypython._http._tcp.local
+PTR name=_http._tcp.local   DATA=holygrail._http_.tcp.local  
+PTR name=_http._tcp.local   DATA=lancelott._http_.tcp.local  
+
+Querier:   Como eu acesso  holygrail._http._tcp.local (SRV/TXT) ?
+Responder: Na porta 80 com path=/ no host arthur.local cujo ip é
+192.168.8.4
+

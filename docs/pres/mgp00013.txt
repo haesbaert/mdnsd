@@ -1,0 +1,10 @@
+
+Apple Mdns (Bonjour):
+Primeira implementacao.  
+Escrita pelo criador do protocolo.
+Utilizada no OSX e NetBSD.
+
+Licensa Apache 2.
+API complexa.
+Tipico codigo corporativo.
+Codigo bloated.

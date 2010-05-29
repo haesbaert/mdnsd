@@ -1,0 +1,12 @@
+
+Mdnsd, o daemon.	
+
+Recebe requisições pelo socket de controle.
+Querier/Responder.
+AF_ROUTE socket, eventos de link.
+Cache como uma Red-Black Tree, cada nodo é uma lista de recordes.
+Lista de query pendentedes.
+Lista de controllers.
+Lista de probes em execução.
+~6000 linhas por enquanto.
+Muito código do ripd aproveitado.

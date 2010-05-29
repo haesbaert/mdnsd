@@ -1,0 +1,12 @@
+
+Por que MDNS ?
+
+
+Network Browsing não tão cretino.
+Decorar IP nunca mais.
+Zeroconf configuration.
+Feito em cima de um protocolo conhecido que funciona :-).
+Protocolo na mesma estrutura de DNS unicast.
+Draft bem escrito (mal cisco, muito mal).
+Resolve o problema dos recursos instáveis.
+Funciona com clientes unicast (legacy clients).

@@ -1,0 +1,13 @@
+
+O Openmdns
+
+Licensa BSD.
+Daemon e mdnsctl no padrão OpenBSD.
+Código limpo e simples.
+Sem threads.
+Imsg framework.
+AF_ROUTE socket.
+Niel's Provos libevent, tree.h e queue.h.
+Processo não privilegiado.
+Sem planos de suportar multiplos domínios.
+style(9).

@@ -1,0 +1,16 @@
+
+API
+
+Resolver
+int   mdns_resolver_init(struct mdns_resolver *);
+void  mdns_resolver_finish(struct mdns_resolver *);
+int   mdns_resolver_host(struct mdns_resolver *, const char *, struct in_addr *);
+int   mdns_resolver_hinfo(struct mdns_resolver *, const char *, struct hinfo *);
+
+Browser
+int   mdns_browser_init(struct mdns_browser *, void (*cb)(int, const char *, void *);
+void  mdns_browser_finish(struct mdns_browser *);
+int   mdns_browser_add_proto(struct mdns_browser *, const char *);
+int   mdns_browser_del_proto(struct mdns_browser *, const char *);
+int   mdns_browser_pending(struct mdns_browser *);
+int   mdns_browser_fetch(struct mdns_browser *);

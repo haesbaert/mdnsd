@@ -1,0 +1,13 @@
+
+Colaborando
+
+http://github.com/haesbaert/mdnsd
+
+Testando, em especial em uma rede grande.
+Testando em arquiteturas obscuras (alpha/hppa/sparc64...).
+Mandando diffs, em especial re-escrever o parser dos pacotes.
+Reportando bugs.
+
+Mandando um email ao autor dizendo que gostaram do projeto :-).
+Usando e divulgando OpenBSD.
+Comprando as releases do OpenBSD.

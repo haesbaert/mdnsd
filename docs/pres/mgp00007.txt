@@ -1,0 +1,19 @@
+
+Eu gosto de exemplos...
+
+Supondo que o Lancellot esteja cansado da batalha com os cavaleiros que dizem NI.
+
+Ele agora quer saber todos os serviços anunciados em sua rede, dns-sd
+provê um nome especial para enumerar todos os protocolos.
+
+Um PTR lookup para _services._dns-sd._udp.local nos devolve uma lista
+de todos protocolos sendo anunciados:
+
+Querier:   LOOKUP PTR name=_services._dns-sd._udp.local
+
+Responder:
+PTR name=_services._dns-sd._udp.local   DATA=_workstation_tcp.local
+PTR name=_services._dns-sd._udp.local   DATA=_ssh._tcp.local
+PTR name=_services._dns-sd._udp.local   DATA=_ichat._udp.local
+PTR name=_services._dns-sd._udp.local   DATA=_http_tcp.local
+

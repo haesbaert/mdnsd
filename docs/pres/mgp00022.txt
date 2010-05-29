@@ -1,0 +1,12 @@
+
+Drafts
+
+MDNS
+http://files.multicastdns.org/draft-cheshire-dnsext-multicastdns.txt
+
+DNS-SD
+http://files.dns-sd.org/draft-cheshire-dnsext-dns-sd.txt
+
+DNS
+www.ietf.org/rfc/rfc1035.txt 
+

@@ -1,0 +1,9 @@
+
+Complicações.
+
+Conflito de nomes.
+Continuous Querying.
+Known Answer Supression.
+Limitado igualmente a DNS (hosts <= 256...).
+Complexidade bastante maior que DNS unicast.
+Falta de um padrão de API.

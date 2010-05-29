@@ -1,0 +1,19 @@
+
+Mdnsctl, o controller.
+
+Apenas uma interface para a biblioteca, ~760 linhas.
+Biblioteca momentaneamente embutida no controller.
+Gramática simplificada.
+Baseado em mensagens usando imsg framework.
+Atualmente 3 tipos:
+IMSG_CTL_LOOKUP
+IMSG_CTL_BROWSE_ADD
+IMSG_CTL_BROWSE_DEL
+No futuro:
+IMSG_CTL_PUBLISH_HOST
+IMSG_CTL_PUBLISH_SERVICE
+IMSG_CTL_DISABLE_IF
+IMSG_CTL_ENABLE_IF
+IMSG_CTL_DUMP_CACHE
+IMSG_CTL_DEBUG
+...

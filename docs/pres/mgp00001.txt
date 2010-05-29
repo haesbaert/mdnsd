@@ -1,0 +1,9 @@
+
+MDNS
+Design e Implementação
+
+
+
+Christiano Farina Haesbaert
+haesbaert at irc.freenode.net
+haesbaert@haesbaert.org

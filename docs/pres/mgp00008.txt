@@ -1,0 +1,19 @@
+
+Ainda nos exemplos...
+
+Hmm, legal, agora me mostre todos os serviços destes protocolos
+
+Querier:
+LOOKUP PTR name=_workstation_tcp.local
+LOOKUP PTR name=_ichat._udp.local
+LOOKUP PTR name=_http_tcp.local
+
+Responder:
+PTR name=_workstation._tcp.local DATA=arthur._workstation._tcp.local
+PTR name=_workstation._tcp.local DATA=brian._workstation._tcp.local 
+PTR name=_ichat._udp.local DATA=user._ichat._udp.local 
+PTR name=_http_tcp.local DATA=holygrail._http_tcp.local 
+
+Um lookup pelo SRV e TXT de qualquer serviço nos daria os detalhes de
+como acessar.
+

@@ -1,0 +1,7 @@
+
+Por que criar o OpenMdns ?
+
+Licensas incompativeis, GPL aceita so em ultimo caso.
+Autor não tinha nada melhor para fazer.
+Revolta do autor.
+Protocolo relativamente novo e interessante.
