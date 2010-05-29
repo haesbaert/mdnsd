@@ -179,24 +179,15 @@ mdns_sock(void)
 static void
 fetchmyname(char myname[MAXHOSTNAMELEN])
 {
-	char			*end;
+	char	*end;
 	
 	if (gethostname(myname, MAXHOSTNAMELEN) == -1)
 		fatal("gethostname");
 	end = strchr(myname, '.');
 	if (end != NULL)
 		*end = '\0';	/* use short hostnames */
-	if (strlen(myname) <= 6)
-		strlcat(myname, ".local", MAXHOSTNAMELEN);
-	else
-		if (strcmp(&myname[strlen(myname) - 6], ".local") != 0) {
-			strlcat(myname, ".local", MAXHOSTNAMELEN);
-			/* now check if name was truncated */
-			if (strcmp(&myname[strlen(myname) - 6], ".local") != 0) {
-				myname[strlen(myname) - 6] = '\0';
-				strlcat(myname, ".local", MAXHOSTNAMELEN);
-			}
-		}
+	if (strlcat(myname, ".local", MAXHOSTNAMELEN) >= MAXHOSTNAMELEN)
+		errx(1, "hostname too long %s", myname);
 }
 
 static void
