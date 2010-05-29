@@ -243,7 +243,7 @@ pkt_add_anrr(struct pkt *pkt, struct rr *rr)
 {
 	if (pkt->qdcount)
 		return (-1);
-	LIST_INSERT_HEAD(&pkt->anlist, rr, entry);
+	LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
 	pkt->ancount++;
 	pkt->qr = 1;
 	
@@ -253,9 +253,8 @@ pkt_add_anrr(struct pkt *pkt, struct rr *rr)
 int
 pkt_add_nsrr(struct pkt *pkt, struct rr *rr)
 {
-	LIST_INSERT_HEAD(&pkt->nslist, rr, entry);
+	LIST_INSERT_HEAD(&pkt->nslist, rr, pentry);
 	pkt->nscount++;
-	pkt->qr = 1;
 	
 	return (0);
 }
@@ -263,11 +262,8 @@ pkt_add_nsrr(struct pkt *pkt, struct rr *rr)
 int
 pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 {
-	if (pkt->qdcount)
-		return (-1);
-	LIST_INSERT_HEAD(&pkt->arlist, rr, entry);
+	LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	pkt->arcount++;
-	pkt->qr = 1;
 	
 	return (0);
 }
@@ -398,7 +394,7 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
 			free(rr);
 			return (-1);
 		}
-		LIST_INSERT_HEAD(&pkt->anlist, rr, entry);
+		LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
 	}
 	for (i = 0; i < pkt->nscount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
@@ -408,7 +404,7 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
 			free(rr);
 			return (-1);
 		}
-		LIST_INSERT_HEAD(&pkt->nslist, rr, entry);
+		LIST_INSERT_HEAD(&pkt->nslist, rr, pentry);
 	}
 	for (i = 0; i < pkt->arcount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
@@ -419,7 +415,7 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
 			return (-1);
 		}
 		
-		LIST_INSERT_HEAD(&pkt->arlist, rr, entry);
+		LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	}
 	if (len != 0) {
 		log_debug("Couldn't read all packet, %u bytes left", len);
@@ -679,7 +675,7 @@ pkt_process(struct pkt *pkt)
 			if (ANSWERS(q, rr))
 				q->probe = 1;
 		}
-		LIST_REMOVE(rr, entry);
+		LIST_REMOVE(rr, pentry);
 		free(rr);
 	}
 	
@@ -690,7 +686,7 @@ pkt_process(struct pkt *pkt)
 		LIST_FOREACH(q, &pub->pkt.qlist, entry) {
 			if (!q->probe) /* consider probe queries only */
 				continue;
-			LIST_FOREACH(rr, &pkt->anlist, entry) {
+			LIST_FOREACH(rr, &pkt->anlist, pentry) {
 				if (ANSWERS(q, rr)) {
 					/* TODO: Give up name */
 					log_warnx("Can't use name %s, "
@@ -711,7 +707,7 @@ pkt_process(struct pkt *pkt)
 	
 	/* process all answers */
 	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
-		LIST_REMOVE(rr, entry);
+		LIST_REMOVE(rr, pentry);
 		cache_process(rr);
 	}
 	
@@ -825,11 +821,11 @@ rr_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 static int
 pkt_serialize(struct pkt *pkt, u_int8_t *buf, u_int16_t len)
 {
-	u_int16_t		 aux  = 0;
-	u_int8_t		*pbuf = buf;
+	u_int16_t	 aux  = 0;
+	u_int8_t	*pbuf = buf;
 	struct question	*mq;
-	struct rr		*rr;
-	ssize_t			 n;
+	struct rr	*rr;
+	ssize_t		 n;
 	
 	if (len < HDR_LEN) {
 		log_debug("pkt_serialize: len < HDR_LEN");
@@ -857,7 +853,7 @@ pkt_serialize(struct pkt *pkt, u_int8_t *buf, u_int16_t len)
 		len  -= n;
 	}
 	
-	LIST_FOREACH(rr, &pkt->anlist, entry) {
+	LIST_FOREACH(rr, &pkt->anlist, pentry) {
 		n = serialize_rr(rr, pbuf, len);
 		if (n == -1 || n > len)
 			return (-1);
@@ -865,7 +861,7 @@ pkt_serialize(struct pkt *pkt, u_int8_t *buf, u_int16_t len)
 		len  -= n;
 	}
 
-	LIST_FOREACH(rr, &pkt->nslist, entry) {
+	LIST_FOREACH(rr, &pkt->nslist, pentry) {
 		n = serialize_rr(rr, pbuf, len);
 		if (n == -1 || n > len)
 			return (-1);
@@ -873,7 +869,7 @@ pkt_serialize(struct pkt *pkt, u_int8_t *buf, u_int16_t len)
 		len  -= n;
 	}
 
-	LIST_FOREACH(rr, &pkt->arlist, entry) {
+	LIST_FOREACH(rr, &pkt->arlist, pentry) {
 		n = serialize_rr(rr, pbuf, len);
 		if (n == -1 || n > len)
 			return (-1);

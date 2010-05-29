@@ -141,7 +141,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	while (rr != NULL) {
 		if (query_answerctl(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
 			log_warnx("query_answerctl error");
-		rr = LIST_NEXT(rr, entry);
+		rr = LIST_NEXT(rr, centry);
 	}
 }
 

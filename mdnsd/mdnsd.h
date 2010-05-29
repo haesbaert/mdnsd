@@ -48,7 +48,8 @@
 #define TC_MSK                 	0x200
 
 struct rr {
-	LIST_ENTRY(rr)		entry;
+	LIST_ENTRY(rr)		centry; /* cache entry */
+	LIST_ENTRY(rr)		pentry; /* packet entry */
 	char			dname[MAXHOSTNAMELEN];
 	u_int16_t		type;
 	int			cacheflush;	

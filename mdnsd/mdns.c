@@ -131,7 +131,7 @@ publish_allrr(struct iface *iface)
 
 	RB_FOREACH(n, rrt_tree, &iface->rrt) {
 		/* now go through all our rr and add to the same packet */
-		LIST_FOREACH(rr, &n->hrr, entry) {
+		LIST_FOREACH(rr, &n->hrr, centry) {
 			if ((rrcopy = calloc(1, sizeof(struct rr))) == NULL)
 				fatal("calloc");
 			memcpy(rrcopy, rr, sizeof(struct rr));
@@ -159,11 +159,11 @@ publish_delete(struct iface *iface, struct rr *rr)
 		return (0);
 
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
-		next = LIST_NEXT(rraux, entry);
+		next = LIST_NEXT(rraux, centry);
 		if (RR_UNIQ(rr) || /* XXX: Revise this */
 		    (memcmp(&rr->rdata, &rraux->rdata,
 		    rraux->rdlen) == 0)) {
-			LIST_REMOVE(rraux, entry);
+			LIST_REMOVE(rraux, centry);
 			free(rraux);
 			n++;
 		}
@@ -193,7 +193,7 @@ publish_insert(struct iface *iface, struct rr *rr)
 			fatal("calloc");
 
 		LIST_INIT(&n->hrr);
-		LIST_INSERT_HEAD(&n->hrr, rr, entry);
+		LIST_INSERT_HEAD(&n->hrr, rr, centry);
 		if (RB_INSERT(rrt_tree, &iface->rrt, n) != NULL)
 			fatal("rrt_insert: RB_INSERT");
 
@@ -203,16 +203,16 @@ publish_insert(struct iface *iface, struct rr *rr)
 	/* if an unique record, clean all previous and substitute */
 	if (RR_UNIQ(rr)) {
 		while ((rraux = LIST_FIRST(hrr)) != NULL) {
-			LIST_REMOVE(rraux, entry);
+			LIST_REMOVE(rraux, centry);
 			free(rraux);
 		}
-		LIST_INSERT_HEAD(hrr, rr, entry);
+		LIST_INSERT_HEAD(hrr, rr, centry);
 
 		return (0);
 	}
 
 	/* not unique, just add */
-	LIST_INSERT_HEAD(hrr, rr, entry);
+	LIST_INSERT_HEAD(hrr, rr, centry);
 
 	return (0);
 }
@@ -269,7 +269,7 @@ publish_fsm(int unused, short event, void *v_pub)
 			}
 			/* move all ns records to answer records */
 			while ((rr = (LIST_FIRST(&pub->pkt.nslist))) != NULL) {
-				LIST_REMOVE(rr, entry);
+				LIST_REMOVE(rr, pentry);
 				pub->pkt.nscount--;
 				if (pkt_add_anrr(&pub->pkt, rr) == -1)
 					log_debug("publish_fsm: "
@@ -298,17 +298,17 @@ publish_fsm(int unused, short event, void *v_pub)
 		break;
 	case PUB_DONE:
 		while ((rr = LIST_FIRST(&pub->pkt.anlist)) != NULL) {
-			LIST_REMOVE(rr, entry);
+			LIST_REMOVE(rr, pentry);
 			pub->pkt.ancount--;
 			free(rr);
 		}
 		while ((rr = LIST_FIRST(&pub->pkt.nslist)) != NULL) {
-			LIST_REMOVE(rr, entry);
+			LIST_REMOVE(rr, pentry);
 			pub->pkt.nscount--;
 			free(rr);
 		}
 		while ((rr = LIST_FIRST(&pub->pkt.arlist)) != NULL) {
-			LIST_REMOVE(rr, entry);
+			LIST_REMOVE(rr, pentry);
 			pub->pkt.arcount--;
 			free(rr);
 		}
@@ -444,7 +444,7 @@ cache_insert(struct rr *rr)
 			fatal("calloc");
 
 		LIST_INIT(&n->hrr);
-		LIST_INSERT_HEAD(&n->hrr, rr, entry);
+		LIST_INSERT_HEAD(&n->hrr, rr, centry);
 		if (RB_INSERT(rrt_tree, &rrt_cache, n) != NULL)
 			fatal("rrt_insert: RB_INSERT");
 		cache_schedrev(rr);
@@ -456,12 +456,12 @@ cache_insert(struct rr *rr)
 	/* if an unique record, clean all previous and substitute */
 	if (RR_UNIQ(rr)) {
 		while ((rraux = LIST_FIRST(hrr)) != NULL) {
-			LIST_REMOVE(rraux, entry);
+			LIST_REMOVE(rraux, centry);
 			if (evtimer_pending(&rraux->rev_timer, NULL))
 				evtimer_del(&rraux->rev_timer);
 			free(rraux);
 		}
-		LIST_INSERT_HEAD(hrr, rr, entry);
+		LIST_INSERT_HEAD(hrr, rr, centry);
 		cache_schedrev(rr);
 		query_notify(rr, 1);
 
@@ -469,7 +469,7 @@ cache_insert(struct rr *rr)
 	}
 
 	/* rr is not unique, see if this is a cache refresh */
-	LIST_FOREACH(rraux, hrr, entry) {
+	LIST_FOREACH(rraux, hrr, centry) {
 		if (memcmp(&rr->rdata, &rraux->rdata, rraux->rdlen) == 0) {
 			rraux->ttl = rr->ttl;
 			rraux->revision = 0;
@@ -481,8 +481,7 @@ cache_insert(struct rr *rr)
 	}
 
 	/* not a refresh, so add */
-	log_debug("shared record");
-	LIST_INSERT_HEAD(hrr, rr, entry);
+	LIST_INSERT_HEAD(hrr, rr, centry);
 	query_notify(rr, 1);
 	cache_schedrev(rr);
 	/* XXX: should we cache_schedrev ? */
@@ -505,11 +504,11 @@ cache_delete(struct rr *rr)
 		return (0);
 
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
-		next = LIST_NEXT(rraux, entry);
+		next = LIST_NEXT(rraux, centry);
 		if (RR_UNIQ(rr) ||
 		    (memcmp(&rr->rdata, &rraux->rdata,
 		    rraux->rdlen) == 0)) {
-			LIST_REMOVE(rraux, entry);
+			LIST_REMOVE(rraux, centry);
 			if (evtimer_pending(&rraux->rev_timer, NULL))
 				evtimer_del(&rraux->rev_timer);
 			free(rraux);
@@ -595,7 +594,7 @@ rrt_dump(struct rrt_tree *rrt)
 	log_debug("rrt_dump");
 	RB_FOREACH(n, rrt_tree, rrt) {
 		rr = LIST_FIRST(&n->hrr);
-		LIST_FOREACH(rr, &n->hrr, entry)
+		LIST_FOREACH(rr, &n->hrr, centry)
 		    log_debug_rrdata(rr);
 	}
 }
@@ -637,7 +636,7 @@ rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type
 	strlcpy(rr.dname, (const char *)dname, MAXHOSTNAMELEN);
 
 	LIST_INIT(&s.hrr);
-	LIST_INSERT_HEAD(&s.hrr, &rr, entry);
+	LIST_INSERT_HEAD(&s.hrr, &rr, centry);
 
 	tmp = RB_FIND(rrt_tree, rrt, &s);
 	if (tmp == NULL)
@@ -822,8 +821,12 @@ query_fsm(int unused, short event, void *v_query)
 	struct pkt	 pkt;
 	struct timeval	 tv;
 	struct query	*q;
+	struct rr	*rr;
 	
 	q = v_query;
+	pkt_init(&pkt);
+	pkt_add_question(&pkt, &q->mq);
+	
 	if (q->style == QUERY_BROWSE) {
 		/* this will send at seconds 0, 1, 2, 4, 8, 16... */
 		if (!q->sleep)
@@ -836,10 +839,14 @@ query_fsm(int unused, short event, void *v_query)
 		tv.tv_sec = q->sleep;
 		evtimer_set(&q->timer, query_fsm, q);
 		evtimer_add(&q->timer, &tv);
+		
+		/* Known Answer Supression */
+		for (rr = cache_lookup(q->mq.dname, q->mq.qtype, q->mq.qclass);
+		     rr != NULL; rr = LIST_NEXT(rr, centry))
+			if (pkt_add_arrr(&pkt, rr) == -1)
+				log_warnx("KNA error pkt_add_arrr: %s", rr->dname);
 	}
 	
-	pkt_init(&pkt);
-	pkt_add_question(&pkt, &q->mq);
 	if (pkt_send_allif(&pkt) == -1)
 		log_warnx("can't send packet to all interfaces");
 	q->sleep++;
