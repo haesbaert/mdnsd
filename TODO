@@ -16,6 +16,7 @@ Setup
   
 Code
 -----------------
+  * Remove imsg files, as they are in libutil now.
   * Make the queries dynamic in ctl_conn (grow the buffer when full).
   * Write manual pages.
   * Implement cache dump.
