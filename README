@@ -8,17 +8,17 @@ This is an attempt to bring native mdns/dns-sd to OpenBSD. Mainly
 cause all the other options suck and proper network browsing is a nice
 feature these days.
 
-Why not Apple's mdnsd ? Well because:
+Why not Apple's mdnsd ?
     1 - It sucks big time.
     2 - No BSD License (Apache-2).
     3 - Overcomplex API.
     4 - Not OpenBSD-like.
     
-Why not Avahi ? Well because:
-    1 - No BSD License (GPL).
+Why not Avahi ?
+    1 - No BSD License (LGPL).
     2 - Overcomplex API.
     3 - Not OpenBSD-like
-    4 - DBUS and lots of dependencies.
+    4 - DBUS and other of dependencies.
 
 My goal is to first provide a solid mdns framework without the
 service-discovery capabilities which are much more complex. When that
@@ -60,7 +60,7 @@ We have a routing socket in order to be notified when link goes up and
 down, or when an interface address changes, this is *required* in
 order to publish records, every time link comes up we need to register
 our name and things like that, we use as our main name the short name
-from /etc/mygate, in the .local domain. So multiple interfaces is
+from /etc/myname, in the .local domain. So multiple interfaces is
 supported.
 
 So the basic data flow is:
@@ -78,7 +78,7 @@ messages to mdnsd through the imsg framework.
 The library should provide in the near future:
      * Means for looking up names. (DONE)
      * Means for publishing names.
-     * Means for browsing services (dns-service-discovery).
+     * Means for browsing services (dns-service-discovery). (DONE)
      * Means for publishing services.
 By now no library is being used to make it easier for people to test
 mdnsctl, everything is being kept on mdnsl.c in mdnsctl/.
@@ -91,11 +91,12 @@ curious.
 MDNSCTL
 -------
      It's a simple interface for the library, code is inspired in
-     ripctl. By now you can use it to lookup hosts.
+     ripctl. By now you can use it to lookup hosts and browse
+     services.
 
 How do I use this thing ?
 -------------------------
-     Get the freaking sources from http://github.com/haesbaert/mdnsd
+     Get the source from http://github.com/haesbaert/mdnsd
      Add user and group _mdnsd
      Compile and install mdnsd and mdnsctl
      Make sure you have proper multicast setup (man 7 netstart), or
