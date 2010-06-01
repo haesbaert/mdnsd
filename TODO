@@ -17,7 +17,7 @@ Setup
 Code
 -----------------
   * Remove imsg files, as they are in libutil now.
-  * Make the queries dynamic in ctl_conn (grow the buffer when full).
+  * Make queries hold by control a list.
   * Write manual pages.
   * Implement cache dump.
   * Publish commands in mdnsctl.
@@ -28,6 +28,7 @@ Code
   * Name compression.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
+  * [BUG] A service will come up twice if unpublished and published.
   * Known Answer Suppression. DONE
   * Check if the signal handling code is correct. DONE
   * Too much duplicated code in control.c and mdns_api.c, hinfo and

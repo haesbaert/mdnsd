@@ -39,7 +39,8 @@ enum token_type {
 	FLAGS,
 	HOSTNAME,
 	PROTO,
-	APPPROTO
+	APPPROTO,
+	BRFLAGS
 };
 
 struct token {
@@ -69,6 +70,8 @@ static const struct token t_lkup[] = {
 };
 
 static const struct token t_browse_app[] = {
+	{ BRFLAGS,	"-",		NONE,		t_browse_app},
+	{ KEYWORD,	"all",		BROWSE_PROTO,	NULL},
 	{ APPPROTO,	"",		NONE,		t_browse_proto},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
@@ -129,6 +132,14 @@ match_token(const char *word, const struct token *table)
 				t = &table[i];
 			}
 			break;
+		case BRFLAGS:
+			if (parse_brflags(word, &res.flags)) {
+				match++;
+				t = &table[i];
+				if (t->value)
+					res.action = t->value;
+			}
+			break;
 		case FLAGS:
 			if (parse_flags(word, &res.flags)) {
 				match++;
@@ -173,7 +184,8 @@ match_token(const char *word, const struct token *table)
 			}
 			break;
 		case APPPROTO:
-			if (word) {
+			if (word && *word != '-' &&
+			    (strcmp(word, "all") != 0)) {
 				res.app = word;
 				match++;
 				t = &table[i];
@@ -225,6 +237,9 @@ show_valid_args(const struct token *table)
 			break;
 		case FLAGS:
 			fprintf(stderr, "  <-ahst>\n");
+			break;
+		case BRFLAGS:
+			fprintf(stderr, "  <-r>\n");
 			break;
 		case ENDTOKEN:
 			break;
@@ -290,6 +305,29 @@ parse_flags(const char *word, int *flags)
 			break;
 		case 't':
 			*flags |= F_TXT;
+			r++;
+			break;
+		default:
+			errx(1, "unknown flag -%c", *word);
+		}
+		word++;
+	}
+	
+	return (r);
+}
+
+int
+parse_brflags(const char *word, int *flags)
+{
+	int r = 0;
+	
+	if (word == NULL || *word != '-')
+		return (r);
+	word++;
+	while(*word) {
+		switch (*word) {
+		case 'r':
+			*flags |= F_RESOLV;
 			r++;
 			break;
 		default:

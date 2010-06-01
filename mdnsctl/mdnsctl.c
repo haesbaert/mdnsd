@@ -35,8 +35,10 @@
 #include "mdns.h"
 #include "parser.h"
 
-__dead void	 usage(void);
-static void	 bhook(char *, char *, char *, int, void *);
+__dead void		 usage(void);
+static void		 bhook(char *, char *, char *, int, void *);
+
+struct parse_result	*res;
 
 __dead void
 usage(void)
@@ -54,8 +56,7 @@ main(int argc, char *argv[])
 	struct mdns_browse	 mb;
 	struct in_addr		 addr;
 	struct hinfo		 hi;
-	struct srv		 srv;
-	struct parse_result	*res;
+/* 	struct srv		 srv; */
 	char			 hostname[MAXHOSTNAMELEN];
 	char			 txt[MAX_CHARSTR];
 	/* parse options */
@@ -93,17 +94,18 @@ main(int argc, char *argv[])
 		}
 		
 		if (res->flags & F_SRV) {
-			r = mdns_lkup_srv(res->hostname, &srv);
-			if (r == 0)
-				printf("SRV not found.\n");
-			else if (r == 1) {
-				printf("Name: %s\n", srv.dname);
-				printf("Port: %u\n", srv.port);
-				printf("Priority: %u\n", srv.priority);
-				printf("Weight: %u\n", srv.weight);
-			}
-			else
-				err(1, "mdns_lkup_srv");
+/* 			r = mdns_lkup_srv(res->hostname, &srv); */
+/* 			if (r == 0) */
+/* 				printf("SRV not found.\n"); */
+/* 			else if (r == 1) { */
+/* 				printf("Name: %s\n", srv.dname); */
+/* 				printf("Port: %u\n", srv.port); */
+/* 				printf("Priority: %u\n", srv.priority); */
+/* 				printf("Weight: %u\n", srv.weight); */
+/* 			} */
+/* 			else */
+/* 				err(1, "mdns_lkup_srv"); */
+			errx(1, "fix me");
 		}
 
 		if (res->flags & F_TXT) {
@@ -136,8 +138,9 @@ main(int argc, char *argv[])
 		}
 		break;
 	case BROWSE_PROTO:
-		if ((brsock = mdns_browse_open(&mb, bhook, NULL)) == -1)
+		if ((brsock = mdns_browse_open(&mb, bhook, &mb)) == -1)
 			err(1, "mdns_browse_open");
+		/* res->app and res->proto will be NULL if argument is "all" */
 		if (mdns_browse_add(&mb, res->app, res->proto) == -1)
 			err(1, "mdns_browse_add");
 		if (r == -1) 
@@ -160,9 +163,33 @@ main(int argc, char *argv[])
 }
 
 static void
-bhook(char *name, char *app, char *proto, int ev, void *udata)
+bhook(char *name, char *app, char *proto, int ev, void *v_mb)
 {
-	char c = ev == SERVICE_UP ? '+' : '-';
+	struct mdns_browse	*mb;
+	char			 c;
 	
-	printf("%c%c%c %-48s %-20s %-3s\n", c, c, c, name, app, proto);
+	mb = v_mb;
+	c = ev == SERVICE_UP ? '+' : '-';
+	/* This is a service, hence, there is a name for it */
+	if (name != NULL) {
+		printf("%c%c%c %-48s %-20s %-3s\n", c, c, c, name, app, proto);
+		if (res->flags & F_RESOLV) {
+			struct srv	srv;
+			int		r;
+			
+			r = mdns_lkup_srv(name, app, proto, &srv);
+			if (r == -1)
+				err(1, "mdns_lkup_srv");
+			else if (r == 0)
+				warnx("Can't find service %s", name);
+			else
+				printf("\t[Name: %s  Port: %u"
+				    "  Priority: %u  Weight: %u]\n",
+				    srv.dname, srv.port, srv.priority, srv.weight);
+		}
+	}
+	else /* No name, this is an application protocol, add browsing for it */
+		if (mdns_browse_add(mb, app, proto) == -1)
+			err(1, "mdns_browse_add");
+	fflush(stdout);
 }

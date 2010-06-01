@@ -29,7 +29,9 @@
 #include "mdns.h"
 #include "imsg.h"
 
-static int	mksrvstr(char [MAXHOSTNAMELEN], const char *, const char *);
+static int	ap_protostr(char [MAXHOSTNAMELEN], const char *, const char *);
+static int	mksrvstr(char [MAXHOSTNAMELEN], const char *,
+    const char *, const char *);
 static void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 static int	mdns_connect(void);
 static int	mdns_lkup_do(const char *, u_int16_t, void *, size_t);
@@ -39,7 +41,7 @@ static int	ibuf_read_imsg(struct imsgbuf *, struct imsg *);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
 static int	splitdname(char [MAXHOSTNAMELEN], char [MAXHOSTNAMELEN],
-    char [MAXLABEL], char [4]);
+    char [MAXLABEL], char [4], int *);
 
 int
 mdns_lkup(const char *hostname, struct in_addr *addr)
@@ -70,9 +72,18 @@ mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
 }
 
 int
-mdns_lkup_srv(const char *hostname, struct srv *srv)
+mdns_lkup_srv(char *name, char *app, char *proto, struct srv *srv)
 {
-	return (mdns_lkup_do(hostname, T_SRV, srv, sizeof(*srv)));
+	char srvname[MAXHOSTNAMELEN];
+	
+	if (strlcpy(srvname, name, sizeof(srvname)) >= sizeof(srvname)) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
+	if (mksrvstr(srvname, name, app, proto) == -1)
+		return (-1);
+	
+	return (mdns_lkup_do(srvname, T_SRV, srv, sizeof(*srv)));
 }
 
 int
@@ -123,7 +134,7 @@ mdns_browse_del(struct mdns_browse *mb, const char *app, const char *proto)
 ssize_t
 mdns_browse_read(struct mdns_browse *mb)
 {
-	int		ev, r;
+	int		ev, r, hasname;
 	ssize_t		n;
 	struct imsg	imsg;
 	char		name[MAXHOSTNAMELEN], app[MAXLABEL], proto[4];
@@ -141,8 +152,12 @@ mdns_browse_read(struct mdns_browse *mb)
 			return (-1);
 		ev = imsg.hdr.type == IMSG_CTL_BROWSE_ADD ?
 		    SERVICE_UP : SERVICE_DOWN;
-		if (splitdname(imsg.data, name, app, proto) == 0)
-			mb->bhk(name, app, proto, ev, mb->udata);
+		if (splitdname(imsg.data, name, app, proto, &hasname) == 0) {
+			if (hasname)
+				mb->bhk(name, app, proto, ev, mb->udata);
+			else
+				mb->bhk(NULL, app, proto, ev, mb->udata);
+		}
 
 		imsg_free(&imsg);
 	}
@@ -169,14 +184,20 @@ mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto,
 {
 	struct mdns_msg_lkup	mlkup;
 
- 	if (strlen(app) > MAXHOSTNAMELEN) {
+ 	if (app != NULL && strlen(app) > MAXHOSTNAMELEN) {
  		errno = ENAMETOOLONG;
  		return (-1);
  	}
- 	
+	
  	bzero(&mlkup, sizeof(mlkup));
-	if (mksrvstr(mlkup.dname, app, proto) == -1)
-		return (-1);
+	
+	/* browsing for service types */
+	if (app == NULL && proto == NULL)
+		strlcpy(mlkup.dname, "_services._dns-sd._udp.local",
+		    sizeof(mlkup.dname));
+	else
+		if (ap_protostr(mlkup.dname, app, proto) == -1)
+			return (-1);
  	mlkup.type  = T_PTR;
  	mlkup.class = C_IN;
  	if (ibuf_send_imsg(&mb->ibuf, msgtype,
@@ -343,24 +364,42 @@ mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 }
 
 static int
-mksrvstr(char name[MAXHOSTNAMELEN], const char *app, const char *proto)
+mksrvstr(char dname[MAXHOSTNAMELEN], const char *name, const char *app,
+    const char *proto)
 {
- 	if (strlcpy(name, "_", MAXHOSTNAMELEN)
+	if (strlcpy(dname, name, MAXHOSTNAMELEN)
 	    >= MAXHOSTNAMELEN)
 		goto toolong;
- 	if (strlcat(name, app, MAXHOSTNAMELEN)
+ 	if (strlcat(dname, ".", MAXHOSTNAMELEN)
 	    >= MAXHOSTNAMELEN)
 		goto toolong;
- 	if (strlcat(name, ".", MAXHOSTNAMELEN)
+
+	return (ap_protostr(dname, app, proto));
+toolong:
+	errno = ENAMETOOLONG;
+	return (-1);
+	
+}
+
+static int
+ap_protostr(char dname[MAXHOSTNAMELEN], const char *app, const char *proto)
+{
+ 	if (strlcat(dname, "_", MAXHOSTNAMELEN)
 	    >= MAXHOSTNAMELEN)
 		goto toolong;
- 	if (strlcat(name, "_", MAXHOSTNAMELEN)
+ 	if (strlcat(dname, app, MAXHOSTNAMELEN)
 	    >= MAXHOSTNAMELEN)
 		goto toolong;
- 	if (strlcat(name, proto, MAXHOSTNAMELEN)
+ 	if (strlcat(dname, ".", MAXHOSTNAMELEN)
 	    >= MAXHOSTNAMELEN)
 		goto toolong;
- 	if (strlcat(name, ".local", MAXHOSTNAMELEN)
+ 	if (strlcat(dname, "_", MAXHOSTNAMELEN)
+	    >= MAXHOSTNAMELEN)
+		goto toolong;
+ 	if (strlcat(dname, proto, MAXHOSTNAMELEN)
+	    >= MAXHOSTNAMELEN)
+		goto toolong;
+ 	if (strlcat(dname, ".local", MAXHOSTNAMELEN)
 	    >= MAXHOSTNAMELEN)
 		goto toolong;
 
@@ -374,23 +413,37 @@ toolong:
 /* XXX: Too ugly, code me again with love */
 static int
 splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
-    char app[MAXLABEL], char proto[4])
+    char app[MAXLABEL], char proto[4], int *hasname)
 {
 	char namecp[MAXHOSTNAMELEN];
 	char *p, *start;
 	
+	*hasname = 1;
 /* 	ubuntu810desktop [00:0c:29:4d:22:ce]._workstation._tcp.local */
+/* 	_workstation._tcp.local */
+	/* work on a copy */
 	strlcpy(namecp, fname, sizeof(namecp));
-	if (strlen(namecp) < 15)
-		return (-1);
+	
+	/* check if we have a name, or only and application protocol */
+	if ((p = strstr(namecp, "._")) != NULL) {
+		p += 2;
+		if ((p = strstr(p, "._")) == NULL)
+			*hasname = 0;
+	}
+	
 	p = start = namecp;
 	
-	if ((p = strstr(start, "._")) == NULL)
-		return (-1);
-	*p++ = 0;
-	p++;
-	strlcpy(sname, start, MAXHOSTNAMELEN);
-	start = p;
+	/* if we have a name, copy */
+	if (*hasname) {
+		if ((p = strstr(start, "._")) == NULL)
+			return (-1);
+		*p++ = 0;
+		p++;
+		strlcpy(sname, start, MAXHOSTNAMELEN);
+		start = p;
+	}
+	else
+		start++;
 	
 	if ((p = strstr(start, "._")) == NULL)
 		return (-1);

@@ -25,10 +25,14 @@
 #include <net/if.h>
 #include <netinet/in.h>
 
+/* FLAGS */
 #define F_A	1
 #define F_HINFO	2
 #define F_SRV	4
 #define F_TXT	8
+
+/* BRFLAGS */
+#define F_RESOLV	1
 
 enum actions {
 	NONE,
@@ -53,5 +57,6 @@ int			 parse_addr(const char *, struct in_addr *);
 int			 parse_hostname(const char *, char [MAXHOSTNAMELEN]);
 int			 parse_proto(const char *, char [MAXHOSTNAMELEN]);
 int			 parse_flags(const char *, int *);
+int			 parse_brflags(const char *, int *);
 
 #endif	/* _PARSER_H_ */
