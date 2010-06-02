@@ -17,7 +17,6 @@ Setup
 Code
 -----------------
   * Remove imsg files, as they are in libutil now.
-  * Make queries hold by control a list.
   * Write manual pages.
   * Implement cache dump.
   * Publish commands in mdnsctl.
