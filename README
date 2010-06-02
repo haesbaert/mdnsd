@@ -24,22 +24,22 @@ My goal is to first provide a solid mdns framework without the
 service-discovery capabilities which are much more complex. When that
 is working properly, work on service-discovery will begin, the
 architecture was designed in order to support it. So goals:
-        * Have a mdns responder/querier as a user process (mdnsd).
+        * Have a mdns responder/querier as an user process (mdnsd).
         * Have integration with libc's resolver, read: make
         gethostbyname and friends resolve names through mdns.
-        * Have a an application interface so other software can
+        * Have an application interface so other software can
         publish names/services as they see fit.
         * Have a mdns control program, which is mainly a crude
-        interface to the api.
-I have decided to support only the .local domain, the draft says it
+        interface to the API.
+I have decided to only support the .local domain, the draft says it
 should support any domains, but I find it dumb and error-prone, nobody
 in it's sane conscience will use another domain for mdns. If you do,
 you're wrong.
 
 MDNSD Design
 ------------
-The "Multicast Domain Name System Daemon" is a user process that runs
-without privileges, it binds to udp 5353 and acts as the
+The "Multicast Domain Name System Daemon" is an user process that runs
+without privileges, it binds to udp port 5353 and acts as the
 querier/responder for all mdns requests. By responder we understand
 who is responsible for answering mdns queries, and by querier the
 other way around, read: This is different from libc's unicast
@@ -50,36 +50,35 @@ requires super-user privilege. All work is done on a single process,
 my first design had a process per interface, but that became overkill
 and overcomplex.
 
-The api interface is designed above Henning Brauer imsg framework, so
-we have a unix domain socket that listen to requests from other
-processes, much like ripctl and ospfctl do, but we need a fancier api.
-We use libevent and all it's glorious features to have a proper unix
-daemon.
+The API is designed above Henning Brauer imsg framework, so we have a
+unix domain socket that listen to requests from other processes, much
+like ripctl and ospfctl do, but we need a fancier API.  We use
+libevent and all it's glorious features to have a proper unix daemon.
 
-We have a routing socket in order to be notified when link goes up and
-down, or when an interface address changes, this is *required* in
-order to publish records, every time link comes up we need to register
-our name and things like that, we use as our main name the short name
-from /etc/myname, in the .local domain. So multiple interfaces is
-supported.
+There is a routing socket in order to be notified when link goes up
+and down, or when an interface address changes, this is *required* in
+order to publish records, every time link comes up we need to re-probe
+for our records and things like that, we use as our main name the
+short name from /etc/myname in the .local domain.
 
-So the basic data flow is:
+The basic data flow would be:
  __________                              _______  
 | Programs | <--Control Socket (API)--> | MDNSD | <-- Mcast Packets -->
  ----------                              -------
 
 LIBMDNS Design (API)
 --------------------
-Libmdns is a shared library in which programs can link to have mdns
-capabilities, like publishing services, browsing the network and so
-on, by now the only thing it does is to resolve mdns names, no service
-capabilities yet. All the library does is sending and receiving
-messages to mdnsd through the imsg framework.
-The library should provide in the near future:
-     * Means for looking up names. (DONE)
-     * Means for publishing names.
-     * Means for browsing services (dns-service-discovery). (DONE)
-     * Means for publishing services.
+
+Libmdns is a shared library in which programs can link against in
+order to have mdns capabilities, like publishing services, browsing
+the network and so on, by now the only thing it does is resolving mdns
+names and browsing for services, no publishing capabilities yet. All
+the library does is sending and receiving messages to mdnsd through
+the imsg framework.  The library should provide in the near future:
+    * Means for looking up names. (DONE)
+    * Means for publishing names.
+    * Means for browsing services (dns-service-discovery). (DONE)
+    * Means for publishing services.
 By now no library is being used to make it easier for people to test
 mdnsctl, everything is being kept on mdnsl.c in mdnsctl/.
 
