@@ -63,12 +63,20 @@ struct hinfo {
 	char	os[MAX_CHARSTR];
 };
 
-/* XXX: This is wrong, we also need the T_TXT and T_A */
 struct srv {
+	char		dname[MAXHOSTNAMELEN];
 	u_int16_t	priority;
 	u_int16_t	weight;
 	u_int16_t	port;
+};
+
+struct mdns_service {
 	char		dname[MAXHOSTNAMELEN];
+	u_int16_t	priority;
+	u_int16_t	weight;
+	u_int16_t	port;
+	char		txt[MAX_CHARSTR];
+	struct in_addr  addr;
 };
 
 int	mdns_browse_open(struct mdns_browse *, browse_hook, void *);
@@ -81,8 +89,10 @@ char *	mdns_browse_evstr(int);
 int	mdns_lkup(const char *, struct in_addr *);
 int	mdns_lkup_hinfo(const char *, struct hinfo *);
 int	mdns_lkup_addr(struct in_addr *, char *, size_t);
-int	mdns_lkup_srv(char *, char *, char *, struct srv *);
-
+int	mdns_lkup_srv(const char *, struct srv *);
 int	mdns_lkup_txt(const char *, char *, size_t);
+
+int	mdns_res_service(char *, char *, char *, struct mdns_service *);
+
 
 #endif	/* _MDNS_H_ */

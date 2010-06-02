@@ -72,18 +72,9 @@ mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
 }
 
 int
-mdns_lkup_srv(char *name, char *app, char *proto, struct srv *srv)
+mdns_lkup_srv(const char *hostname, struct srv *srv)
 {
-	char srvname[MAXHOSTNAMELEN];
-	
-	if (strlcpy(srvname, name, sizeof(srvname)) >= sizeof(srvname)) {
-		errno = ENAMETOOLONG;
-		return (-1);
-	}
-	if (mksrvstr(srvname, name, app, proto) == -1)
-		return (-1);
-	
-	return (mdns_lkup_do(srvname, T_SRV, srv, sizeof(*srv)));
+	return (mdns_lkup_do(hostname, T_SRV, srv, sizeof(*srv)));
 }
 
 int
@@ -99,7 +90,33 @@ mdns_lkup_txt(const char *hostname, char *txt, size_t len)
 	return (r);
 }
 
-/* A better name to be used outside */
+/* XXX: Find me a better name. */
+int
+mdns_res_service(char *name, char *app, char *proto, struct mdns_service *ms)
+{
+	char		srvname[MAXHOSTNAMELEN];
+	struct srv	srv;
+	
+	if (mksrvstr(srvname, name, app, proto) == -1)
+		return (-1);
+	
+	bzero(ms, sizeof(*ms));
+	bzero(&srv, sizeof(srv));
+	
+	if (mdns_lkup_srv(srvname, &srv) == -1)
+		return (-1);
+	ms->priority = srv.priority;
+	ms->weight   = srv.weight;
+	ms->port     = srv.port;
+	strlcpy(ms->dname, srv.dname, sizeof(ms->dname));
+	if (mdns_lkup_txt(srvname, ms->txt, sizeof(ms->txt)) == -1)
+		return (-1);
+	if (mdns_lkup(srvname, &ms->addr) == -1)
+		return (-1);
+
+	return (0);
+}
+
 int
 mdns_browse_open(struct mdns_browse *mb, browse_hook bhk, void *udata)
 {

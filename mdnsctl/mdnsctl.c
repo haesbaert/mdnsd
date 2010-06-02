@@ -174,18 +174,19 @@ bhook(char *name, char *app, char *proto, int ev, void *v_mb)
 	if (name != NULL) {
 		printf("%c%c%c %-48s %-20s %-3s\n", c, c, c, name, app, proto);
 		if (res->flags & F_RESOLV) {
-			struct srv	srv;
-			int		r;
+			struct mdns_service	ms;
+			int			r;
 			
-			r = mdns_lkup_srv(name, app, proto, &srv);
+			r = mdns_res_service(name, app, proto, &ms);
 			if (r == -1)
-				err(1, "mdns_lkup_srv");
+				err(1, "mdns_res_service");
 			else if (r == 0)
 				warnx("Can't find service %s", name);
 			else
-				printf("\t[Name: %s  Port: %u"
-				    "  Priority: %u  Weight: %u]\n",
-				    srv.dname, srv.port, srv.priority, srv.weight);
+				printf("\t[Name: %s Port: %u"
+				    " Priority: %u Weight: %u Addr: %s Txt: %s]\n",
+				    ms.dname, ms.port, ms.priority, ms.weight,
+				    inet_ntoa(ms.addr), ms.txt);
 		}
 	}
 	else /* No name, this is an application protocol, add browsing for it */
