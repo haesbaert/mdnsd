@@ -56,7 +56,6 @@ main(int argc, char *argv[])
 	struct mdns_browse	 mb;
 	struct in_addr		 addr;
 	struct hinfo		 hi;
-/* 	struct srv		 srv; */
 	char			 hostname[MAXHOSTNAMELEN];
 	char			 txt[MAX_CHARSTR];
 	/* parse options */
@@ -174,19 +173,23 @@ bhook(char *name, char *app, char *proto, int ev, void *v_mb)
 	if (name != NULL) {
 		printf("%c%c%c %-48s %-20s %-3s\n", c, c, c, name, app, proto);
 		if (res->flags & F_RESOLV) {
-			struct mdns_service	ms;
-			int			r;
+/* 			struct mdns_service	ms; */
+/* 			int			r; */
 			
-			r = mdns_res_service(name, app, proto, &ms);
-			if (r == -1)
-				err(1, "mdns_res_service");
-			else if (r == 0)
-				warnx("Can't find service %s", name);
-			else
-				printf("\t[Name: %s Port: %u"
-				    " Priority: %u Weight: %u Addr: %s Txt: %s]\n",
-				    ms.dname, ms.port, ms.priority, ms.weight,
-				    inet_ntoa(ms.addr), ms.txt);
+/* 			r = mdns_res_service(name, app, proto, &ms); */
+/* 			if (r == -1) */
+/* 				err(1, "mdns_res_service"); */
+/* 			else if (r == 0) */
+/* 				warnx("Can't find service %s", name); */
+/* 			else { */
+/* 				printf("\tName: %s\n", ms.dname); */
+/* 				printf("\tPriority: %u\n", ms.priority); */
+/* 				printf("\tWeight: %u\n", ms.weight); */
+/* 				printf("\tPort: %u\n", ms.port); */
+/* 				printf("\tAddress: %s\n", inet_ntoa(ms.addr)); */
+/* 				printf("\tTxt: %s\n", ms.txt); */
+/* 			} */
+			errx(1, "mdns resolve service not implemented");
 		}
 	}
 	else /* No name, this is an application protocol, add browsing for it */

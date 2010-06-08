@@ -799,6 +799,7 @@ query_answerctl(struct ctl_conn *c, struct rr *rr, int msgtype)
 		    &rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
 		break;
 	case T_SRV:
+		log_debug("aqui oh: %s", rr->rdata.SRV.dname);
 		mdnsd_imsg_compose_ctl(c, msgtype,
 		    &rr->rdata.SRV, sizeof(rr->rdata.SRV));
 		break;

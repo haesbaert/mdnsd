@@ -70,14 +70,14 @@ struct srv {
 	u_int16_t	port;
 };
 
-struct mdns_service {
-	char		dname[MAXHOSTNAMELEN];
-	u_int16_t	priority;
-	u_int16_t	weight;
-	u_int16_t	port;
-	char		txt[MAX_CHARSTR];
-	struct in_addr  addr;
-};
+/* struct mdns_service { */
+/* 	char		dname[MAXHOSTNAMELEN]; */
+/* 	u_int16_t	priority; */
+/* 	u_int16_t	weight; */
+/* 	u_int16_t	port; */
+/* 	char		txt[MAX_CHARSTR]; */
+/* 	struct in_addr  addr; */
+/* }; */
 
 int	mdns_browse_open(struct mdns_browse *, browse_hook, void *);
 void	mdns_browse_close(struct mdns_browse *);
@@ -92,7 +92,7 @@ int	mdns_lkup_addr(struct in_addr *, char *, size_t);
 int	mdns_lkup_srv(const char *, struct srv *);
 int	mdns_lkup_txt(const char *, char *, size_t);
 
-int	mdns_res_service(char *, char *, char *, struct mdns_service *);
+/* int	mdns_res_service(char *, char *, char *, struct mdns_service *); */
 
 
 #endif	/* _MDNS_H_ */

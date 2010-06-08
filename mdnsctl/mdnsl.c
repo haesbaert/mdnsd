@@ -90,32 +90,36 @@ mdns_lkup_txt(const char *hostname, char *txt, size_t len)
 	return (r);
 }
 
-/* XXX: Find me a better name. */
-int
-mdns_res_service(char *name, char *app, char *proto, struct mdns_service *ms)
-{
-	char		srvname[MAXHOSTNAMELEN];
-	struct srv	srv;
+/* XXX: Find me a better name.
+ *  We're not ready for it yet, lots of more important stuff to do, won't get
+ *  back at resolving service prior to having browsing working properly.
+ */
+/* int */
+/* mdns_res_service(char *name, char *app, char *proto, struct mdns_service *ms) */
+/* { */
+/* 	char		srvname[MAXHOSTNAMELEN]; */
+/* 	struct srv	srv; */
 	
-	if (mksrvstr(srvname, name, app, proto) == -1)
-		return (-1);
+/* 	if (mksrvstr(srvname, name, app, proto) == -1) */
+/* 		return (-1); */
 	
-	bzero(ms, sizeof(*ms));
-	bzero(&srv, sizeof(srv));
+/* 	bzero(ms, sizeof(*ms)); */
+/* 	bzero(&srv, sizeof(srv)); */
 	
-	if (mdns_lkup_srv(srvname, &srv) == -1)
-		return (-1);
-	ms->priority = srv.priority;
-	ms->weight   = srv.weight;
-	ms->port     = srv.port;
-	strlcpy(ms->dname, srv.dname, sizeof(ms->dname));
-	if (mdns_lkup_txt(srvname, ms->txt, sizeof(ms->txt)) == -1)
-		return (-1);
-	if (mdns_lkup(srvname, &ms->addr) == -1)
-		return (-1);
+/* 	if (mdns_lkup_srv(srvname, &srv) != 1) */
+/* 		return (-1); */
+/* 	ms->priority = srv.priority; */
+/* 	ms->weight   = srv.weight; */
+/* 	ms->port     = srv.port; */
+/* 	strlcpy(ms->dname, srv.dname, sizeof(ms->dname)); */
+/* 	printf("srv.dname = %s\n", srv.dname); */
+/* 	if (mdns_lkup_txt(srvname, ms->txt, sizeof(ms->txt)) != 1) */
+/* 		return (-1); */
+/* 	if (mdns_lkup(ms->dname, &ms->addr) != 1) */
+/* 		return (-1); */
 
-	return (0);
-}
+/* 	return (1); */
+/* } */
 
 int
 mdns_browse_open(struct mdns_browse *mb, browse_hook bhk, void *udata)
