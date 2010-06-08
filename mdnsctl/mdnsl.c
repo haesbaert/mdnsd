@@ -29,9 +29,6 @@
 #include "mdns.h"
 #include "imsg.h"
 
-static int	ap_protostr(char [MAXHOSTNAMELEN], const char *, const char *);
-static int	mksrvstr(char [MAXHOSTNAMELEN], const char *,
-    const char *, const char *);
 static void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 static int	mdns_connect(void);
 static int	mdns_lkup_do(const char *, u_int16_t, void *, size_t);
@@ -216,9 +213,11 @@ mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto,
 	if (app == NULL && proto == NULL)
 		strlcpy(mlkup.dname, "_services._dns-sd._udp.local",
 		    sizeof(mlkup.dname));
-	else
-		if (ap_protostr(mlkup.dname, app, proto) == -1)
-			return (-1);
+	else if (snprintf(mlkup.dname, sizeof(mlkup.dname),
+	    "_%s._%s.local", app, proto) >= (int) sizeof(mlkup.dname)) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
  	mlkup.type  = T_PTR;
  	mlkup.class = C_IN;
  	if (ibuf_send_imsg(&mb->ibuf, msgtype,
@@ -382,53 +381,6 @@ mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 	imsg_free(&imsg);
 	imsg_clear(&ibuf);
 	return (1);
-}
-
-static int
-mksrvstr(char dname[MAXHOSTNAMELEN], const char *name, const char *app,
-    const char *proto)
-{
-	if (strlcpy(dname, name, MAXHOSTNAMELEN)
-	    >= MAXHOSTNAMELEN)
-		goto toolong;
- 	if (strlcat(dname, ".", MAXHOSTNAMELEN)
-	    >= MAXHOSTNAMELEN)
-		goto toolong;
-
-	return (ap_protostr(dname, app, proto));
-toolong:
-	errno = ENAMETOOLONG;
-	return (-1);
-	
-}
-
-static int
-ap_protostr(char dname[MAXHOSTNAMELEN], const char *app, const char *proto)
-{
- 	if (strlcat(dname, "_", MAXHOSTNAMELEN)
-	    >= MAXHOSTNAMELEN)
-		goto toolong;
- 	if (strlcat(dname, app, MAXHOSTNAMELEN)
-	    >= MAXHOSTNAMELEN)
-		goto toolong;
- 	if (strlcat(dname, ".", MAXHOSTNAMELEN)
-	    >= MAXHOSTNAMELEN)
-		goto toolong;
- 	if (strlcat(dname, "_", MAXHOSTNAMELEN)
-	    >= MAXHOSTNAMELEN)
-		goto toolong;
- 	if (strlcat(dname, proto, MAXHOSTNAMELEN)
-	    >= MAXHOSTNAMELEN)
-		goto toolong;
- 	if (strlcat(dname, ".local", MAXHOSTNAMELEN)
-	    >= MAXHOSTNAMELEN)
-		goto toolong;
-
-	return (0);
-toolong:
-	errno = ENAMETOOLONG;
-	return (-1);
-	
 }
 
 /* XXX: Too ugly, code me again with love */
