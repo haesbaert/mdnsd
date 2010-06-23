@@ -21,10 +21,11 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <net/if.h>
+
+#include <imsg.h>
 #include <event.h>
 
 #include "mdns.h"
-#include "imsg.h"
 #include "control.h"
 
 #define	MDNSD_USER		"_mdnsd"

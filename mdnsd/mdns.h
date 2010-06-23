@@ -20,10 +20,9 @@
 #include <arpa/nameser.h>
 #include <netinet/in.h>
 
+#include <imsg.h>
 #include <event.h>
 #include <string.h>
-
-#include "imsg.h"
 
 #define MDNSD_SOCKET		"/var/run/mdnsd.sock"
 #define ALL_MDNS_DEVICES	"224.0.0.251"

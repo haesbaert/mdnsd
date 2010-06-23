@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <sys/queue.h>
 #include <sys/un.h>
 #include <netinet/in.h>
 
@@ -26,8 +27,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <imsg.h>
+
 #include "mdns.h"
-#include "imsg.h"
 
 static void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 static int	mdns_connect(void);
@@ -257,7 +259,7 @@ static int
 ibuf_send_imsg(struct imsgbuf *ibuf, u_int32_t type,
     void *data, u_int16_t datalen)
 {
-	struct buf	*wbuf;
+	struct ibuf	*wbuf;
 
 	if ((wbuf = imsg_create(ibuf, type, 0,
 	    0, datalen)) == NULL)

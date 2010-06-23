@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/queue.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if_media.h>
@@ -31,6 +32,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include <imsg.h>
 
 #include "mdns.h"
 #include "parser.h"

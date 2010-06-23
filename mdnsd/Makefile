@@ -1,6 +1,6 @@
 PROG=	mdnsd
 SRCS=	log.c mdnsd.c kiface.c interface.c packet.c \
-	control.c imsg.c buffer.c mdns.c 
+	control.c mdns.c 
 
 #MAN=	mdnsd.8
 
@@ -9,7 +9,7 @@ CFLAGS+= -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS+= -Wmissing-declarations
 CFLAGS+= -Wshadow -Wpointer-arith -Wcast-qual
 CFLAGS+= -Wsign-compare
-LDADD+= -levent 
-DPADD+= ${LIBEVENT}
+LDADD+= -levent -lutil
+DPADD+= ${LIBEVENT} ${LIBUTIL}
 
 .include <bsd.prog.mk>
