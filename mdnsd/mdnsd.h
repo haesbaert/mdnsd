@@ -95,6 +95,8 @@ struct question {
 int	peersuser(int);
 void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 int	mdnsd_imsg_compose_ctl(struct ctl_conn *, u_int16_t, void *, u_int16_t);
+char *	memstr(void *, char *, size_t);
+
 
 /* kiface.c */
 struct kif {

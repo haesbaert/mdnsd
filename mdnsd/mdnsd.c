@@ -374,3 +374,17 @@ reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
 	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
 }
 
+char *
+memstr(void *v_big, char *little, size_t n)
+{
+	size_t i, sn;
+	char *big = v_big;
+	
+	sn = strlen(little);
+	
+	for (i = 0; i <= (n - sn); i++)
+		if (memcmp(big, little, sn) == 0)
+			return (&big[i]);
+	return (NULL);
+}
+	
