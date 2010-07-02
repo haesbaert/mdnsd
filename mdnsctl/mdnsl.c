@@ -60,13 +60,13 @@ mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
 	char	name[MAXHOSTNAMELEN];
 	char	res[MAXHOSTNAMELEN];
 	int	r;
-	
+
 	reversstr(name, addr);
 	name[sizeof(name) - 1] = '\0';
 	r = mdns_lkup_do(name, T_PTR, res, sizeof(res));
 	if (r == 1)
 		strlcpy(hostname, res, len);
-	
+
 	return (r);
 }
 
@@ -81,11 +81,11 @@ mdns_lkup_txt(const char *hostname, char *txt, size_t len)
 {
 	char	res[MAXHOSTNAMELEN];
 	int	r;
-	
+
 	r = mdns_lkup_do(hostname, T_TXT, res, sizeof(res));
 	if (r == 1)
 		strlcpy(txt, res, len);
-	
+
 	return (r);
 }
 
@@ -96,35 +96,35 @@ mdns_lkup_txt(const char *hostname, char *txt, size_t len)
 /* int */
 /* mdns_res_service(char *name, char *app, char *proto, struct mdns_service *ms) */
 /* { */
-/* 	char		srvname[MAXHOSTNAMELEN]; */
-/* 	struct srv	srv; */
-	
-/* 	if (mksrvstr(srvname, name, app, proto) == -1) */
-/* 		return (-1); */
-	
-/* 	bzero(ms, sizeof(*ms)); */
-/* 	bzero(&srv, sizeof(srv)); */
-	
-/* 	if (mdns_lkup_srv(srvname, &srv) != 1) */
-/* 		return (-1); */
-/* 	ms->priority = srv.priority; */
-/* 	ms->weight   = srv.weight; */
-/* 	ms->port     = srv.port; */
-/* 	strlcpy(ms->dname, srv.dname, sizeof(ms->dname)); */
-/* 	printf("srv.dname = %s\n", srv.dname); */
-/* 	if (mdns_lkup_txt(srvname, ms->txt, sizeof(ms->txt)) != 1) */
-/* 		return (-1); */
-/* 	if (mdns_lkup(ms->dname, &ms->addr) != 1) */
-/* 		return (-1); */
+/*	char		srvname[MAXHOSTNAMELEN]; */
+/*	struct srv	srv; */
 
-/* 	return (1); */
+/*	if (mksrvstr(srvname, name, app, proto) == -1) */
+/*		return (-1); */
+
+/*	bzero(ms, sizeof(*ms)); */
+/*	bzero(&srv, sizeof(srv)); */
+
+/*	if (mdns_lkup_srv(srvname, &srv) != 1) */
+/*		return (-1); */
+/*	ms->priority = srv.priority; */
+/*	ms->weight   = srv.weight; */
+/*	ms->port     = srv.port; */
+/*	strlcpy(ms->dname, srv.dname, sizeof(ms->dname)); */
+/*	printf("srv.dname = %s\n", srv.dname); */
+/*	if (mdns_lkup_txt(srvname, ms->txt, sizeof(ms->txt)) != 1) */
+/*		return (-1); */
+/*	if (mdns_lkup(ms->dname, &ms->addr) != 1) */
+/*		return (-1); */
+
+/*	return (1); */
 /* } */
 
 int
 mdns_browse_open(struct mdns_browse *mb, browse_hook bhk, void *udata)
 {
 	int sockfd;
-	
+
 	if ((sockfd = mdns_connect()) == -1)
 		return (-1);
 	imsg_init(&mb->ibuf, sockfd);
@@ -161,7 +161,7 @@ mdns_browse_read(struct mdns_browse *mb)
 
 	n = imsg_read(&mb->ibuf);
 
-	if (n == -1 || n == 0) 
+	if (n == -1 || n == 0)
 		return (n);
 
 	while ((r = imsg_get(&mb->ibuf, &imsg)) > 0) {
@@ -181,10 +181,10 @@ mdns_browse_read(struct mdns_browse *mb)
 
 		imsg_free(&imsg);
 	}
-	
+
 	if (r == -1)
 		return (-1);
-	
+
 	return (n);
 }
 
@@ -204,13 +204,13 @@ mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto,
 {
 	struct mdns_msg_lkup	mlkup;
 
- 	if (app != NULL && strlen(app) > MAXHOSTNAMELEN) {
- 		errno = ENAMETOOLONG;
- 		return (-1);
- 	}
-	
- 	bzero(&mlkup, sizeof(mlkup));
-	
+	if (app != NULL && strlen(app) > MAXHOSTNAMELEN) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
+
+	bzero(&mlkup, sizeof(mlkup));
+
 	/* browsing for service types */
 	if (app == NULL && proto == NULL)
 		strlcpy(mlkup.dname, "_services._dns-sd._udp.local",
@@ -220,12 +220,12 @@ mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto,
 		errno = ENAMETOOLONG;
 		return (-1);
 	}
- 	mlkup.type  = T_PTR;
- 	mlkup.class = C_IN;
- 	if (ibuf_send_imsg(&mb->ibuf, msgtype,
- 	    &mlkup, sizeof(mlkup)) == -1)
- 		return (-1); /* XXX: set errno */
-	
+	mlkup.type  = T_PTR;
+	mlkup.class = C_IN;
+	if (ibuf_send_imsg(&mb->ibuf, msgtype,
+	    &mlkup, sizeof(mlkup)) == -1)
+		return (-1); /* XXX: set errno */
+
 	return (0);
 }
 
@@ -234,16 +234,16 @@ mdns_connect(void)
 {
 	struct sockaddr_un	sun;
 	int			sockfd;
-/* 	int			flags; */
-	
+/*	int			flags; */
+
 	bzero(&sun, sizeof(sun));
 	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
 		return (-1);
 	/* use nonblocking mode so we can use it with edge triggered syscalls */
-/* 	if ((flags = fcntl(sockfd, F_GETFL, 0)) == -1) */
-/* 		return (-1); */
-/* 	if ((flags = fcntl(sockfd, F_SETFL, flags |= O_NONBLOCK)) == -1) */
-/* 		return (-1); */
+/*	if ((flags = fcntl(sockfd, F_GETFL, 0)) == -1) */
+/*		return (-1); */
+/*	if ((flags = fcntl(sockfd, F_SETFL, flags |= O_NONBLOCK)) == -1) */
+/*		return (-1); */
 	sun.sun_family = AF_UNIX;
 	strlcpy(sun.sun_path, MDNSD_SOCKET, sizeof(sun.sun_path));
 	if (connect(sockfd, (struct sockaddr *)&sun, sizeof(sun)) == -1) {
@@ -251,7 +251,7 @@ mdns_connect(void)
 			errno = ECONNREFUSED;
 		return (-1);
 	}
-	
+
 	return (sockfd);
 }
 
@@ -271,7 +271,7 @@ ibuf_send_imsg(struct imsgbuf *ibuf, u_int32_t type,
 	wbuf->fd = -1;
 
 	imsg_close(ibuf, wbuf);
-	
+
 	if (msgbuf_write(&ibuf->w))
 		return (-1);
 
@@ -293,7 +293,7 @@ ibuf_read_imsg(struct imsgbuf *ibuf, struct imsg *imsg)
 		FD_SET(ibuf->fd, &rset);
 		timerclear(&tv);
 		tv.tv_sec = MDNS_TIMEOUT;
-		
+
 		r = select(ibuf->fd + 1, &rset, NULL, NULL, &tv);
 
 		if (r == -1)
@@ -305,10 +305,10 @@ ibuf_read_imsg(struct imsgbuf *ibuf, struct imsg *imsg)
 		if ((n = imsg_read(ibuf)) == -1)
 			return (-1);
 	}
-	
+
 	if ((n = imsg_get(ibuf, imsg)) <= 0)
 		return (-1);
-	
+
 	return (0);
 }
 
@@ -329,7 +329,7 @@ mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 	struct mdns_msg_lkup	mlkup;
 	struct imsgbuf		ibuf;
 	int			err, sockfd;
-	
+
 	switch (type) {
 	case T_A:		/* FALLTHROUGH */
 	case T_HINFO:		/* FALLTHROUGH */
@@ -346,10 +346,10 @@ mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 		errno = ENAMETOOLONG;
 		return (-1);
 	}
-	
+
 	if ((sockfd = (mdns_connect())) == -1)
 		return (-1);
-	
+
 	imsg_init(&ibuf, sockfd);
 
 	bzero(&mlkup, sizeof(mlkup));
@@ -362,7 +362,7 @@ mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 	if (ibuf_read_imsg(&ibuf, &imsg) == -1) {
 		err = errno;
 		imsg_clear(&ibuf);
-		if (err == ETIMEDOUT) 
+		if (err == ETIMEDOUT)
 			return (0);
 		return (-1);
 	}
@@ -378,7 +378,7 @@ mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 		imsg_free(&imsg);
 		return (-1);
 	}
-	
+
 	memcpy(data, imsg.data, len);
 	imsg_free(&imsg);
 	imsg_clear(&ibuf);
@@ -392,22 +392,22 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 {
 	char namecp[MAXHOSTNAMELEN];
 	char *p, *start;
-	
+
 	*hasname = 1;
-/* 	ubuntu810desktop [00:0c:29:4d:22:ce]._workstation._tcp.local */
-/* 	_workstation._tcp.local */
+/*	ubuntu810desktop [00:0c:29:4d:22:ce]._workstation._tcp.local */
+/*	_workstation._tcp.local */
 	/* work on a copy */
 	strlcpy(namecp, fname, sizeof(namecp));
-	
+
 	/* check if we have a name, or only and application protocol */
 	if ((p = strstr(namecp, "._")) != NULL) {
 		p += 2;
 		if ((p = strstr(p, "._")) == NULL)
 			*hasname = 0;
 	}
-	
+
 	p = start = namecp;
-	
+
 	/* if we have a name, copy */
 	if (*hasname) {
 		if ((p = strstr(start, "._")) == NULL)
@@ -419,20 +419,19 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	}
 	else
 		start++;
-	
+
 	if ((p = strstr(start, "._")) == NULL)
 		return (-1);
 	*p++ = 0;
 	p++;
 	strlcpy(app, start, MAXLABEL);
 	start = p;
-	
+
 	if ((p = strstr(start, ".")) == NULL)
 		return (-1);
 	*p++ = 0;
 	strlcpy(proto, start, 4);
 	start = p;
-	
+
 	return (0);
 }
-

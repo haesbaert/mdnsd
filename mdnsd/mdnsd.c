@@ -44,7 +44,7 @@ static void		 fetchmyname(char [MAXHOSTNAMELEN]);
 static void		 fetchhinfo(struct hinfo *);
 
 struct mdnsd_conf	*conf = NULL;
-extern char 		*malloc_options;
+extern char		*malloc_options;
 
 __dead void
 usage(void)
@@ -63,12 +63,12 @@ mdnsd_conf_init(int argc, char *argv[])
 	int		 i;
 	struct kif	*k;
 	struct iface	*iface;
-	
+
 	if ((conf = calloc(1, sizeof(*conf))) == NULL)
 		fatal("calloc");
-	
+
 	LIST_INIT(&conf->iface_list);
-	
+
 	/* fetch all kernel interfaces and match argv */
 	if (kif_init() != 0)
 		fatal("Can't get kernel interfaces");
@@ -79,20 +79,20 @@ mdnsd_conf_init(int argc, char *argv[])
 			log_warnx("Unknown interface %s", argv[i]);
 			continue;
 		}
-		
+
 		found++;
 		iface = if_new(k);
 		RB_INIT(&iface->rrt);
 		LIST_INSERT_HEAD(&conf->iface_list, iface, entry);
 	}
-	
+
 	if (!found)
 		fatal("Couldn't find any interface");
-	
+
 	fetchmyname(conf->myname);
 	fetchhinfo(&conf->hi);
-	
-	LIST_FOREACH(iface, &conf->iface_list, entry) 
+
+	LIST_FOREACH(iface, &conf->iface_list, entry)
 		log_debug("using iface %s index %u", iface->name, iface->ifindex);
 }
 
@@ -124,17 +124,17 @@ static void
 mdnsd_shutdown(void)
 {
 	struct iface	*iface;
-	
+
 	while ((iface = LIST_FIRST(&conf->iface_list)) != NULL) {
 		LIST_REMOVE(iface, entry);
 		free(iface);
 	}
-	
+
 	kev_cleanup();
 	kif_cleanup();
 	control_cleanup();
 	free(conf);
-	
+
 	log_info("terminating");
 	exit(0);
 }
@@ -145,17 +145,17 @@ mdns_sock(void)
 {
 	int sock;
 	struct sockaddr_in addr;
-	
+
 	if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
 		fatal("socket");
-	
+
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(MDNS_PORT);
 	addr.sin_addr.s_addr = INADDR_ANY;
 
 	if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1)
 		fatal("bind");
-	
+
 	if (if_set_opt(sock) == -1)
 		fatal("if_set_opt");
 
@@ -165,14 +165,14 @@ mdns_sock(void)
 	if (if_set_mcast_loop(sock) == -1)
 		fatal("if_set_mcast_loop");
 
-/* 	if (if_set_tos(sock, IPTOS_PREC_INTERNETCONTROL) == -1) */
-/* 		fatal("if_set_tos"); */
+/*	if (if_set_tos(sock, IPTOS_PREC_INTERNETCONTROL) == -1) */
+/*		fatal("if_set_tos"); */
 
 	if_set_recvbuf(sock);
-	
+
 	log_debug("mdns sock bound to %s:%u", inet_ntoa(addr.sin_addr),
 	    ntohs(addr.sin_port));
-	
+
 	return (sock);
 }
 
@@ -180,7 +180,7 @@ static void
 fetchmyname(char myname[MAXHOSTNAMELEN])
 {
 	char	*end;
-	
+
 	if (gethostname(myname, MAXHOSTNAMELEN) == -1)
 		fatal("gethostname");
 	end = strchr(myname, '.');
@@ -194,7 +194,7 @@ static void
 fetchhinfo(struct hinfo *hi)
 {
 	struct utsname	utsname;
-	
+
 	if (uname(&utsname) == -1)
 		fatal("uname");
 	bzero(hi, sizeof(*hi));
@@ -207,7 +207,7 @@ int
 main(int argc, char *argv[])
 {
 	int		 ch;
-	int		 debug = 0;	
+	int		 debug = 0;
 	struct passwd	*pw;
 	struct iface	*iface;
 	struct event	 ev_sigint, ev_sigterm, ev_sighup;
@@ -225,15 +225,15 @@ main(int argc, char *argv[])
 			/* NOTREACHED */
 		}
 	}
-	
+
 	argc -= optind;
 	argv += optind;
-	
+
 	if (!argc)
 		usage();
-	
+
 	mdnsd_conf_init(argc, argv);
-	
+
 	/* check for root privileges */
 	if (geteuid())
 		errx(1, "need root privileges");
@@ -241,14 +241,14 @@ main(int argc, char *argv[])
 	/* check for mdnsd user */
 	if ((pw = getpwnam(MDNSD_USER)) == NULL)
 		fatal("getpwnam");
-	
+
 	log_init(debug);
-	
+
 	if (!debug)
 		daemon(1, 0);
-	
+
 	log_info("startup");
-	
+
 	/* init control before chroot */
 	if (control_init() == -1)
 		fatalx("control socket setup failed");
@@ -261,7 +261,7 @@ main(int argc, char *argv[])
 
 	/* show who we are */
 	setproctitle("mdnsd");
-	    
+
 	/* drop privileges */
 	if (setgroups(1, &pw->pw_gid) ||
 	    setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) ||
@@ -282,24 +282,24 @@ main(int argc, char *argv[])
 
 	/* init querier */
 	query_init();
-	
+
 	/* init RR cache */
 	cache_init();
-	
+
 	/* init publish */
 	publish_init();
-	
+
 	/* listen to kernel interface events */
 	kev_init();
-	
+
 	/* create mdns socket */
 	conf->mdns_sock = mdns_sock();
-	
+
 	/* setup mdns events */
 	event_set(&conf->ev_mdns, conf->mdns_sock, EV_READ|EV_PERSIST,
 	    recv_packet, NULL);
 	event_add(&conf->ev_mdns, NULL);
-	
+
 	/* start interfaces */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		/* XXX yep it seems wrong indeed */
@@ -307,14 +307,14 @@ main(int argc, char *argv[])
 		if (if_fsm(iface, IF_EVT_UP))
 			log_warnx("error starting interface %s", iface->name);
 	}
-	
+
 	/* listen on mdns control socket */
 	TAILQ_INIT(&ctl_conns);
 	control_listen();
-	
+
 	/* parent mainloop */
 	event_dispatch();
-	
+
 	return (0);
 }
 
@@ -358,7 +358,7 @@ int
 peersuser(int fd)
 {
 	uid_t	euid;
-	
+
 	if (getpeereid(fd, &euid, NULL) == -1)
 		fatal("getpeereid");
 	return (euid == 0);
@@ -379,12 +379,11 @@ memstr(void *v_big, char *little, size_t n)
 {
 	size_t i, sn;
 	char *big = v_big;
-	
+
 	sn = strlen(little);
-	
+
 	for (i = 0; i <= (n - sn); i++)
 		if (memcmp(big, little, sn) == 0)
 			return (&big[i]);
 	return (NULL);
 }
-	

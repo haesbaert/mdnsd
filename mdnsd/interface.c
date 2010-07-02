@@ -166,7 +166,7 @@ if_act_start(struct iface *iface)
 	default:
 		fatalx("if_act_start: unknown interface type");
 	}
-	
+
 	/* publish all records on this interface */
 	publish_allrr(iface);
 

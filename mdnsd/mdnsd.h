@@ -34,7 +34,7 @@
 #define QUERY_TTL		1
 #define RESPONSE_TTL		255
 #define MDNS_PORT		5353
-#define HDR_LEN			12	
+#define HDR_LEN			12
 #define MINQRY_LEN		6 /* 4 (qtype + qclass) +1 (null) + 1 (label len) */
 #define HDR_QR_MASK		0x8000
 #define MAX_PACKET		10000
@@ -45,15 +45,15 @@
 #define UNIRESP_MSK		0x8000
 #define NAMECOMP_MSK		0xc000
 #define NAMEADDR_MSK		~0xc000
-#define QR_MSK                 	0x8000
-#define TC_MSK                 	0x200
+#define QR_MSK	0x8000
+#define TC_MSK	0x200
 
 struct rr {
 	LIST_ENTRY(rr)		centry; /* cache entry */
 	LIST_ENTRY(rr)		pentry; /* packet entry */
 	char			dname[MAXHOSTNAMELEN];
 	u_int16_t		type;
-	int			cacheflush;	
+	int			cacheflush;
 	u_int16_t		class;
 	u_int32_t		ttl;
 	u_int16_t		rdlen;
@@ -63,13 +63,13 @@ struct rr {
 		char		PTR[MAXHOSTNAMELEN];
 		char		NS[MAXHOSTNAMELEN];
 		char		TXT[MAX_CHARSTR];
-		struct srv 	SRV;
-		struct hinfo 	HINFO;
+		struct srv	SRV;
+		struct hinfo	HINFO;
 
 	} rdata;
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
-	struct event 	rev_timer; 	/* cache revision timer */
-	
+	struct event	rev_timer;	/* cache revision timer */
+
 };
 
 struct question {
@@ -78,7 +78,7 @@ struct question {
 	u_int16_t		qtype;
 	u_int16_t		qclass;
 	int			uniresp;
-	int 			probe;
+	int			probe;
 };
 
 #define RR_UNIQ(rr) (rr->cacheflush)
@@ -192,10 +192,10 @@ void		 if_set_recvbuf(int);
 /* mdnsd.c */
 struct mdnsd_conf {
 	LIST_HEAD(, iface)	iface_list;
-	int 			mdns_sock;
-	struct event	 	ev_mdns;
+	int			mdns_sock;
+	struct event		ev_mdns;
 	struct hinfo		hi;
-	char 			myname[MAXHOSTNAMELEN];
+	char			myname[MAXHOSTNAMELEN];
 };
 void		 imsg_event_add(struct imsgev *);
 int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
@@ -204,14 +204,15 @@ int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
 /* packet.c */
 struct pkt {
 	/* mdns header */
-	u_int8_t 	qr;
+	u_int8_t	qr;
+	/* only meaningfull when receiving */
 	u_int8_t	tc;
-	
+
 	u_int16_t	qdcount; /* question */
 	u_int16_t	ancount; /* answer */
 	u_int16_t	nscount; /* authority */
 	u_int16_t	arcount; /* additional */
-	
+
 	LIST_HEAD(, question) qlist;
 	LIST_HEAD(, rr)       anlist;
 	LIST_HEAD(, rr)       nslist;
@@ -220,34 +221,35 @@ struct pkt {
 
 void	recv_packet(int, short, void *);	/* these don't belong here */
 int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+int	pkt_send_if(struct pkt *, struct iface *);
 int	pkt_send_allif(struct pkt *);
 void	pkt_init(struct pkt *);
 int	pkt_add_question(struct pkt *, struct question *);
-int 	pkt_add_anrr(struct pkt *, struct rr *);
-int 	pkt_add_nsrr(struct pkt *, struct rr *);
-int 	pkt_add_arrr(struct pkt *, struct rr *);
-int 	question_set(struct question *, char [MAXHOSTNAMELEN], u_int16_t,
+int	pkt_add_anrr(struct pkt *, struct rr *);
+int	pkt_add_nsrr(struct pkt *, struct rr *);
+int	pkt_add_arrr(struct pkt *, struct rr *);
+int	question_set(struct question *, char [MAXHOSTNAMELEN], u_int16_t,
     u_int16_t, int, int);
-int 	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
+int	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, int, void *, size_t);
 
 /* mdns.c */
 enum publish_state {
 	PUB_INITIAL,
-    	PUB_PROBE,
-    	PUB_ANNOUNCE,
+	PUB_PROBE,
+	PUB_ANNOUNCE,
 	PUB_DONE
 };
 
 struct publish {
 	LIST_ENTRY(publish)	entry;
-	struct pkt	 	pkt;
-	struct event	 	timer;	/* used in probe and announce */
+	struct pkt		pkt;
+	struct event		timer;	/* used in probe and announce */
 	struct iface	       *iface;
-	int		 	state;	/* enum publish state */
-	int		 	sent;	/* how many packets we sent be it probe
+	int			state;	/* enum publish state */
+	int			sent;	/* how many packets we sent be it probe
 					 * or announce */
-	unsigned long	 	id;	/* unique id */
+	unsigned long		id;	/* unique id */
 };
 
 enum query_style {
@@ -282,7 +284,7 @@ struct rr	*cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 LIST_HEAD(, publish)		probing_list;
 
 /* control.c */
-int   		 control_hasq(struct ctl_conn *, struct query *);
+int		 control_hasq(struct ctl_conn *, struct query *);
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 
 #endif /* _MDNSD_H_ */

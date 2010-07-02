@@ -171,7 +171,7 @@ fetchifs(int ifindex)
 		sa = (struct sockaddr *)(next + sizeof(ifm));
 		get_rtaddrs(ifm.ifm_addrs, sa, rti_info);
 
- 		if ((kif = calloc(1, sizeof(struct kif_node))) == NULL) {
+		if ((kif = calloc(1, sizeof(struct kif_node))) == NULL) {
 			log_warn("fetchifs");
 			free(buf);
 			return (-1);
@@ -210,7 +210,7 @@ kev_init(void)
 		fatal("kev_init: socket");
 
 	log_debug("opened raw socket with kernel on fd %d", kev_state.fd);
-	
+
 	/* not interested in my own messages */
 	if (setsockopt(kev_state.fd, SOL_SOCKET, SO_USELOOPBACK,
 	    &opt, sizeof(opt)) == -1)
@@ -243,7 +243,7 @@ kev_dispatch_msg(int fd, short event, void *bula)
 	ssize_t			 n;
 	struct rt_msghdr	*rtm;
 	struct if_msghdr	 ifm;
-	struct iface *iface;
+	struct iface		*iface;
 
 	if ((n = read(kev_state.fd, &buf, sizeof(buf))) == -1)
 		fatal("kev_dispatch_rtmsg: read error");
@@ -261,7 +261,7 @@ kev_dispatch_msg(int fd, short event, void *bula)
 		iface = if_find_index(ifm.ifm_index);
 		if (iface == NULL) /* this interface isn't configured */
 			continue;
-		
+
 		switch (rtm->rtm_type) {
 		case RTM_IFINFO:
 			log_debug("RTM_IFINFO");
@@ -269,7 +269,7 @@ kev_dispatch_msg(int fd, short event, void *bula)
 				if_fsm(iface, IF_EVT_UP);
 			else
 				if_fsm(iface, IF_EVT_DOWN);
-			
+
 			break;
 		case RTM_IFANNOUNCE:
 			log_debug("RTM_IFANNOUNCE");
@@ -294,5 +294,3 @@ kev_cleanup(void)
 {
 	/* TODO */
 }
-
-

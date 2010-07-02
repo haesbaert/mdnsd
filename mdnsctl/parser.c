@@ -65,7 +65,7 @@ static const struct token t_main[] = {
 static const struct token t_lkup[] = {
 	{ FLAGS	,	"-",		NONE,		t_lkup},
 	{ ADDRESS,	"",		LOOKUP_ADDR,	NULL},
-	{ HOSTNAME,     "",             LOOKUP,    	NULL},
+	{ HOSTNAME,     "",             LOOKUP,	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -251,7 +251,7 @@ int
 parse_addr(const char *word, struct in_addr *addr)
 {
 	struct in_addr	ina;
-	
+
 	if (word == NULL || !isdigit(*word))
 		return (0);
 
@@ -270,14 +270,14 @@ parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN])
 {
 	if (word == NULL || !isalpha(*word))
 		return (0);
-	
+
 	if (strlen(word) < 7 ||	/* shorter host is a.local */
 	    strcmp(&word[strlen(word) - 6], ".local") != 0) {
 		fprintf(stderr, "Invalid domain, must be .local\n");
 		return (0);
 	}
 	strlcpy(hostname, word, MAXHOSTNAMELEN);
-		
+
 	return (1);
 }
 
@@ -285,7 +285,7 @@ int
 parse_flags(const char *word, int *flags)
 {
 	int r = 0;
-	
+
 	if (word == NULL || *word != '-')
 		return (r);
 	word++;
@@ -312,7 +312,7 @@ parse_flags(const char *word, int *flags)
 		}
 		word++;
 	}
-	
+
 	return (r);
 }
 
@@ -320,7 +320,7 @@ int
 parse_brflags(const char *word, int *flags)
 {
 	int r = 0;
-	
+
 	if (word == NULL || *word != '-')
 		return (r);
 	word++;
@@ -335,6 +335,6 @@ parse_brflags(const char *word, int *flags)
 		}
 		word++;
 	}
-	
+
 	return (r);
 }

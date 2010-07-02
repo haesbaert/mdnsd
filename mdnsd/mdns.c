@@ -402,11 +402,11 @@ cache_init(void)
 		rr->rdlen = strlen(*nptr);
 		evtimer_set(&rr->rev_timer, cache_rev, rr);
 		cache_insert(rr);
-		
+
 	}
-	
+
 #endif
-	
+
 }
 
 int
@@ -574,7 +574,7 @@ cache_rev(int unused, short event, void *v_rr)
 		if (pkt_send_allif(&pkt) == -1)
 			log_warnx("can't send packet to all interfaces");
 	}
-	
+
 	if (rr->revision <= 3)
 		cache_schedrev(rr);
 	else
@@ -823,11 +823,11 @@ query_fsm(int unused, short event, void *v_query)
 	struct timeval	 tv;
 	struct query	*q;
 	struct rr	*rr;
-	
+
 	q = v_query;
 	pkt_init(&pkt);
 	pkt_add_question(&pkt, &q->mq);
-	
+
 	if (q->style == QUERY_BROWSE) {
 		/* this will send at seconds 0, 1, 2, 4, 8, 16... */
 		if (!q->sleep)
@@ -840,19 +840,19 @@ query_fsm(int unused, short event, void *v_query)
 		tv.tv_sec = q->sleep;
 		evtimer_set(&q->timer, query_fsm, q);
 		evtimer_add(&q->timer, &tv);
-		
+
 		/* Known Answer Supression */
 		for (rr = cache_lookup(q->mq.dname, q->mq.qtype, q->mq.qclass);
 		     rr != NULL; rr = LIST_NEXT(rr, centry))
 			if (pkt_add_arrr(&pkt, rr) == -1)
 				log_warnx("KNA error pkt_add_arrr: %s", rr->dname);
 	}
-	
+
 	if (pkt_send_allif(&pkt) == -1)
 		log_warnx("can't send packet to all interfaces");
 	q->sleep++;
 }
-	
+
 static int
 query_node_compare(struct query_node *a, struct query_node *b)
 {

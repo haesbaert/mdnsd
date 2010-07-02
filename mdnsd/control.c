@@ -81,7 +81,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
 	/* cache hit */
 	if (rr != NULL) {
-		if (query_answerctl(c, rr, IMSG_CTL_LOOKUP) == -1) 
+		if (query_answerctl(c, rr, IMSG_CTL_LOOKUP) == -1)
 			log_warnx("query_answer error");
 		return;
 	}
@@ -117,7 +117,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		    mlkup.type);
 		return;
 	}
-		
+
 	if (mlkup.class != C_IN) {
 		log_warnx("Browse class %d not supported/implemented",
 		    mlkup.class);
@@ -126,13 +126,13 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
-	
+
 	if ((slot = control_freeq(c)) == -1) {
 		log_warnx("No more free control queries");
 		/* XXX grow buffer  */
 		return;
 	}
-	
+
 	c->qlist[slot] = query_place(QUERY_BROWSE, mlkup.dname, mlkup.type,
 	    mlkup.class);
 	if (c->qlist[slot] == NULL)

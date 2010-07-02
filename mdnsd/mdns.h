@@ -26,7 +26,7 @@
 
 #define MDNSD_SOCKET		"/var/run/mdnsd.sock"
 #define ALL_MDNS_DEVICES	"224.0.0.251"
-#define MDNS_TIMEOUT 		3
+#define MDNS_TIMEOUT		3
 #define MAX_CHARSTR		256	/* we swap the length byter per the null byte */
 
 typedef void (*browse_hook) (char *, char *, char *, int, void *);
@@ -70,12 +70,12 @@ struct srv {
 };
 
 /* struct mdns_service { */
-/* 	char		dname[MAXHOSTNAMELEN]; */
-/* 	u_int16_t	priority; */
-/* 	u_int16_t	weight; */
-/* 	u_int16_t	port; */
-/* 	char		txt[MAX_CHARSTR]; */
-/* 	struct in_addr  addr; */
+/*	char		dname[MAXHOSTNAMELEN]; */
+/*	u_int16_t	priority; */
+/*	u_int16_t	weight; */
+/*	u_int16_t	port; */
+/*	char		txt[MAX_CHARSTR]; */
+/*	struct in_addr  addr; */
 /* }; */
 
 int	mdns_browse_open(struct mdns_browse *, browse_hook, void *);

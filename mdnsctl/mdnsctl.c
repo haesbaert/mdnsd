@@ -73,7 +73,7 @@ main(int argc, char *argv[])
 		/* not reached */
 		break;
 	case LOOKUP:
-		if (res->flags & F_A || !res->flags) { 
+		if (res->flags & F_A || !res->flags) {
 			r = mdns_lkup(res->hostname, &addr);
 			if (r == 0)
 				printf("Address not found.\n");
@@ -82,7 +82,7 @@ main(int argc, char *argv[])
 			else
 				err(1, "mdns_lkup");
 		}
-		
+
 		if (res->flags & F_HINFO) {
 			r = mdns_lkup_hinfo(res->hostname, &hi);
 			if (r == 0)
@@ -94,19 +94,19 @@ main(int argc, char *argv[])
 			else
 				err(1, "mdns_lkup_hinfo");
 		}
-		
+
 		if (res->flags & F_SRV) {
-/* 			r = mdns_lkup_srv(res->hostname, &srv); */
-/* 			if (r == 0) */
-/* 				printf("SRV not found.\n"); */
-/* 			else if (r == 1) { */
-/* 				printf("Name: %s\n", srv.dname); */
-/* 				printf("Port: %u\n", srv.port); */
-/* 				printf("Priority: %u\n", srv.priority); */
-/* 				printf("Weight: %u\n", srv.weight); */
-/* 			} */
-/* 			else */
-/* 				err(1, "mdns_lkup_srv"); */
+/*			r = mdns_lkup_srv(res->hostname, &srv); */
+/*			if (r == 0) */
+/*				printf("SRV not found.\n"); */
+/*			else if (r == 1) { */
+/*				printf("Name: %s\n", srv.dname); */
+/*				printf("Port: %u\n", srv.port); */
+/*				printf("Priority: %u\n", srv.priority); */
+/*				printf("Weight: %u\n", srv.weight); */
+/*			} */
+/*			else */
+/*				err(1, "mdns_lkup_srv"); */
 			errx(1, "fix me");
 		}
 
@@ -145,7 +145,7 @@ main(int argc, char *argv[])
 		/* res->app and res->proto will be NULL if argument is "all" */
 		if (mdns_browse_add(&mb, res->app, res->proto) == -1)
 			err(1, "mdns_browse_add");
-		if (r == -1) 
+		if (r == -1)
 			err(1, "select");
 		for (; ;) {
 			r = mdns_browse_read(&mb);
@@ -160,7 +160,7 @@ main(int argc, char *argv[])
 		}
 		break;		/* NOTREACHED */
 	}
-	
+
 	return (0);		/* NOTREACHED */
 }
 
@@ -169,29 +169,29 @@ bhook(char *name, char *app, char *proto, int ev, void *v_mb)
 {
 	struct mdns_browse	*mb;
 	char			 c;
-	
+
 	mb = v_mb;
 	c = ev == SERVICE_UP ? '+' : '-';
 	/* This is a service, hence, there is a name for it */
 	if (name != NULL) {
 		printf("%c%c%c %-48s %-20s %-3s\n", c, c, c, name, app, proto);
 		if (res->flags & F_RESOLV) {
-/* 			struct mdns_service	ms; */
-/* 			int			r; */
-			
-/* 			r = mdns_res_service(name, app, proto, &ms); */
-/* 			if (r == -1) */
-/* 				err(1, "mdns_res_service"); */
-/* 			else if (r == 0) */
-/* 				warnx("Can't find service %s", name); */
-/* 			else { */
-/* 				printf("\tName: %s\n", ms.dname); */
-/* 				printf("\tPriority: %u\n", ms.priority); */
-/* 				printf("\tWeight: %u\n", ms.weight); */
-/* 				printf("\tPort: %u\n", ms.port); */
-/* 				printf("\tAddress: %s\n", inet_ntoa(ms.addr)); */
-/* 				printf("\tTxt: %s\n", ms.txt); */
-/* 			} */
+/*			struct mdns_service	ms; */
+/*			int			r; */
+
+/*			r = mdns_res_service(name, app, proto, &ms); */
+/*			if (r == -1) */
+/*				err(1, "mdns_res_service"); */
+/*			else if (r == 0) */
+/*				warnx("Can't find service %s", name); */
+/*			else { */
+/*				printf("\tName: %s\n", ms.dname); */
+/*				printf("\tPriority: %u\n", ms.priority); */
+/*				printf("\tWeight: %u\n", ms.weight); */
+/*				printf("\tPort: %u\n", ms.port); */
+/*				printf("\tAddress: %s\n", inet_ntoa(ms.addr)); */
+/*				printf("\tTxt: %s\n", ms.txt); */
+/*			} */
 			errx(1, "mdns resolve service not implemented");
 		}
 	}
