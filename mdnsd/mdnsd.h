@@ -261,7 +261,6 @@ struct query {
 	int		active;
 	int		style;
 	int		sleep;
-	int		msgtype;
 	struct question mq;
 	struct event	timer;
 };
