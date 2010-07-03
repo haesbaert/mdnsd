@@ -161,8 +161,7 @@ publish_delete(struct iface *iface, struct rr *rr)
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
 		next = LIST_NEXT(rraux, centry);
 		if (RR_UNIQ(rr) || /* XXX: Revise this */
-		    (memcmp(&rr->rdata, &rraux->rdata,
-		    rraux->rdlen) == 0)) {
+		    (rr_rdata_cmp(rr, rraux) == 0)) {
 			LIST_REMOVE(rraux, centry);
 			free(rraux);
 			n++;
@@ -250,7 +249,7 @@ publish_fsm(int unused, short event, void *v_pub)
 		LIST_INSERT_HEAD(&probing_list, pub, entry);
 		/* FALLTHROUGH */
 	case PUB_PROBE:
-		pub->pkt.qr = 0;
+		pub->pkt.h.qr = 0;
 		if (pkt_send_allif(&pub->pkt) == -1)
 			log_debug("can't send packet to all interfaces");
 		pub->sent++;
@@ -260,17 +259,17 @@ publish_fsm(int unused, short event, void *v_pub)
 			LIST_REMOVE(pub, entry);
 			pub->state  = PUB_ANNOUNCE;
 			pub->sent   = 0;
-			pub->pkt.qr = 1;
+			pub->pkt.h.qr = 1;
 			/* remove questions */
 			while ((mq = (LIST_FIRST(&pub->pkt.qlist))) != NULL) {
 				LIST_REMOVE(mq, entry);
-				pub->pkt.qdcount--;
+				pub->pkt.h.qdcount--;
 				free(mq);
 			}
 			/* move all ns records to answer records */
 			while ((rr = (LIST_FIRST(&pub->pkt.nslist))) != NULL) {
 				LIST_REMOVE(rr, pentry);
-				pub->pkt.nscount--;
+				pub->pkt.h.nscount--;
 				if (pkt_add_anrr(&pub->pkt, rr) == -1)
 					log_debug("publish_fsm: "
 					    "pkt_add_anrr failed");
@@ -299,22 +298,22 @@ publish_fsm(int unused, short event, void *v_pub)
 	case PUB_DONE:
 		while ((rr = LIST_FIRST(&pub->pkt.anlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
-			pub->pkt.ancount--;
+			pub->pkt.h.ancount--;
 			free(rr);
 		}
 		while ((rr = LIST_FIRST(&pub->pkt.nslist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
-			pub->pkt.nscount--;
+			pub->pkt.h.nscount--;
 			free(rr);
 		}
 		while ((rr = LIST_FIRST(&pub->pkt.arlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
-			pub->pkt.arcount--;
+			pub->pkt.h.arcount--;
 			free(rr);
 		}
 		while ((mq = LIST_FIRST(&pub->pkt.qlist)) != NULL) {
 			LIST_REMOVE(mq, entry);
-			pub->pkt.qdcount--;
+			pub->pkt.h.qdcount--;
 			free(mq);
 		}
 		free(pub);
@@ -455,6 +454,7 @@ cache_insert(struct rr *rr)
 
 	/* if an unique record, clean all previous and substitute */
 	if (RR_UNIQ(rr)) {
+		log_debug("rr: %s (%d) IS UNIQUE ! ", rr->dname, rr->type);
 		while ((rraux = LIST_FIRST(hrr)) != NULL) {
 			LIST_REMOVE(rraux, centry);
 			if (evtimer_pending(&rraux->rev_timer, NULL))
@@ -470,7 +470,7 @@ cache_insert(struct rr *rr)
 
 	/* rr is not unique, see if this is a cache refresh */
 	LIST_FOREACH(rraux, hrr, centry) {
-		if (memcmp(&rr->rdata, &rraux->rdata, rraux->rdlen) == 0) {
+		if (rr_rdata_cmp(rr, rraux) == 0) {
 			rraux->ttl = rr->ttl;
 			rraux->revision = 0;
 			cache_schedrev(rraux);
@@ -506,8 +506,7 @@ cache_delete(struct rr *rr)
 	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
 		next = LIST_NEXT(rraux, centry);
 		if (RR_UNIQ(rr) ||
-		    (memcmp(&rr->rdata, &rraux->rdata,
-		    rraux->rdlen) == 0)) {
+		    (rr_rdata_cmp(rr, rraux) == 0)) {
 			LIST_REMOVE(rraux, centry);
 			if (evtimer_pending(&rraux->rev_timer, NULL))
 				evtimer_del(&rraux->rev_timer);
@@ -799,7 +798,6 @@ query_answerctl(struct ctl_conn *c, struct rr *rr, int msgtype)
 		    &rr->rdata.HINFO, sizeof(rr->rdata.HINFO));
 		break;
 	case T_SRV:
-		log_debug("aqui oh: %s", rr->rdata.SRV.dname);
 		mdnsd_imsg_compose_ctl(c, msgtype,
 		    &rr->rdata.SRV, sizeof(rr->rdata.SRV));
 		break;
@@ -829,7 +827,7 @@ query_fsm(int unused, short event, void *v_query)
 	pkt_add_question(&pkt, &q->mq);
 
 	if (q->style == QUERY_BROWSE) {
-		/* this will send at seconds 0, 1, 2, 4, 8, 16... */
+		/* This will send at seconds 0, 1, 2, 4, 8, 16... */
 		if (!q->sleep)
 			q->sleep = 1;
 		else

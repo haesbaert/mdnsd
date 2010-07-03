@@ -185,11 +185,11 @@ if_state_name(int state)
 void
 log_debug_pkt(struct pkt *pkt)
 {
-	LOG_DEBUG_STRUCT(pkt, qr, %u);
-	LOG_DEBUG_STRUCT(pkt, tc, %u);
-	LOG_DEBUG_STRUCT(pkt, qdcount, %u);
-	LOG_DEBUG_STRUCT(pkt, ancount, %u);
-	LOG_DEBUG_STRUCT(pkt, nscount, %u);
+/* 	LOG_DEBUG_STRUCT(pkt, qr, %u); */
+/* 	LOG_DEBUG_STRUCT(pkt, tc, %u); */
+/* 	LOG_DEBUG_STRUCT(pkt, qdcount, %u); */
+/* 	LOG_DEBUG_STRUCT(pkt, ancount, %u); */
+/* 	LOG_DEBUG_STRUCT(pkt, nscount, %u); */
 }
 
 const char *
@@ -234,8 +234,8 @@ rr_type_name(uint16_t type)
 void
 log_debug_rrdata(struct rr *rr)
 {
-	log_debug("-->%s record (%u) UNIQ: %s NAME: %s", rr_type_name(rr->type),
-	    rr->rdlen, RR_UNIQ(rr) ? "yes" : "no", rr->dname);
+	log_debug("-->%s record UNIQ: %s NAME: %s", rr_type_name(rr->type),
+	    RR_UNIQ(rr) ? "yes" : "no", rr->dname);
 
 	switch(rr->type) {
 	case T_A:

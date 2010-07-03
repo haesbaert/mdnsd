@@ -56,7 +56,6 @@ struct rr {
 	int			cacheflush;
 	u_int16_t		class;
 	u_int32_t		ttl;
-	u_int16_t		rdlen;
 	union {
 		struct in_addr	A;
 		char		CNAME[MAXHOSTNAMELEN];
@@ -203,16 +202,8 @@ int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
 
 /* packet.c */
 struct pkt {
-	/* mdns header */
-	u_int8_t	qr;
-	/* only meaningfull when receiving */
-	u_int8_t	tc;
 
-	u_int16_t	qdcount; /* question */
-	u_int16_t	ancount; /* answer */
-	u_int16_t	nscount; /* authority */
-	u_int16_t	arcount; /* additional */
-
+	HEADER	h;
 	LIST_HEAD(, question) qlist;
 	LIST_HEAD(, rr)       anlist;
 	LIST_HEAD(, rr)       nslist;
@@ -232,6 +223,7 @@ int	question_set(struct question *, char [MAXHOSTNAMELEN], u_int16_t,
     u_int16_t, int, int);
 int	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, int, void *, size_t);
+int	rr_rdata_cmp(struct rr *, struct rr *);
 
 /* mdns.c */
 enum publish_state {

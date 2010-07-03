@@ -54,36 +54,33 @@ static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
 static int	pkt_process(struct pkt *);
 static int	pkt_tryanswerq(struct pkt *);
-static int	pkt_serialize(struct pkt *, u_int8_t *, u_int16_t);
 static ssize_t	serialize_rr(struct rr *, u_int8_t *, u_int16_t);
 static ssize_t	serialize_question(struct question *, u_int8_t *,
     u_int16_t);
 static ssize_t	serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static ssize_t	serialize_rdata(struct rr *, u_int8_t *, u_int16_t);
-static int	rr_parse_hinfo(struct rr *, u_int8_t *);
-static int	rr_parse_a(struct rr *, u_int8_t *);
-static int	rr_parse_txt(struct rr *, u_int8_t *);
-static int	rr_parse_srv(struct rr *, u_int8_t *, u_int16_t);
 static int	rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static ssize_t  charstr(char [MAX_CHARSTR], u_int8_t *, u_int16_t);
+static void	header_htons(HEADER *);
+static void	header_ntohs(HEADER *);
 
 /* util */
 static ssize_t
 charstr(char dest[MAX_CHARSTR], u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t tocpy;
-	
+
 	tocpy = *buf++;
-	
+
 	if (tocpy > len) {
 		log_debug("tocpy: %u > len: %u", tocpy, len);
 		return (-1);
 	}
-	
+
 	/* This isn't a case for strlcpy */
 	memcpy(dest, buf, tocpy);
-	dest[tocpy] = '\0'; 	/* Assure null terminated */
-	
+	dest[tocpy] = '\0';	/* Assure null terminated */
+
 	return (tocpy + 1);
 }
 
@@ -126,7 +123,7 @@ recv_packet(int fd, short event, void *bula)
 	static u_int8_t		 buf[MAX_PACKET];
 	ssize_t			 r;
 	u_int16_t		 len, srcport;
-	
+
 	if (event != EV_READ)
 		return;
 
@@ -148,7 +145,7 @@ recv_packet(int fd, short event, void *bula)
 			    strerror(errno));
 		return;
 	}
-	
+
 	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL;
 	    cmsg = CMSG_NXTHDR(&msg, cmsg)) {
 		if (cmsg->cmsg_level == IPPROTO_IP &&
@@ -160,7 +157,7 @@ recv_packet(int fd, short event, void *bula)
 
 	if (dst == NULL)
 		return;
-	
+
 	len = (u_int16_t)r;
 
 	/* Check the packet is not from one of the local interfaces */
@@ -174,43 +171,160 @@ recv_packet(int fd, short event, void *bula)
 		log_warn("recv_packet: cannot find a matching interface");
 		return;
 	}
-	
+
 	srcport = ntohs(src.sin_port);
-	
+
 	if (pkt_parse(buf, len, &pkt) == -1)
 		return;
-	
+
 	pkt_process(&pkt);
 	/* process all shit */
 }
 
 int
-pkt_send_allif(struct pkt *pkt)
+pkt_send_if(struct pkt *pkt, struct iface *iface)
 {
 	struct sockaddr_in	 dst;
-	struct iface		*iface = NULL;
-	u_int8_t		*buf;
-	ssize_t			 n;
-	
+	static u_int8_t		 buf[MAX_PACKET];
+	struct question		*mq;
+	struct rr		*rr;
+	HEADER			*h;
+	u_int8_t		*pbuf;
+	ssize_t			 n, left;
+
 	inet_aton(ALL_MDNS_DEVICES, &dst.sin_addr);
 	dst.sin_port   = htons(MDNS_PORT);
 	dst.sin_family = AF_INET;
 	dst.sin_len    = sizeof(struct sockaddr_in);
-
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		buf = calloc(1, (size_t) iface->mtu);
-		if ((n = pkt_serialize(pkt, buf, (u_int16_t) iface->mtu))
-		    == -1) {
-			free(buf);
-			return (-1);
-		}
-		if (send_packet(iface, buf, n, &dst) == -1) {
-			free(buf);
-			return (-1);
-		}
-		free(buf);
+	if (iface->mtu > MAX_PACKET)
+		log_warnx("pkt_send_if: insane mtu");
+	bzero(buf, sizeof(buf));
+	left = iface->mtu;
+	h    = (HEADER *) buf;
+	pbuf = buf;
+	/*
+	 * Every packet must have a header, we assume pkt_send_if will only be
+	 * called for full packets, that is, packets that require a header.
+	 */
+	if (left < HDR_LEN) {
+		log_warnx("pkt_send_if: left < HDR_LEN");
+		return (-1);
 	}
-	
+	/*
+	 * Prepend header stuff, we won't trust qdcount, ancount, nscount and
+	 * arcount as they may not fit a single packet.
+	 */
+	h->qr  = pkt->h.qr;
+	left  -= HDR_LEN;
+	pbuf  += HDR_LEN;
+
+	/* Append all questions, they must fit a single packet. */
+	LIST_FOREACH(mq, &pkt->qlist, entry) {
+		n = serialize_question(mq, pbuf, left);
+		if (n == -1 || n > left) {
+			log_warnx("pkt_send_if: "
+			    "can't serialize question section");
+			return (-1);
+		}
+		h->qdcount++;
+		pbuf += n;
+		left  -= n;
+	}
+	/* Append all answers, they must fit a single packet. */
+	LIST_FOREACH(rr, &pkt->anlist, pentry) {
+		n = serialize_rr(rr, pbuf, left);
+		if (n == -1 || n > left)
+			return (-1);
+		h->ancount++;
+		pbuf += n;
+		left -= n;
+	}
+	/* Append all authorities, they must fit a single packet. */
+	LIST_FOREACH(rr, &pkt->nslist, pentry) {
+		n = serialize_rr(rr, pbuf, left);
+		if (n == -1 || n > left)
+			return (-1);
+		h->nscount++;
+		pbuf += n;
+		left -= n;
+	}
+	/*
+	 * This is where the shit happens, if we are querying and our additional
+	 * section won't fit in a single packet, we fragment. The following
+	 * could be a recursive call, passing a flag telling us if we're in a
+	 * "fragmented" state or not, but if so, we would need to make buf
+	 * non-static, allocating MAX_PACKET for each fragmenting packet. This
+	 * might seem like premature optimization but it's also easier to
+	 * maintain.
+	 */
+	LIST_FOREACH(rr, &pkt->arlist, pentry) {
+		int in_retry;
+
+		in_retry = 0;
+	retry:
+		n = serialize_rr(rr, pbuf, left);
+		/* Unexpected n */
+		if (n > left)
+			return (-1);
+		/*
+		 * Fragmentation only for queries, on answer is an
+		 * error, actually only for queries with known answer
+		 * supression.
+		 */
+		if (n == -1 && h->qr)
+			return (-1);
+		/*
+		 * Won't fit, send what we have, restart the ball.
+		 */
+		if (n == -1) {
+			/* Set truncation bit and close packet */
+			h->tc = 1;
+			header_htons(h);
+			if (send_packet(iface, buf, pbuf - buf, &dst) == -1)
+				return (-1);
+			/* Reset states */
+			bzero(buf, sizeof(buf));
+			left = iface->mtu;
+			pbuf = buf;
+			h    = (HEADER *) buf;
+			n    = 0;
+			/* Copy header */
+			h->qr  = pkt->h.qr;
+			left  -= HDR_LEN;
+			pbuf  += HDR_LEN;
+			/* Avoid a possible stupid infinite loop */
+			if (in_retry) {
+				log_warnx("pkt_send_if: failing on retry");
+				return (-1);
+			}
+			in_retry = 1;
+			goto retry;
+		}
+		h->arcount++;
+		pbuf += n;
+		left -= n;
+	}
+	/* Close packet and send. */
+	header_htons(h);
+	if (send_packet(iface, buf, pbuf - buf, &dst) == -1)
+		return (-1);
+	return (0);
+}
+
+int
+pkt_send_allif(struct pkt *pkt)
+{
+	struct iface	*iface = NULL;
+	int		 succ  = 0;
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		if (pkt_send_if(pkt, iface) == -1)
+			log_warnx("Can't send packet though %s", iface->name);
+		else
+			succ++;
+	}
+	/* If we couldn't send to a single iface, consider an error */
+	if (succ == 0)
+		return (-1);
 	return (0);
 }
 
@@ -229,24 +343,24 @@ int
 pkt_add_question(struct pkt *pkt, struct question *mq)
 {
 	/* can't have questions and answers in the same packet */
-	if (pkt->ancount || pkt->nscount || pkt->arcount)
+	if (pkt->h.ancount || pkt->h.nscount || pkt->h.arcount)
 		return (-1);
 	LIST_INSERT_HEAD(&pkt->qlist, mq, entry);
-	pkt->qdcount++;
-	pkt->qr = 0;
-	
+	pkt->h.qdcount++;
+	pkt->h.qr = 0;
+
 	return (0);
 }
 
 int
 pkt_add_anrr(struct pkt *pkt, struct rr *rr)
 {
-	if (pkt->qdcount)
+	if (pkt->h.qdcount)
 		return (-1);
 	LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
-	pkt->ancount++;
-	pkt->qr = 1;
-	
+	pkt->h.ancount++;
+	pkt->h.qr = 1;
+
 	return (0);
 }
 
@@ -254,8 +368,8 @@ int
 pkt_add_nsrr(struct pkt *pkt, struct rr *rr)
 {
 	LIST_INSERT_HEAD(&pkt->nslist, rr, pentry);
-	pkt->nscount++;
-	
+	pkt->h.nscount++;
+
 	return (0);
 }
 
@@ -263,8 +377,8 @@ int
 pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 {
 	LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
-	pkt->arcount++;
-	
+	pkt->h.arcount++;
+
 	return (0);
 }
 
@@ -273,7 +387,7 @@ question_set(struct question *mq, char dname[MAXHOSTNAMELEN],
     u_int16_t qtype, u_int16_t qclass, int uniresp, int probe)
 {
 	bzero(mq, sizeof(*mq));
-	
+
 	if (qclass != C_IN)
 		return (-1);
 	mq->qclass  = qclass;
@@ -281,7 +395,7 @@ question_set(struct question *mq, char dname[MAXHOSTNAMELEN],
 	mq->uniresp = uniresp;
 	mq->probe   = probe;
 	strlcpy(mq->dname, dname, sizeof(mq->dname));
-	
+
 	return (0);
 }
 
@@ -301,10 +415,58 @@ rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
 		return (-1);
 	}
 	memcpy(&rr->rdata, rdata, rdlen);
-	rr->rdlen = rdlen;
 	strlcpy(rr->dname, dname, sizeof(rr->dname));
-	
+
 	return (0);
+}
+
+int
+rr_rdata_cmp(struct rr *rra, struct rr *rrb)
+{
+	size_t na, nb;
+
+	if (rra->type != rrb->type) {
+		log_warnx("Can't compare rdata for different types");
+		return (-1);
+	}
+	switch (rra->type) {
+	case T_A:
+		return (rra->rdata.A.s_addr == rrb->rdata.A.s_addr);
+		break;		/* NOTREACHED */
+	case T_CNAME:
+	case T_PTR:
+	case T_NS:
+	case T_TXT:
+		return strcmp((char *) &rra->rdata, (char *) &rrb->rdata);
+		break;		/* NOTREACHED */
+	case T_SRV:
+		if (rra->rdata.SRV.priority > rrb->rdata.SRV.priority)
+			return (1);
+		if (rra->rdata.SRV.priority < rrb->rdata.SRV.priority)
+			return (-1);
+		if (rra->rdata.SRV.weight > rrb->rdata.SRV.weight)
+			return (1);
+		if (rra->rdata.SRV.weight < rrb->rdata.SRV.weight)
+			return (-1);
+		if (rra->rdata.SRV.port > rrb->rdata.SRV.port)
+			return (1);
+		if (rra->rdata.SRV.port < rrb->rdata.SRV.port)
+			return (-1);
+		return strcmp(rra->rdata.SRV.dname, rrb->rdata.SRV.dname);
+	case T_HINFO:
+		na = strlen(rra->rdata.HINFO.cpu);
+		nb = strlen(rrb->rdata.HINFO.cpu);
+		if (strcmp(rra->rdata.HINFO.cpu, rrb->rdata.HINFO.cpu) != 0)
+			return (strcmp(rra->rdata.HINFO.cpu,
+			    rrb->rdata.HINFO.cpu));
+		if (strcmp(rra->rdata.HINFO.os, rrb->rdata.HINFO.os) != 0)
+			return (strcmp(rra->rdata.HINFO.os,
+			    rrb->rdata.HINFO.os));
+	default:
+		log_warnx("Unknown rr->type (%d), can't compare", rra->type);
+		fatalx("Fatal, won't accept bogus comparisons");
+		break;
+	}
 }
 
 static struct iface *
@@ -315,7 +477,7 @@ find_iface(unsigned int ifindex, struct in_addr src)
 	/* returned interface needs to be active */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		if (ifindex != 0 && ifindex == iface->ifindex &&
-		    (iface->addr.s_addr & iface->mask.s_addr) == 
+		    (iface->addr.s_addr & iface->mask.s_addr) ==
 		    (src.s_addr & iface->mask.s_addr))
 			/*
 			 * XXX may fail on P2P links because src and dst don't
@@ -336,119 +498,110 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
 	u_int16_t		 i;
 	struct question	*mq;
 	struct rr		*rr;
-	
+
 	pkt_init(pkt);
 	pktcomp.start = buf;
 	pktcomp.len = len;
-	
+
 	if (pkt_parse_header(&buf, &len, pkt) == -1)
 		return (-1);
-	
+
 	/* Parse question section */
-	for (i = 0; i < pkt->qdcount; i++)
+	for (i = 0; i < pkt->h.qdcount; i++)
 		if (pkt_parse_question(&buf, &len, pkt) == -1)
 			return (-1);
-	
+	log_debug("question ok");
 	/* Question count sanity check */
 	i = 0;
 	LIST_FOREACH(mq, &pkt->qlist, entry)
 		i++;
-	if (i != pkt->qdcount) {
+	if (i != pkt->h.qdcount) {
 		log_debug("found less questions than advertised");
 		return (-1);
 	}
-/* 	/\* Answer count sanity check *\/ */
-/* 	i = 0; */
-/* 	LIST_FOREACH(rr, &pkt->anlist, entry) */
-/* 	    i++; */
-/* 	if (i != pkt->ancount) { */
-/* 		log_debug("found less records in AN section " */
-/* 		    "than advertised ancount = %u, i = %d", pkt->ancount, i); */
-/* 		return -1; */
-/* 	} */
-/* 	/\* NS count sanity check *\/ */
-/* 	i = 0; */
-/* 	LIST_FOREACH(rr, &pkt->nslist, entry) */
-/* 	    i++; */
-/* 	if (i != pkt->nscount) { */
-/* 		log_debug("found less records in NS section " */
-/* 		    "than advertised nscount = %u, i = %d", pkt->nscount, i); */
-/* 		return -1; */
-/* 	} */
-/* 	/\* AR count sanity check *\/ */
-/* 	i = 0; */
-/* 	LIST_FOREACH(rr, &pkt->arlist, entry) */
-/* 	    i++; */
-/* 	if (i != pkt->arcount) { */
-/* 		log_debug("found less records in AR section " */
-/* 		    "than advertised, an = %u, i = %d", pkt->arcount, i); */
-/* 		return -1; */
-/* 	} */
+/*	/\* Answer count sanity check *\/ */
+/*	i = 0; */
+/*	LIST_FOREACH(rr, &pkt->anlist, entry) */
+/*	    i++; */
+/*	if (i != pkt->ancount) { */
+/*		log_debug("found less records in AN section " */
+/*		    "than advertised ancount = %u, i = %d", pkt->ancount, i); */
+/*		return -1; */
+/*	} */
+/*	/\* NS count sanity check *\/ */
+/*	i = 0; */
+/*	LIST_FOREACH(rr, &pkt->nslist, entry) */
+/*	    i++; */
+/*	if (i != pkt->nscount) { */
+/*		log_debug("found less records in NS section " */
+/*		    "than advertised nscount = %u, i = %d", pkt->nscount, i); */
+/*		return -1; */
+/*	} */
+/*	/\* AR count sanity check *\/ */
+/*	i = 0; */
+/*	LIST_FOREACH(rr, &pkt->arlist, entry) */
+/*	    i++; */
+/*	if (i != pkt->arcount) { */
+/*		log_debug("found less records in AR section " */
+/*		    "than advertised, an = %u, i = %d", pkt->arcount, i); */
+/*		return -1; */
+/*	} */
 
 	/* Parse RR sections */
-	for (i = 0; i < pkt->ancount; i++) {
+	for (i = 0; i < pkt->h.ancount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&buf, &len, rr) == -1) {
-			log_debug("Can't parse RR");
+			log_warnx("Can't parse AN RR");
 			free(rr);
 			return (-1);
 		}
 		LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
 	}
-	for (i = 0; i < pkt->nscount; i++) {
+	for (i = 0; i < pkt->h.nscount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&buf, &len, rr) == -1) {
-			log_debug("Can't parse RR");
+			log_warnx("Can't parse NS RR");
 			free(rr);
 			return (-1);
 		}
 		LIST_INSERT_HEAD(&pkt->nslist, rr, pentry);
 	}
-	for (i = 0; i < pkt->arcount; i++) {
+	for (i = 0; i < pkt->h.arcount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&buf, &len, rr) == -1) {
-			log_debug("Can't parse RR");
+			log_warnx("Can't parse AR RR");
 			free(rr);
 			return (-1);
 		}
-		
+
 		LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	}
 	if (len != 0) {
-		log_debug("Couldn't read all packet, %u bytes left", len);
+		log_warnx("Couldn't read all packet, %u bytes left", len);
 		return (-1);
 	}
-		
+
 	return (0);
 }
 
 static int
 pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 {
-	HEADER *qh;
 	u_int8_t *buf = *pbuf;
-	
+
 	/* MDNS header sanity check */
 	if (*len < HDR_LEN) {
 		log_debug("recv_packet: bad packet size %u", len);
 		return (-1);
 	}
-	
-	qh = (HEADER *) buf;
-
-	pkt->qr = qh->qr;
-	pkt->tc = qh->tc;
-	pkt->qdcount = ntohs(qh->qdcount);
-	pkt->ancount = ntohs(qh->ancount);
-	pkt->nscount = ntohs(qh->nscount);
-	pkt->arcount = ntohs(qh->arcount);
-	
-	*len -= HDR_LEN;
+	pkt->h = *((HEADER *) buf);
+	header_ntohs(&pkt->h);
+	*len  -= HDR_LEN;
 	*pbuf += HDR_LEN;
-	
+
 	return (0);
 }
 
@@ -458,31 +611,31 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	u_int16_t us;
 	struct question *mq;
 	ssize_t n;
-	
+
 	/* MDNS question sanity check */
 	if (*len < MINQRY_LEN) {
 		log_debug("pkt_parse_question: bad query packet size %u", *len);
 		return (-1);
 	}
-	
+
 	if ((mq = calloc(1, sizeof(*mq))) == NULL)
 		fatal("calloc");
-	
+
 	n = pkt_parse_dname(*pbuf, *len, mq->dname);
 	if (n == -1) {
 		free(mq);
 		return (-1);
 	}
-	
+
 	*pbuf += n;
 	*len  -= n;
-		
+
 	GETSHORT(mq->qtype, *pbuf);
 	*len -= INT16SZ;
-	
+
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
-	
+
 	mq->uniresp = !!(us & UNIRESP_MSK);
 	mq->qclass = us & CLASS_MSK;
 
@@ -493,9 +646,9 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 		free(mq);
 		return (-1);
 	}
-	
+
 	LIST_INSERT_HEAD(&pkt->qlist, mq, entry);
-	
+
 	return (0);
 }
 
@@ -507,30 +660,30 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	int jumped = 0;
 	u_int16_t oldlen = len;
 	u_char label[MAXLABEL + 1];
-	
+
 	/* be extra safe */
 	bzero(dname, MAXHOSTNAMELEN);
-	
+
 	for (i = 0; i < MAX_LABELS; i++) {
 		/* check if head is a pointer */
 		if (*buf & 0xc0) {
 			u_int16_t us;
-			
+
 			GETSHORT(us, buf);
 			if (!jumped)
 				len -= INT16SZ;
 			buf = pktcomp.start + (us & NAMEADDR_MSK);
 			jumped = 1;
 		}
-		
+
 		lablen = *buf++;
-		
+
 		if (!jumped)
 			len--;
-		
+
 		if (lablen == 0)
 			break;
-		
+
 		if (lablen > (MAXHOSTNAMELEN - strlen(dname)) ||
 		    lablen > MAXLABEL) {
 			log_debug("label won't fit");
@@ -543,80 +696,86 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 			log_debug("domain-name truncated");
 			return (-1);
 		}
-		
+
 		/* should we leave the dot on the last tag ? */
 		if (strlcat(dname, ".", MAXHOSTNAMELEN) > MAXHOSTNAMELEN) {
 			log_debug("domain-name truncated");
 			return (-1);
 		}
-		
+
 		buf += lablen;
 		if (!jumped)
 			len -= lablen;
 	}
-	
+
 	if (i == MAX_LABELS) {
 		log_debug("max labels reached");
 		return (-1);
 	}
-	
+
 	/* remove the trailling dot */
 	if (len > 0)
 		dname[strlen(dname) - 1] = '\0';
 
-/* 	log_debug("oldlen: %u, len: %u", oldlen, len); */
+/*	log_debug("oldlen: %u, len: %u", oldlen, len); */
 	return (oldlen - len);
 }
 
 
+/* XXX: This function lacks some comments */
 static int
 pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 {
-	u_int16_t us;
+	u_int16_t us, rdlen, tmplen;
+	u_int32_t ul;
 	ssize_t n;
+	char *buf;
 
 	n = pkt_parse_dname(*pbuf, *len, rr->dname);
 	if (n == -1)
 		return (-1);
-	
 	*pbuf += n;
 	*len  -= n;
-	
 	/* Make sure rr packet len is ok */
 	if (*len < 8) {
 		log_debug("Unexpected packet len");
 		return (-1);
 	}
-	
 	GETSHORT(rr->type, *pbuf);
 	*len -= INT16SZ;
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
 	rr->cacheflush = !!(us & CACHEFLUSH_MSK);
 	rr->class      = us & CLASS_MSK;
-	
 	if (rr->class != C_ANY && rr->class != C_IN) {
-		log_debug("pkt_parse_rr: Invalid packet class %u", rr->class);
+		log_debug("pkt_parse_rr: %s (%s) Invalid packet class %u",
+		    rr_type_name(rr->type), rr->dname, rr->class);
 		return (-1);
 	}
-
 	GETLONG(rr->ttl, *pbuf);
 	*len -= INT32SZ;
-	GETSHORT(rr->rdlen, *pbuf);
+	GETSHORT(rdlen, *pbuf);
 	*len -= INT16SZ;
-	if (*len < rr->rdlen) {
+	if (*len < rdlen) {
 		log_debug("Invalid rr data length, *len = %u, rdlen = %u",
-		    *len,rr->rdlen);
+		    *len, rdlen);
 		return (-1);
 	}
-
 	switch (rr->type) {
 	case T_A:
-		if (rr_parse_a(rr, *pbuf) == -1)
+		buf = *pbuf;
+		if (rdlen != INT32SZ) {
+			log_debug("Invalid A record rdlen %u", rdlen);
 			return (-1);
+		}
+		GETLONG(ul, buf);
+		rr->rdata.A.s_addr = htonl(ul);
 		break;
 	case T_HINFO:
-		if (rr_parse_hinfo(rr, *pbuf) == -1)
+		if ((n = charstr(rr->rdata.HINFO.cpu, *pbuf, rdlen)) == -1)
+			return (-1);
+		if ((n = charstr(rr->rdata.HINFO.os, *pbuf + n,
+		    rdlen - n)) == -1)
 			return (-1);
 		break;
 	case T_CNAME:
@@ -630,7 +789,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 			return (-1);
 		break;
 	case T_TXT:
-		if (rr_parse_txt(rr, *pbuf) == -1)
+		if ((n = charstr(rr->rdata.TXT, *pbuf, rdlen)) == -1)
 			return (-1);
 		break;
 	case T_NS:
@@ -639,13 +798,15 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 			return (-1);
 		break;
 	case T_SRV:
-/* 		log_debug("SRV record"); */
-/* 		if (rr->dname.nlabels < 3) { */
-/* 			log_debug("SRV record expects a dname with" */
-/* 			    "at least 3 labels, got %d", rr->dname.nlabels); */
-/* 			return (-1); */
-/* 		} */
-		if (rr_parse_srv(rr, *pbuf, *len) == -1)
+		buf = *pbuf;
+		tmplen = *len;
+		GETSHORT(rr->rdata.SRV.priority, buf);
+		tmplen -= INT16SZ;
+		GETSHORT(rr->rdata.SRV.weight, buf);
+		tmplen -= INT16SZ;
+		GETSHORT(rr->rdata.SRV.port, buf);
+		tmplen -= INT16SZ;
+		if (rr_parse_dname(buf, tmplen, rr->rdata.SRV.dname) == -1)
 			return (-1);
 		break;
 	case T_AAAA:
@@ -655,10 +816,10 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 		return (-1);
 		break;
 	}
-	
-	*len  -= rr->rdlen;
-	*pbuf += rr->rdlen;
-	
+
+	*len  -= rdlen;
+	*pbuf += rdlen;
+
 	return (0);
 }
 
@@ -668,7 +829,7 @@ pkt_process(struct pkt *pkt)
 	struct rr	*rr;
 	struct question *q;
 	struct publish	*pub;
-	
+
 	/* mark all probe questions, so we don't try to answer them below */
 	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
 		LIST_FOREACH(q, &pkt->qlist, entry) {
@@ -678,7 +839,7 @@ pkt_process(struct pkt *pkt)
 		LIST_REMOVE(rr, pentry);
 		free(rr);
 	}
-	
+
 	/* Check for a conflicting response, that is any response that answers
 	 * our probe queries, if any of them answers, give up our name and
 	 * choose another. */
@@ -691,29 +852,29 @@ pkt_process(struct pkt *pkt)
 					/* TODO: Give up name */
 					log_warnx("Can't use name %s, "
 					    "already taken", q->dname);
-/* 					if (publish_conflict(q->dname) == -1) */
-/* 						log_warnx("Can't resolve " */
-/* 						    "conflict for name %s", */
-/* 						    q->dname); */
+/*					if (publish_conflict(q->dname) == -1) */
+/*						log_warnx("Can't resolve " */
+/*						    "conflict for name %s", */
+/*						    q->dname); */
 					break;
 				}
 			}
 		}
 	}
-	    
+
 	/* process all questions */
 	if (pkt_tryanswerq(pkt) == -1)
 		log_warnx("pkt_tryanswerq: error");
-	
+
 	/* process all answers */
 	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
 		LIST_REMOVE(rr, pentry);
 		cache_process(rr);
 	}
-	
+
 	/* process additional section */
 	/* TODO */
-	
+
 	return (0);
 }
 
@@ -721,9 +882,9 @@ static int
 pkt_tryanswerq(struct pkt *pkt)
 {
 	struct question	*q;
-	struct rr		*rr;
-	struct pkt		 sendpkt;
-	
+	struct rr	*rr;
+	struct pkt	 sendpkt;
+
 	pkt_init(&sendpkt);
 	/* arghhh the following is too fucking ugly, please correct me */
 	while ((q = LIST_FIRST(&pkt->qlist)) != NULL) {
@@ -741,69 +902,12 @@ pkt_tryanswerq(struct pkt *pkt)
 					log_debug("can't send packet to"
 					    "all interfaces");
 			}
-				
+
 		}
 		LIST_REMOVE(q, entry);
 		free(q);
 	}
 
-	return (0);
-}
-
-static int
-rr_parse_hinfo(struct rr *rr, u_int8_t *buf)
-{
-	ssize_t n;
-	
-	if ((n = charstr(rr->rdata.HINFO.cpu, buf, rr->rdlen)) == -1)
-		return (-1);
-	if ((n = charstr(rr->rdata.HINFO.os, buf + n, rr->rdlen - n)) == -1)
-		return (-1);
-	
-	return (0);
-}
-	
-static int
-rr_parse_a(struct rr *rr, u_int8_t *buf)
-{
-	u_int32_t ul;
-	
-	if (rr->rdlen != INT32SZ) {
-		log_debug("Invalid A record rdlen %u", rr->rdlen);
-		return (-1);
-	}
-	
-	GETLONG(ul, buf);
-	rr->rdata.A.s_addr = htonl(ul);
-	
-	return (0);
-	
-}
-
-static int
-rr_parse_txt(struct rr *rr, u_int8_t *buf)
-{
-	ssize_t n;
-	
-	if ((n = charstr(rr->rdata.TXT, buf, rr->rdlen)) == -1)
-		return (-1);
-
-	return (0);
-}
-
-static int
-rr_parse_srv(struct rr *rr, u_int8_t *buf, u_int16_t len)
-{
-	GETSHORT(rr->rdata.SRV.priority, buf);
-	len -= INT16SZ;
-	GETSHORT(rr->rdata.SRV.weight, buf);
-	len -= INT16SZ;
-	GETSHORT(rr->rdata.SRV.port, buf);
-	len -= INT16SZ;
-
-	if (rr_parse_dname(buf, len, rr->rdata.SRV.dname) == -1)
-		return (-1);
-	
 	return (0);
 }
 
@@ -814,70 +918,8 @@ rr_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 		log_debug("Invalid record");
 		return (-1);
 	}
-	
+
 	return (0);
-}
-
-static int
-pkt_serialize(struct pkt *pkt, u_int8_t *buf, u_int16_t len)
-{
-	u_int16_t	 aux  = 0;
-	u_int8_t	*pbuf = buf;
-	struct question	*mq;
-	struct rr	*rr;
-	ssize_t		 n;
-	
-	if (len < HDR_LEN) {
-		log_debug("pkt_serialize: len < HDR_LEN");
-		return (-1);
-	}
-	
-	PUTSHORT(aux, pbuf); 	/* id must be 0 */
-	if (pkt->qr)
-		aux |= QR_MSK;
-	if (pkt->tc)
-		aux |= TC_MSK;
-	PUTSHORT(aux, pbuf);
-	PUTSHORT(pkt->qdcount, pbuf);
-	PUTSHORT(pkt->ancount, pbuf);
-	PUTSHORT(pkt->nscount, pbuf);
-	PUTSHORT(pkt->arcount, pbuf);
-	
-	len -= pbuf - buf;
-	    
-	LIST_FOREACH(mq, &pkt->qlist, entry) {
-		n = serialize_question(mq, pbuf, len);
-		if (n == -1 || n > len)
-			return (-1);
-		pbuf += n;
-		len  -= n;
-	}
-	
-	LIST_FOREACH(rr, &pkt->anlist, pentry) {
-		n = serialize_rr(rr, pbuf, len);
-		if (n == -1 || n > len)
-			return (-1);
-		pbuf += n;
-		len  -= n;
-	}
-
-	LIST_FOREACH(rr, &pkt->nslist, pentry) {
-		n = serialize_rr(rr, pbuf, len);
-		if (n == -1 || n > len)
-			return (-1);
-		pbuf += n;
-		len  -= n;
-	}
-
-	LIST_FOREACH(rr, &pkt->arlist, pentry) {
-		n = serialize_rr(rr, pbuf, len);
-		if (n == -1 || n > len)
-			return (-1);
-		pbuf += n;
-		len  -= n;
-	}
-
-	return (pbuf - buf);
 }
 
 static ssize_t
@@ -887,7 +929,7 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	char *dbuf = dname;
 	u_int8_t tlen;
 	u_int8_t *pbuf = buf;
-	
+
 	do {
 		if ((end = strchr(dbuf, '.')) == NULL) {
 			if ((end = strchr(dbuf, '\0')) == NULL)
@@ -903,12 +945,12 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 		pbuf += tlen;
 		dbuf  = end + 1;
 	} while (*end != '\0');
-	
+
 	if (len == 0)
 		return (-1);
 	*pbuf++ = '\0';		/* null terminate dname */
 	len--;
-	
+
 	return (pbuf - buf);
 }
 
@@ -920,21 +962,14 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	u_int16_t	 rdlen = 0;
 	u_int8_t	 cpulen, oslen;
 	char		 tmp[MAXHOSTNAMELEN];
-		
-	
-	if (rr->type != T_PTR && rr->type != T_HINFO)
-		rdlen = rr->rdlen;
-	
+
 	switch (rr->type) {
 	case T_HINFO:
 		cpulen = strlen(rr->rdata.HINFO.cpu);
 		oslen = strlen(rr->rdata.HINFO.os);
-		    
 		rdlen = cpulen + oslen + 2;	/* 2 length octets */
-		
 		if (len < rdlen)
 			return (-1);
-		
 		PUTSHORT(rdlen, pbuf);
 		len -= 2;
 		/* fill cpu */
@@ -949,7 +984,6 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		memcpy(pbuf, rr->rdata.HINFO.os, oslen);
 		pbuf += oslen;
 		len  -= oslen;
-
 		break;
 	case T_PTR:
 		bzero(tmp, sizeof(tmp));
@@ -964,9 +998,9 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		memcpy(pbuf, tmp, rdlen);
 		pbuf += rdlen;
 		len  -= rdlen;
-		
 		break;
-	default:
+	case T_A:
+		rdlen = INT32SZ;
 		if (len < (rdlen + 2)) /* +2 is rdlen itself */
 			return (-1);
 		PUTSHORT(rdlen, pbuf);
@@ -974,10 +1008,13 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		memcpy(pbuf, &rr->rdata, rdlen);
 		pbuf += rdlen;
 		len  -= rdlen;
-		
 		break;
+	default:
+		log_warnx("serialize_rdata: Don't know how to serialize %s (%d)",
+		    rr_type_name(rr->type), rr->type);
+		return (-1);
+		break;		/* NOTREACHED */
 	}
-	
 	return (pbuf - buf);
 }
 
@@ -987,7 +1024,7 @@ serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	u_int8_t	*pbuf = buf;
 	u_int16_t	 us   = 0;
 	ssize_t		 n;
- 
+
 	n = serialize_dname(pbuf, len, rr->dname);
 	if (n == -1 || n > len)
 		return (-1);
@@ -1005,7 +1042,7 @@ serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	PUTSHORT(us, pbuf);
 	PUTLONG(rr->ttl, pbuf);
 	len -= 8;
-	
+
 	n = serialize_rdata(rr, pbuf, len);
 	if (n == -1 || n > len)
 		return (-1);
@@ -1020,7 +1057,7 @@ serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t *pbuf = buf;
 	ssize_t n;
-	
+
 	n = serialize_dname(pbuf, len, mq->dname);
 	if (n == -1 || n > len)
 		return (-1);
@@ -1029,11 +1066,28 @@ serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 	if (len == 0)
 		return (-1);
 
-	if (len < 4) 	/* must fit type, class */
+	if (len < 4)	/* must fit type, class */
 		return (-1);
 	PUTSHORT(mq->qtype, pbuf);
 	PUTSHORT(mq->qclass, pbuf);
-	
+
 	return (pbuf - buf);
 }
 
+static void
+header_htons(HEADER *h)
+{
+	h->qdcount = htons(h->qdcount);
+	h->ancount = htons(h->ancount);
+	h->nscount = htons(h->nscount);
+	h->arcount = htons(h->arcount);
+}
+
+static void
+header_ntohs(HEADER *h)
+{
+	h->qdcount = ntohs(h->qdcount);
+	h->ancount = ntohs(h->ancount);
+	h->nscount = ntohs(h->nscount);
+	h->arcount = ntohs(h->arcount);
+}
