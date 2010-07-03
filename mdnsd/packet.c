@@ -37,14 +37,6 @@
 #include "mdnsd.h"
 #include "log.h"
 
-extern struct mdnsd_conf *conf;
-
-/* used in name compression */
-static struct {
-	u_int8_t *start;
-	u_int16_t len;
-} pktcomp;
-
 static struct iface	*find_iface(unsigned int, struct in_addr);
 
 static int	pkt_parse(u_int8_t *, u_int16_t, struct pkt *);
@@ -63,8 +55,26 @@ static int	rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static ssize_t  charstr(char [MAX_CHARSTR], u_int8_t *, u_int16_t);
 static void	header_htons(HEADER *);
 static void	header_ntohs(HEADER *);
+static int	pktcomp_add(char [MAXHOSTNAMELEN], u_int16_t);
+static struct namecomp *pktcomp_lookup(char [MAXHOSTNAMELEN]);
 
-/* util */
+
+extern struct mdnsd_conf *conf;
+
+/* Used in name compression */
+struct namecomp {
+	LIST_ENTRY(namecomp) 	entry;
+	char			dname[MAXHOSTNAMELEN];
+	u_int16_t		offset;
+};
+
+static struct {
+	LIST_HEAD(, namecomp) 	namecomp_list;
+	u_int8_t		*start;
+	u_int16_t	 	len;
+} pktcomp;
+
+/* Util */
 static ssize_t
 charstr(char dest[MAX_CHARSTR], u_int8_t *buf, u_int16_t len)
 {
@@ -84,7 +94,7 @@ charstr(char dest[MAX_CHARSTR], u_int8_t *buf, u_int16_t len)
 	return (tocpy + 1);
 }
 
-/* send and receive packets */
+/* Send and receive packets */
 int
 send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
 {
@@ -204,6 +214,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 	left = iface->mtu;
 	h    = (HEADER *) buf;
 	pbuf = buf;
+	pktcomp_reset(0, buf, left);
 	/*
 	 * Every packet must have a header, we assume pkt_send_if will only be
 	 * called for full packets, that is, packets that require a header.
@@ -286,6 +297,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 			pbuf = buf;
 			h    = (HEADER *) buf;
 			n    = 0;
+			pktcomp_reset(0, buf, left);
 			/* Copy header */
 			h->qr  = pkt->h.qr;
 			left  -= HDR_LEN;
@@ -498,9 +510,7 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
 	struct rr		*rr;
 
 	pkt_init(pkt);
-	pktcomp.start = buf;
-	pktcomp.len = len;
-
+	pktcomp_reset(0, buf, len);
 	if (pkt_parse_header(&buf, &len, pkt) == -1)
 		return (-1);
 
@@ -927,7 +937,15 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	char *dbuf = dname;
 	u_int8_t tlen;
 	u_int8_t *pbuf = buf;
-
+	struct namecomp *nc;
+	
+	/* Try to compress this name */
+	if ((nc = pktcomp_lookup(dname)) != NULL) {
+		PUTSHORT(nc->offset, pbuf);
+		len -= INT16SZ;
+		return (pbuf - buf);
+	}
+	
 	do {
 		if ((end = strchr(dbuf, '.')) == NULL) {
 			if ((end = strchr(dbuf, '\0')) == NULL)
@@ -948,7 +966,14 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 		return (-1);
 	*pbuf++ = '\0';		/* null terminate dname */
 	len--;
-
+	
+	/*
+	 * Add dname to name compression, buf - pktcomp->start, should give us
+	 * the correct offset in the current packet.
+	 */
+	if (pktcomp_add(dname, (u_int16_t) (buf - pktcomp.start)) == -1)
+		log_warnx("pktcomp_add error: %s", dname);
+	
 	return (pbuf - buf);
 }
 
@@ -957,9 +982,8 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t	*pbuf = buf;
 	ssize_t		 n;
-	u_int16_t	 rdlen = 0;
+	u_int16_t	 rdlen = 0, *prdlen;
 	u_int8_t	 cpulen, oslen;
-	char		 tmp[MAXHOSTNAMELEN];
 
 	switch (rr->type) {
 	case T_HINFO:
@@ -984,18 +1008,17 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		len  -= oslen;
 		break;
 	case T_PTR:
-		bzero(tmp, sizeof(tmp));
-		if ((n = serialize_dname(tmp, sizeof(tmp),
+		prdlen = (u_int16_t *) pbuf;
+		/* jump over rdlen */
+		pbuf += INT16SZ;
+		len  -= INT16SZ;
+		if ((n = serialize_dname(pbuf, len,
 		    rr->rdata.PTR)) == -1)
 			return (-1);
 		rdlen = n;
-		if (len < (rdlen + 2)) /* +2 is rdlen itself */
-			return (-1);
-		PUTSHORT(rdlen, pbuf);
-		len -= 2;
-		memcpy(pbuf, tmp, rdlen);
 		pbuf += rdlen;
 		len  -= rdlen;
+		*prdlen = htons(rdlen);
 		break;
 	case T_A:
 		rdlen = INT32SZ;
@@ -1088,4 +1111,49 @@ header_ntohs(HEADER *h)
 	h->ancount = ntohs(h->ancount);
 	h->nscount = ntohs(h->nscount);
 	h->arcount = ntohs(h->arcount);
+}
+
+/* Packet compression */
+void
+pktcomp_reset(int first, u_int8_t *start, u_int16_t len)
+{
+	struct namecomp *nc;
+	
+	if (first)
+		LIST_INIT(&pktcomp.namecomp_list);
+	while ((nc = LIST_FIRST(&pktcomp.namecomp_list)) != NULL) {
+		LIST_REMOVE(nc, entry);
+		free(nc);
+	}
+	pktcomp.start = start;
+	pktcomp.len = len;
+}
+
+static int
+pktcomp_add(char dname[MAXHOSTNAMELEN], u_int16_t offset)
+{
+	struct namecomp *nc;
+
+	if ((nc = calloc(1, sizeof(*nc))) == NULL)
+		fatal("calloc");
+	strlcpy(nc->dname, dname, sizeof(nc->dname));
+	nc->offset = offset | NAMECOMP_MSK;
+	log_debug("learned compression for %s (%d) (%d)",
+	    dname, offset, nc->offset);
+	LIST_INSERT_HEAD(&pktcomp.namecomp_list, nc, entry);
+	
+	return (0);
+}
+
+static struct namecomp *
+pktcomp_lookup(char dname[MAXHOSTNAMELEN])
+{
+	struct namecomp *nc;
+	
+	LIST_FOREACH(nc, &pktcomp.namecomp_list, entry) {
+		if (strcmp(nc->dname, dname) == 0)
+			return (nc);
+	}
+	
+	return (NULL);
 }

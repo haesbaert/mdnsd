@@ -224,6 +224,7 @@ int	question_set(struct question *, char [MAXHOSTNAMELEN], u_int16_t,
 int	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, int, void *, size_t);
 int	rr_rdata_cmp(struct rr *, struct rr *);
+void	pktcomp_reset(int, u_int8_t *, u_int16_t);
 
 /* mdns.c */
 enum publish_state {

@@ -113,7 +113,7 @@ publish_init(void)
 void
 publish_allrr(struct iface *iface)
 {
-	struct question	*mq;
+	struct question		*mq;
 	struct rr		*rr, *rrcopy;
 	struct publish		*pub;
 	struct rrt_node		*n;
