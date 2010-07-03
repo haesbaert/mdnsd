@@ -1147,8 +1147,6 @@ pktcomp_add(char dname[MAXHOSTNAMELEN], u_int16_t offset)
 		fatal("calloc");
 	strlcpy(nc->dname, dname, sizeof(nc->dname));
 	nc->offset = offset | NAMECOMP_MSK;
-	log_debug("learned compression for %s (%d) (%d)",
-	    dname, offset, nc->offset);
 	LIST_INSERT_HEAD(&pktcomp.namecomp_list, nc, entry);
 	
 	return (0);
