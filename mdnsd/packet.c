@@ -212,14 +212,10 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 		log_warnx("pkt_send_if: left < HDR_LEN");
 		return (-1);
 	}
-	/*
-	 * Prepend header stuff, we won't trust qdcount, ancount, nscount and
-	 * arcount as they may not fit a single packet.
-	 */
+	/* Copy header. */
 	h->qr  = pkt->h.qr;
 	left  -= HDR_LEN;
 	pbuf  += HDR_LEN;
-
 	/* Append all questions, they must fit a single packet. */
 	LIST_FOREACH(mq, &pkt->qlist, entry) {
 		n = serialize_question(mq, pbuf, left);
