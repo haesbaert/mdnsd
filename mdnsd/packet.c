@@ -196,8 +196,10 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 	dst.sin_port   = htons(MDNS_PORT);
 	dst.sin_family = AF_INET;
 	dst.sin_len    = sizeof(struct sockaddr_in);
-	if (iface->mtu > MAX_PACKET)
+	if (iface->mtu > MAX_PACKET) {
 		log_warnx("pkt_send_if: insane mtu");
+		return (-1);
+	}
 	bzero(buf, sizeof(buf));
 	left = iface->mtu;
 	h    = (HEADER *) buf;
@@ -228,7 +230,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 		}
 		h->qdcount++;
 		pbuf += n;
-		left  -= n;
+		left -= n;
 	}
 	/* Append all answers, they must fit a single packet. */
 	LIST_FOREACH(rr, &pkt->anlist, pentry) {
