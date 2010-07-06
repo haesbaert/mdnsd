@@ -18,7 +18,7 @@ Why not Avahi ?
     1 - No BSD License (LGPL).
     2 - Overcomplex API.
     3 - Not OpenBSD-like
-    4 - DBUS and other of dependencies.
+    4 - DBUS and lots of dependencies.
 
 My goal is to first provide a solid mdns framework without the
 service-discovery capabilities which are much more complex. When that
@@ -31,7 +31,7 @@ architecture was designed in order to support it. So goals:
         publish names/services as they see fit.
         * Have a mdns control program, which is mainly a crude
         interface to the API.
-I have decided to only support the .local domain, the draft says it
+I have decided to support the .local domain only, the draft says it
 should support any domains, but I find it dumb and error-prone, nobody
 in it's sane conscience will use another domain for mdns. If you do,
 you're wrong.
