@@ -22,13 +22,14 @@
 #include <netinet/in.h>
 #include <net/if.h>
 
-#include <imsg.h>
 #include <event.h>
+#include <imsg.h>
 
 #include "mdns.h"
 #include "control.h"
 
-#define	MDNSD_USER		"_mdnsd"
+#define MDNSD_USER		"_mdnsd"
+#define ALL_MDNS_DEVICES	"224.0.0.251"
 #define RT_BUF_SIZE		16384
 #define MAX_RTSOCK_BUF		128 * 1024
 #define QUERY_TTL		1
@@ -45,9 +46,10 @@
 #define UNIRESP_MSK		0x8000
 #define NAMECOMP_MSK		0xc000
 #define NAMEADDR_MSK		~0xc000
-#define QR_MSK	0x8000
-#define TC_MSK	0x200
+#define QR_MSK			0x8000
+#define TC_MSK			0x200
 
+/* Resource record */
 struct rr {
 	LIST_ENTRY(rr)		centry; /* cache entry */
 	LIST_ENTRY(rr)		pentry; /* packet entry */
@@ -68,9 +70,9 @@ struct rr {
 	} rdata;
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
 	struct event	rev_timer;	/* cache revision timer */
-
 };
 
+/* Mdns question as in dns packet */
 struct question {
 	LIST_ENTRY(question)	entry;
 	char			dname[MAXHOSTNAMELEN];
@@ -94,8 +96,6 @@ struct question {
 int	peersuser(int);
 void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 int	mdnsd_imsg_compose_ctl(struct ctl_conn *, u_int16_t, void *, u_int16_t);
-char *	memstr(void *, char *, size_t);
-
 
 /* kiface.c */
 struct kif {
@@ -202,7 +202,6 @@ int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
 
 /* packet.c */
 struct pkt {
-
 	HEADER	h;
 	LIST_HEAD(, question) qlist;
 	LIST_HEAD(, rr)       anlist;
@@ -227,6 +226,8 @@ int	rr_rdata_cmp(struct rr *, struct rr *);
 void	pktcomp_reset(int, u_int8_t *, u_int16_t);
 
 /* mdns.c */
+
+/* States for publish fsm */
 enum publish_state {
 	PUB_INITIAL,
 	PUB_PROBE,
@@ -234,6 +235,7 @@ enum publish_state {
 	PUB_DONE
 };
 
+/* General publish structure */
 struct publish {
 	LIST_ENTRY(publish)	entry;
 	struct pkt		pkt;
@@ -245,11 +247,13 @@ struct publish {
 	unsigned long		id;	/* unique id */
 };
 
+/* Single-shot or continuous lookup query */
 enum query_style {
 	QUERY_LKUP,
 	QUERY_BROWSE,
 };
 
+/* Query that controllers will place */
 struct query {
 	int		active;
 	int		style;

@@ -25,7 +25,6 @@
 #include <string.h>
 
 #define MDNSD_SOCKET		"/var/run/mdnsd.sock"
-#define ALL_MDNS_DEVICES	"224.0.0.251"
 #define MDNS_TIMEOUT		3
 #define MAX_CHARSTR		256	/* we swap the length byter per the null byte */
 
