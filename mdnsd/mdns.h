@@ -13,6 +13,12 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+
+/*
+ * This is the header shared between applications and the daemon, it will be on
+ * a library someday so keep it clean, we'll need to fix all
+ * symbol prefixes someday.
+ */
 #ifndef _MDNS_H_
 #define	_MDNS_H_
 
