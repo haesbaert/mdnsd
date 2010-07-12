@@ -105,7 +105,6 @@ mdnsd_sig_handler(int sig, short event, void *arg)
 	 */
 
 	switch (sig) {
-	case SIGINT:
 	case SIGTERM:
 		mdnsd_shutdown();
 		break;		/* NOTREACHED */
@@ -272,7 +271,6 @@ main(int argc, char *argv[])
 	event_init();
 
 	/* setup signals */
-	signal_set(&ev_sigint, SIGINT, mdnsd_sig_handler, NULL);
 	signal_set(&ev_sigterm, SIGTERM, mdnsd_sig_handler, NULL);
 	signal_set(&ev_sighup, SIGHUP, mdnsd_sig_handler, NULL);
 	signal_add(&ev_sigint, NULL);
