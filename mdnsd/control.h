@@ -26,8 +26,6 @@
 
 #include "mdnsd.h"
 
-#define MAXCTLQRY 16
-
 struct {
 	struct event	ev;
 	int		fd;
@@ -46,10 +44,16 @@ struct imsgev {
 	short			 events;
 };
 
+struct ctl_query 
+{
+	LIST_ENTRY(ctl_query) 	entry;
+	struct query 		*q;
+};
+
 struct ctl_conn {
 	TAILQ_ENTRY(ctl_conn)	entry;
 	struct imsgev		iev;
-	struct query		*qlist[MAXCTLQRY];
+	LIST_HEAD(, ctl_query)	qlist;
 };
 
 int	control_init(void);
@@ -57,6 +61,8 @@ int	control_listen(void);
 void	control_accept(int, short, void *);
 void	control_dispatch_imsg(int, short, void *);
 void	control_cleanup(void);
+void	control_addq(struct ctl_conn *, struct query *);
+int	control_hasq(struct ctl_conn *, struct query *);
 
 void	session_socket_blockmode(int, enum blockmodes);
 
