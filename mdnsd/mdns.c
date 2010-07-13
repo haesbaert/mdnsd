@@ -411,7 +411,6 @@ cache_init(void)
 int
 cache_process(struct rr *rr)
 {
-
 	evtimer_set(&rr->rev_timer, cache_rev, rr);
 	if (rr->ttl == 0)
 		return (cache_delete(rr));
@@ -434,8 +433,8 @@ cache_insert(struct rr *rr)
 	struct rrt_node *n;
 	struct rr	*rraux;
 
-	log_debug("cache_insert: type: %s name: %s", rr_type_name(rr->type),
-	    rr->dname);
+/* 	log_debug("cache_insert: type: %s name: %s", rr_type_name(rr->type), */
+/* 	    rr->dname); */
 
 	hrr = rrt_lookup_head(&rrt_cache, rr->dname, rr->type, rr->class);
 	if (hrr == NULL) {
@@ -454,7 +453,6 @@ cache_insert(struct rr *rr)
 
 	/* if an unique record, clean all previous and substitute */
 	if (RR_UNIQ(rr)) {
-		log_debug("rr: %s (%d) IS UNIQUE ! ", rr->dname, rr->type);
 		while ((rraux = LIST_FIRST(hrr)) != NULL) {
 			LIST_REMOVE(rraux, centry);
 			if (evtimer_pending(&rraux->rev_timer, NULL))
@@ -545,8 +543,8 @@ cache_schedrev(struct rr *rr)
 		break;
 	}
 
-	log_debug("cache_schedrev: schedule rr type: %s, name: %s (%d)",
-	    rr_type_name(rr->type), rr->dname, tv.tv_sec);
+/* 	log_debug("cache_schedrev: schedule rr type: %s, name: %s (%d)", */
+/* 	    rr_type_name(rr->type), rr->dname, tv.tv_sec); */
 
 	rr->revision++;
 
@@ -783,7 +781,7 @@ query_notify(struct rr *rr, int in)
 int
 query_answerctl(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
-	log_debug("query_answerctl %s", rr->dname);
+	log_debug("query_answerctl (%s)%s", rr_type_name(rr->type), rr->dname);
 	switch (rr->type) {
 	case T_A:
 		mdnsd_imsg_compose_ctl(c, msgtype,

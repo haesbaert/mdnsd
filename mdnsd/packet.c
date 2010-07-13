@@ -709,13 +709,13 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 		memcpy(label, buf, lablen);
 		label[lablen] = '\0';
 		/* strlcat needs a proper C string in src */
-		if (strlcat(dname, label, MAXHOSTNAMELEN) > MAXHOSTNAMELEN)  {
+		if (strlcat(dname, label, MAXHOSTNAMELEN) >= MAXHOSTNAMELEN)  {
 			log_debug("domain-name truncated");
 			return (-1);
 		}
 
 		/* should we leave the dot on the last tag ? */
-		if (strlcat(dname, ".", MAXHOSTNAMELEN) > MAXHOSTNAMELEN) {
+		if (strlcat(dname, ".", MAXHOSTNAMELEN) >= MAXHOSTNAMELEN) {
 			log_debug("domain-name truncated");
 			return (-1);
 		}
@@ -731,10 +731,8 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	}
 
 	/* remove the trailling dot */
-	if (len > 0)
-		dname[strlen(dname) - 1] = '\0';
+	dname[strlen(dname) - 1] = '\0';
 
-/*	log_debug("oldlen: %u, len: %u", oldlen, len); */
 	return (oldlen - len);
 }
 
