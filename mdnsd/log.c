@@ -182,16 +182,6 @@ if_state_name(int state)
 	}
 }
 
-void
-log_debug_pkt(struct pkt *pkt)
-{
-/* 	LOG_DEBUG_STRUCT(pkt, qr, %u); */
-/* 	LOG_DEBUG_STRUCT(pkt, tc, %u); */
-/* 	LOG_DEBUG_STRUCT(pkt, qdcount, %u); */
-/* 	LOG_DEBUG_STRUCT(pkt, ancount, %u); */
-/* 	LOG_DEBUG_STRUCT(pkt, nscount, %u); */
-}
-
 const char *
 rr_type_name(uint16_t type)
 {
