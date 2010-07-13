@@ -16,6 +16,7 @@ Setup
   
 Code
 -----------------
+  * [BUG] When a service is unpublished/published it comes up twice.
   * Write manual pages.
   * Implement cache dump.
   * Publish commands in mdnsctl.

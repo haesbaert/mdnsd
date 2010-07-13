@@ -175,7 +175,7 @@ bhook(char *name, char *app, char *proto, int ev, void *v_mb)
 	/* This is a service, hence, there is a name for it */
 	if (name != NULL) {
 		printf("%c%c%c %-48s %-20s %-3s\n", c, c, c, name, app, proto);
-		if (res->flags & F_RESOLV) {
+		if (ev == SERVICE_UP && res->flags & F_RESOLV) {
 			struct mdns_service	ms;
 			int			r;
 
