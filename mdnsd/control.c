@@ -41,14 +41,13 @@ struct ctl_conn	*control_connbypid(pid_t);
 void		 control_close(int);
 void		 control_lookup(struct ctl_conn *, struct imsg *);
 void		 control_browse_add(struct ctl_conn *, struct imsg *);
-int		 control_freeq(struct ctl_conn *);
 
 void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
 {
 	struct mdns_msg_lkup	 mlkup;
 	struct rr		*rr;
-	int			 slot;
+	struct query 		*q;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
@@ -87,16 +86,10 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	}
 
 	/* cache miss */
-	if ((slot = control_freeq(c)) == -1) {
-		log_debug("No more free control queries");
-		/* XXX grow buffer  */
-		return;
-	}
-
-	c->qlist[slot] = query_place(QUERY_LKUP, mlkup.dname, mlkup.type,
-	    mlkup.class);
-	if (c->qlist[slot] == NULL)
+	q = query_place(QUERY_LKUP, mlkup.dname, mlkup.type, mlkup.class);
+	if (q == NULL)
 		log_warnx("Can't place query");
+	control_addq(c, q);
 }
 
 void
@@ -104,7 +97,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 {
 	struct mdns_msg_lkup	 mlkup;
 	struct rr		*rr;
-	int			 slot;
+	struct query 		*q;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
@@ -127,16 +120,11 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
 
-	if ((slot = control_freeq(c)) == -1) {
-		log_warnx("No more free control queries");
-		/* XXX grow buffer  */
-		return;
-	}
-
-	c->qlist[slot] = query_place(QUERY_BROWSE, mlkup.dname, mlkup.type,
-	    mlkup.class);
-	if (c->qlist[slot] == NULL)
+	q = query_place(QUERY_BROWSE, mlkup.dname, mlkup.type, mlkup.class);
+	if (q == NULL)
 		log_warnx("Can't place query");
+	control_addq(c, q);
+	
 	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
 	while (rr != NULL) {
 		if (query_answerctl(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
@@ -235,7 +223,8 @@ control_accept(int listenfd, short event, void *bula)
 		close(connfd);
 		return;
 	}
-
+	
+	LIST_INIT(&c->qlist);
 	imsg_init(&c->iev.ibuf, connfd);
 	c->iev.handler = control_dispatch_imsg;
 	c->iev.events = EV_READ;
@@ -274,7 +263,7 @@ void
 control_close(int fd)
 {
 	struct ctl_conn	*c;
-	int i;
+	struct ctl_query *cq;
 
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_close: fd %d: not found", fd);
@@ -285,11 +274,12 @@ control_close(int fd)
 
 	event_del(&c->iev.ev);
 	close(c->iev.ibuf.fd);
-	for (i = 0; i < MAXCTLQRY; i++) {
-		if (c->qlist[i] == NULL)
-			continue;
-		query_remove(c->qlist[i]);
-		c->qlist[i] = NULL;
+	while ((cq = (LIST_FIRST(&c->qlist))) != NULL) {
+		/* Cleanup our references */
+		LIST_REMOVE(cq, entry);
+		/* Remove query reference count */
+		query_remove(cq->q);
+		free(cq);
 	}
 	free(c);
 }
@@ -366,22 +356,25 @@ session_socket_blockmode(int fd, enum blockmodes bm)
 		fatal("fcntl F_SETFL");
 }
 
-int
-control_freeq(struct ctl_conn *c)
+void
+control_addq(struct ctl_conn *c, struct query *q)
 {
-	int i;
-	for (i = 0; i < MAXCTLQRY; i++)
-		if (c->qlist[i] == NULL)
-			return (i);
-	return (-1);
+	struct ctl_query *cq;
+	
+	if ((cq = calloc(1, sizeof(*cq))) == NULL)
+		fatal("calloc");
+	cq->q = q;
+	LIST_INSERT_HEAD(&c->qlist, cq, entry);
 }
 
 int
 control_hasq(struct ctl_conn *c, struct query *q)
 {
-	int i;
-	for (i = 0; i < MAXCTLQRY; i++)
-		if (c->qlist[i] == q)
+	struct ctl_query *cq;
+	
+	LIST_FOREACH(cq, &c->qlist, entry)
+		if (cq->q == q)
 			return (1);
+	    
 	return (0);
 }

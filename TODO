@@ -16,13 +16,13 @@ Setup
   
 Code
 -----------------
-  * Implement service resolv.
   * Write manual pages.
   * Implement cache dump.
   * Publish commands in mdnsctl.
   * Conflict name resolution.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
+  * Implement service resolv. DONE.
   * Maximum packet size should be base on current iface mtu not 9k as
   it is now (jumbo frame). We could use the smaller mtu between our
   ifaces or have it per iface. DONE.

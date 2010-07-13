@@ -280,7 +280,6 @@ struct rr	*cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
 LIST_HEAD(, publish)		probing_list;
 
 /* control.c */
-int		 control_hasq(struct ctl_conn *, struct query *);
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 
 #endif /* _MDNSD_H_ */

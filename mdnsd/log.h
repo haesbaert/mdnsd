@@ -30,7 +30,6 @@ void		log_warn(const char *, ...);
 void		log_warnx(const char *, ...);
 void		log_info(const char *, ...);
 void		log_debug(const char *, ...);
-void		log_debug_pkt(struct pkt *);
 void		log_debug_rrdata(struct rr *);
 void		fatal(const char *) __dead;
 void		fatalx(const char *) __dead;
