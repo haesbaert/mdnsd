@@ -66,7 +66,6 @@ static void	header_ntohs(HEADER *);
 static int	pktcomp_add(char [MAXHOSTNAMELEN], u_int16_t);
 static struct namecomp *pktcomp_lookup(char [MAXHOSTNAMELEN]);
 
-
 extern struct mdnsd_conf *conf;
 
 /* Used in name compression */
