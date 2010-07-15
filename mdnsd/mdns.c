@@ -239,7 +239,8 @@ publish_fsm(int unused, short event, void *v_pub)
 	struct rr		*rr;
 	struct question		*mq;
 	static unsigned long	pubid;
-
+	
+	timerclear(&tv);
 	switch (pub->state) {
 	case PUB_INITIAL:
 		pub->state = PUB_PROBE;
@@ -285,7 +286,6 @@ publish_fsm(int unused, short event, void *v_pub)
 			log_debug("can't send packet to all interfaces");
 		pub->sent++;
 		if (pub->sent < 3) {
-			timerclear(&tv);
 			tv.tv_sec = pub->sent; /* increse delay linearly */
 			evtimer_add(&pub->timer, &tv);
 			return;
@@ -781,7 +781,8 @@ query_notify(struct rr *rr, int in)
 int
 query_answerctl(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
-	log_debug("query_answerctl (%s)%s", rr_type_name(rr->type), rr->dname);
+	log_debug("query_answerctl (%s) %s", rr_type_name(rr->type),
+	    rr->dname);
 	switch (rr->type) {
 	case T_A:
 		mdnsd_imsg_compose_ctl(c, msgtype,
