@@ -119,9 +119,11 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	
 	/* Check if control has this query already, if so don't do anything */
 	if ((q = query_lookup(mlkup.dname, mlkup.type, mlkup.class)) != NULL &&
-	    control_hasq(c, q))
+	    control_hasq(c, q)) {
+		log_debug("Control has query for %s %s", mlkup.dname,
+		    rr_type_name(mlkup.type));
 		return;
-	
+	}
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
 	
