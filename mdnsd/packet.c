@@ -48,12 +48,11 @@
 
 static struct iface	*find_iface(unsigned int, struct in_addr);
 
-static int	pkt_parse(u_int8_t *, u_int16_t, struct pkt *);
+static int      pkt_parse(u_int8_t *, u_int16_t, struct in_addr, struct iface *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
-static int	pkt_process(struct pkt *);
 static int	pkt_tryanswerq(struct pkt *);
 static ssize_t	serialize_rr(struct rr *, u_int8_t *, u_int16_t);
 static ssize_t	serialize_question(struct question *, u_int8_t *,
@@ -66,7 +65,6 @@ static void	header_htons(HEADER *);
 static void	header_ntohs(HEADER *);
 static int	pktcomp_add(char [MAXHOSTNAMELEN], u_int16_t);
 static struct namecomp *pktcomp_lookup(char [MAXHOSTNAMELEN]);
-
 
 extern struct mdnsd_conf *conf;
 
@@ -138,7 +136,6 @@ recv_packet(int fd, short event, void *bula)
 	struct cmsghdr		*cmsg;
 	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
-	struct pkt		 pkt;
 	static u_int8_t		 buf[MAX_PACKET];
 	ssize_t			 r;
 	u_int16_t		 len, srcport;
@@ -180,10 +177,9 @@ recv_packet(int fd, short event, void *bula)
 	len = (u_int16_t)r;
 
 	/* Check the packet is not from one of the local interfaces */
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
+	LIST_FOREACH(iface, &conf->iface_list, entry) 
 		if (iface->addr.s_addr == src.sin_addr.s_addr)
 			return;
-	}
 
 	/* find a matching interface */
 	if ((iface = find_iface(dst->sdl_index, src.sin_addr)) == NULL) {
@@ -193,11 +189,10 @@ recv_packet(int fd, short event, void *bula)
 
 	srcport = ntohs(src.sin_port);
 
-	if (pkt_parse(buf, len, &pkt) == -1)
+	if (pkt_parse(buf, len, src.sin_addr, iface) == -1) {
+		log_warnx("pkt_parse returned -1");
 		return;
-
-	pkt_process(&pkt);
-	/* process all shit */
+	}
 }
 
 int
@@ -220,7 +215,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 		return (-1);
 	}
 	bzero(buf, sizeof(buf));
-	left = iface->mtu;
+	left = iface->mtu * 0.9;
 	h    = (HEADER *) buf;
 	pbuf = buf;
 	pktcomp_reset(0, buf, left);
@@ -510,62 +505,36 @@ find_iface(unsigned int ifindex, struct in_addr src)
 	return (NULL);
 }
 
-/* TODO: insert all sections at end, don't use LIST_INSERT_HEAD */
+/* TODO: When we have an error parsing, we leak memory. */
 static int
-pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
+pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 {
-	u_int16_t		 i;
+	u_int16_t	 i;
 	struct question	*mq;
-	struct rr		*rr;
+	struct rr	*rr;
+	struct pkt	 pkt;
 
-	pkt_init(pkt);
+	pkt_init(&pkt);
 	pktcomp_reset(0, buf, len);
-	if (pkt_parse_header(&buf, &len, pkt) == -1)
+	if (pkt_parse_header(&buf, &len, &pkt) == -1)
 		return (-1);
-
+	
+	/*
+	 * Multicastdns draft 4. Source Address check.
+	 * If a response packet was sent to an unicast address, check if the
+	 * source ip address in the packed matches one of our subnets, if not,
+	 * drop it.
+	 */
+	/* TODO */
+	
 	/* Parse question section */
-	for (i = 0; i < pkt->h.qdcount; i++)
-		if (pkt_parse_question(&buf, &len, pkt) == -1)
-			return (-1);
-	log_debug("question ok");
-	/* Question count sanity check */
-	i = 0;
-	LIST_FOREACH(mq, &pkt->qlist, entry)
-		i++;
-	if (i != pkt->h.qdcount) {
-		log_debug("found less questions than advertised");
-		return (-1);
-	}
-/*	/\* Answer count sanity check *\/ */
-/*	i = 0; */
-/*	LIST_FOREACH(rr, &pkt->anlist, entry) */
-/*	    i++; */
-/*	if (i != pkt->ancount) { */
-/*		log_debug("found less records in AN section " */
-/*		    "than advertised ancount = %u, i = %d", pkt->ancount, i); */
-/*		return -1; */
-/*	} */
-/*	/\* NS count sanity check *\/ */
-/*	i = 0; */
-/*	LIST_FOREACH(rr, &pkt->nslist, entry) */
-/*	    i++; */
-/*	if (i != pkt->nscount) { */
-/*		log_debug("found less records in NS section " */
-/*		    "than advertised nscount = %u, i = %d", pkt->nscount, i); */
-/*		return -1; */
-/*	} */
-/*	/\* AR count sanity check *\/ */
-/*	i = 0; */
-/*	LIST_FOREACH(rr, &pkt->arlist, entry) */
-/*	    i++; */
-/*	if (i != pkt->arcount) { */
-/*		log_debug("found less records in AR section " */
-/*		    "than advertised, an = %u, i = %d", pkt->arcount, i); */
-/*		return -1; */
-/*	} */
-
+	if (!pkt.h.qr)
+		for (i = 0; i < pkt.h.qdcount; i++)
+			if (pkt_parse_question(&buf, &len, &pkt) == -1)
+				return (-1);
 	/* Parse RR sections */
-	for (i = 0; i < pkt->h.ancount; i++) {
+/* 	if (pkt.h.qr) <--- that is wrong, revise the standard */
+	for (i = 0; i < pkt.h.ancount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&buf, &len, rr) == -1) {
@@ -573,9 +542,9 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
 			free(rr);
 			return (-1);
 		}
-		LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
+		LIST_INSERT_HEAD(&pkt.anlist, rr, pentry);
 	}
-	for (i = 0; i < pkt->h.nscount; i++) {
+	for (i = 0; i < pkt.h.nscount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&buf, &len, rr) == -1) {
@@ -583,9 +552,9 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
 			free(rr);
 			return (-1);
 		}
-		LIST_INSERT_HEAD(&pkt->nslist, rr, pentry);
+		LIST_INSERT_HEAD(&pkt.nslist, rr, pentry);
 	}
-	for (i = 0; i < pkt->h.arcount; i++) {
+	for (i = 0; i < pkt.h.arcount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&buf, &len, rr) == -1) {
@@ -594,12 +563,44 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct pkt *pkt)
 			return (-1);
 		}
 
-		LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
+		LIST_INSERT_HEAD(&pkt.arlist, rr, pentry);
 	}
+	
+	
 	if (len != 0) {
 		log_warnx("Couldn't read all packet, %u bytes left", len);
+		log_warnx("ancount %d, nscount %d, arcount %d",
+		    pkt.h.ancount, pkt.h.nscount, pkt.h.arcount);
+		/* XXX: memory leak */
 		return (-1);
 	}
+	
+	/*
+	 * Packet parsing done, start processing.
+	 */
+	
+	/* Mark all probe questions, so we don't try to answer them below */
+	while((rr = LIST_FIRST(&pkt.nslist)) != NULL) {
+		LIST_FOREACH(mq, &pkt.qlist, entry) {
+			if (ANSWERS(mq, rr))
+				mq->probe = 1;
+		}
+		LIST_REMOVE(rr, pentry);
+		free(rr);
+	}
+
+	/* Process all questions */
+	if (pkt_tryanswerq(&pkt) == -1)
+		log_warnx("pkt_tryanswerq: error");
+
+	/* process all answers */
+	while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+		LIST_REMOVE(rr, pentry);
+		cache_process(rr);
+	}
+
+	/* process additional section */
+	/* TODO */
 
 	return (0);
 }
@@ -834,61 +835,6 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 
 	*len  -= rdlen;
 	*pbuf += rdlen;
-
-	return (0);
-}
-
-static int
-pkt_process(struct pkt *pkt)
-{
-	struct rr	*rr;
-	struct question *q;
-	struct publish	*pub;
-
-	/* mark all probe questions, so we don't try to answer them below */
-	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
-		LIST_FOREACH(q, &pkt->qlist, entry) {
-			if (ANSWERS(q, rr))
-				q->probe = 1;
-		}
-		LIST_REMOVE(rr, pentry);
-		free(rr);
-	}
-
-	/* Check for a conflicting response, that is any response that answers
-	 * our probe queries, if any of them answers, give up our name and
-	 * choose another. */
-	LIST_FOREACH(pub, &probing_list, entry) {
-		LIST_FOREACH(q, &pub->pkt.qlist, entry) {
-			if (!q->probe) /* consider probe queries only */
-				continue;
-			LIST_FOREACH(rr, &pkt->anlist, pentry) {
-				if (ANSWERS(q, rr)) {
-					/* TODO: Give up name */
-					log_warnx("Can't use name %s, "
-					    "already taken", q->dname);
-/*					if (publish_conflict(q->dname) == -1) */
-/*						log_warnx("Can't resolve " */
-/*						    "conflict for name %s", */
-/*						    q->dname); */
-					break;
-				}
-			}
-		}
-	}
-
-	/* process all questions */
-	if (pkt_tryanswerq(pkt) == -1)
-		log_warnx("pkt_tryanswerq: error");
-
-	/* process all answers */
-	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
-		LIST_REMOVE(rr, pentry);
-		cache_process(rr);
-	}
-
-	/* process additional section */
-	/* TODO */
 
 	return (0);
 }

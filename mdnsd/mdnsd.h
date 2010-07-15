@@ -32,8 +32,7 @@
 #define ALL_MDNS_DEVICES	"224.0.0.251"
 #define RT_BUF_SIZE		16384
 #define MAX_RTSOCK_BUF		128 * 1024
-#define QUERY_TTL		1
-#define RESPONSE_TTL		255
+#define MDNS_TTL		255
 #define MDNS_PORT		5353
 #define HDR_LEN			12
 #define MINQRY_LEN		6 /* 4 (qtype + qclass) +1 (null) + 1 (label len) */

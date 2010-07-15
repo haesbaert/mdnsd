@@ -116,15 +116,21 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		    mlkup.class);
 		return;
 	}
-
+	
+	/* Check if control has this query already, if so don't do anything */
+	if ((q = query_lookup(mlkup.dname, mlkup.type, mlkup.class)) != NULL &&
+	    control_hasq(c, q))
+		return;
+	
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
-
+	
+	/* Place query in an existing query or make a new one */
 	q = query_place(QUERY_BROWSE, mlkup.dname, mlkup.type, mlkup.class);
 	if (q == NULL)
 		log_warnx("Can't place query");
+	/* Controllers must hold their queries */
 	control_addq(c, q);
-	
 	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
 	while (rr != NULL) {
 		if (query_answerctl(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
@@ -291,7 +297,6 @@ control_dispatch_imsg(int fd, short event, void *bula)
 	struct imsg	 imsg;
 	ssize_t		 n;
 
-	log_debug("control_dispatch_imsg");
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_dispatch_imsg: fd %d: not found", fd);
 		return;
