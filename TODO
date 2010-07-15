@@ -16,6 +16,7 @@ Setup
   
 Code
 -----------------
+  * Fix IP_TTL.
   * [BUG] When a service is unpublished/published it comes up twice.
   * Write manual pages.
   * Implement cache dump.

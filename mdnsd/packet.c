@@ -217,7 +217,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 		return (-1);
 	}
 	bzero(buf, sizeof(buf));
-	left = iface->mtu;
+	left = iface->mtu * 0.9;
 	h    = (HEADER *) buf;
 	pbuf = buf;
 	pktcomp_reset(0, buf, left);

@@ -158,7 +158,7 @@ mdns_sock(void)
 	if (if_set_opt(sock) == -1)
 		fatal("if_set_opt");
 
-	if (if_set_mcast_ttl(sock, IP_DEFAULT_MULTICAST_TTL) == -1)
+	if (if_set_mcast_ttl(sock, MDNS_TTL) == -1)
 		fatal("if_set_mcast_ttl");
 
 	if (if_set_mcast_loop(sock) == -1)
