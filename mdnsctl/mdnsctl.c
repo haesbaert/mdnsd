@@ -172,10 +172,15 @@ bhook(char *name, char *app, char *proto, int ev, void *v_mb)
 
 	mb = v_mb;
 	c = ev == SERVICE_UP ? '+' : '-';
-	/* This is a service, hence, there is a name for it */
-	if (name != NULL) {
+	
+	if (name == NULL) {
+		if (ev == SERVICE_UP)
+			if (mdns_browse_add(mb, app, proto) == -1)
+				err(1, "mdns_browse_add");
+	}
+	else {
 		printf("%c%c%c %-48s %-20s %-3s\n", c, c, c, name, app, proto);
-		if (ev == SERVICE_UP && res->flags & F_RESOLV) {
+		if (res->flags & F_RESOLV && ev == SERVICE_UP) {
 			struct mdns_service	ms;
 			int			r;
 
@@ -194,8 +199,6 @@ bhook(char *name, char *app, char *proto, int ev, void *v_mb)
 			}
 		}
 	}
-	else /* No name, this is an application protocol, add browsing for it */
-		if (mdns_browse_add(mb, app, proto) == -1)
-			err(1, "mdns_browse_add");
+	
 	fflush(stdout);
 }

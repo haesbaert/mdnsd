@@ -177,10 +177,9 @@ recv_packet(int fd, short event, void *bula)
 	len = (u_int16_t)r;
 
 	/* Check the packet is not from one of the local interfaces */
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
+	LIST_FOREACH(iface, &conf->iface_list, entry) 
 		if (iface->addr.s_addr == src.sin_addr.s_addr)
 			return;
-	}
 
 	/* find a matching interface */
 	if ((iface = find_iface(dst->sdl_index, src.sin_addr)) == NULL) {
@@ -534,17 +533,17 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 			if (pkt_parse_question(&buf, &len, &pkt) == -1)
 				return (-1);
 	/* Parse RR sections */
-	if (pkt.h.qr)
-		for (i = 0; i < pkt.h.ancount; i++) {
-			if ((rr = calloc(1, sizeof(*rr))) == NULL)
-				fatal("calloc");
-			if (pkt_parse_rr(&buf, &len, rr) == -1) {
-				log_warnx("Can't parse AN RR");
-				free(rr);
-				return (-1);
-			}
-			LIST_INSERT_HEAD(&pkt.anlist, rr, pentry);
+/* 	if (pkt.h.qr) <--- that is wrong, revise the standard */
+	for (i = 0; i < pkt.h.ancount; i++) {
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			fatal("calloc");
+		if (pkt_parse_rr(&buf, &len, rr) == -1) {
+			log_warnx("Can't parse AN RR");
+			free(rr);
+			return (-1);
 		}
+		LIST_INSERT_HEAD(&pkt.anlist, rr, pentry);
+	}
 	for (i = 0; i < pkt.h.nscount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
@@ -570,6 +569,8 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 	
 	if (len != 0) {
 		log_warnx("Couldn't read all packet, %u bytes left", len);
+		log_warnx("ancount %d, nscount %d, arcount %d",
+		    pkt.h.ancount, pkt.h.nscount, pkt.h.arcount);
 		/* XXX: memory leak */
 		return (-1);
 	}
