@@ -52,20 +52,26 @@ struct token {
 
 static const struct token t_main[];
 static const struct token t_lkup[];
+static const struct token t_rlkup[];
 static const struct token t_browse_proto[];
 static const struct token t_browse_app[];
 
 
 static const struct token t_main[] = {
 	{KEYWORD,	"lkup",		NONE,		t_lkup},
+	{KEYWORD,	"rlkup",	NONE,		t_rlkup},
 	{KEYWORD,	"browse",	NONE,		t_browse_app},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
 static const struct token t_lkup[] = {
 	{ FLAGS	,	"-",		NONE,		t_lkup},
-	{ ADDRESS,	"",		LOOKUP_ADDR,	NULL},
-	{ HOSTNAME,     "",             LOOKUP,	NULL},
+	{ HOSTNAME,     "",             LOOKUP,		NULL},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_rlkup[] = {
+	{ ADDRESS,	"",		RLOOKUP,	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -268,7 +274,7 @@ parse_addr(const char *word, struct in_addr *addr)
 int
 parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN])
 {
-	if (word == NULL || !isalpha(*word))
+	if (word == NULL)
 		return (0);
 
 	if (strlen(word) < 7 ||	/* shorter host is a.local */

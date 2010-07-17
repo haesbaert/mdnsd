@@ -122,7 +122,7 @@ main(int argc, char *argv[])
 		}
 
 		break;
-	case LOOKUP_ADDR:
+	case RLOOKUP:
 		r = mdns_lkup_addr(&res->addr, hostname,
 		    sizeof(hostname));
 		switch (r) {

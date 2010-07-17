@@ -26,10 +26,10 @@
 #include <netinet/in.h>
 
 /* FLAGS */
-#define F_A	1
-#define F_HINFO	2
-#define F_SRV	4
-#define F_TXT	8
+#define F_A		1
+#define F_HINFO		2
+#define F_SRV		4
+#define F_TXT		8
 
 /* BRFLAGS */
 #define F_RESOLV	1
@@ -37,7 +37,7 @@
 enum actions {
 	NONE,
 	LOOKUP,
-	LOOKUP_ADDR,
+	RLOOKUP,
 	BROWSE_PROTO,
 };
 
