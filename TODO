@@ -16,14 +16,14 @@ Setup
   
 Code
 -----------------
-  * Fix IP_TTL.
-  * [BUG] When a service is unpublished/published it comes up twice.
   * Write manual pages.
   * Implement cache dump.
   * Publish commands in mdnsctl.
   * Conflict name resolution.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
+  * [BUG] When a service is unpublished/published it comes up twice. DONE.
+  * Fix IP_TTL. DONE.
   * Implement service resolv. DONE.
   * Maximum packet size should be base on current iface mtu not 9k as
   it is now (jumbo frame). We could use the smaller mtu between our
