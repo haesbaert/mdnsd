@@ -47,6 +47,8 @@
 #define NAMEADDR_MSK		~0xc000
 #define QR_MSK			0x8000
 #define TC_MSK			0x200
+#define PKT_QUERY(p)		(!(p)->h.qr)
+#define PKT_RESPONSE(p)		((p)->h.qr)
 
 /* Resource record */
 struct rr {
@@ -202,10 +204,10 @@ int		 imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t,
 /* packet.c */
 struct pkt {
 	HEADER	h;
-	LIST_HEAD(, question) qlist;
-	LIST_HEAD(, rr)       anlist;
-	LIST_HEAD(, rr)       nslist;
-	LIST_HEAD(, rr)       arlist;
+	LIST_HEAD(, question) qlist;  /* Question section */
+	LIST_HEAD(, rr)       anlist; /* Answer section */
+	LIST_HEAD(, rr)       nslist; /* Authority section */
+	LIST_HEAD(, rr)       arlist; /* Additional section */
 };
 
 void	recv_packet(int, short, void *);	/* these don't belong here */

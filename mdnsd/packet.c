@@ -138,7 +138,7 @@ recv_packet(int fd, short event, void *bula)
 	struct iface		*iface;
 	static u_int8_t		 buf[MAX_PACKET];
 	ssize_t			 r;
-	u_int16_t		 len, srcport;
+	u_int16_t		 len;
 
 	if (event != EV_READ)
 		return;
@@ -186,8 +186,6 @@ recv_packet(int fd, short event, void *bula)
 		log_warn("recv_packet: cannot find a matching interface");
 		return;
 	}
-
-	srcport = ntohs(src.sin_port);
 
 	if (pkt_parse(buf, len, src.sin_addr, iface) == -1) {
 		log_warnx("pkt_parse returned -1");
@@ -516,6 +514,9 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 
 	pkt_init(&pkt);
 	pktcomp_reset(0, buf, len);
+	/*
+	 * Parse header, we'll use the HEADER structure in nameser.h
+	 */
 	if (pkt_parse_header(&buf, &len, &pkt) == -1)
 		return (-1);
 	
@@ -528,12 +529,11 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 	/* TODO */
 	
 	/* Parse question section */
-	if (!pkt.h.qr)
+	if (PKT_QUERY(&pkt))
 		for (i = 0; i < pkt.h.qdcount; i++)
 			if (pkt_parse_question(&buf, &len, &pkt) == -1)
 				return (-1);
 	/* Parse RR sections */
-/* 	if (pkt.h.qr) <--- that is wrong, revise the standard */
 	for (i = 0; i < pkt.h.ancount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
@@ -589,19 +589,29 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 		free(rr);
 	}
 
+	/* Process additional section */
+	
 	/* Process all questions */
 	if (pkt_tryanswerq(&pkt) == -1)
 		log_warnx("pkt_tryanswerq: error");
 
-	/* process all answers */
-	while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
-		LIST_REMOVE(rr, pentry);
-		cache_process(rr);
-	}
-
-	/* process additional section */
-	/* TODO */
-
+	/* Process all answers */
+	/*
+	 * The answer section for query packets is not authoritative,
+	 * it's used in known answer supression, so, if it's a query,
+	 * discard all answers.
+	 */
+	if (PKT_QUERY(&pkt))
+		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			free(rr);
+		}
+	else /* Response packet, process them */
+		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			cache_process(rr);
+		}
+		
 	return (0);
 }
 
