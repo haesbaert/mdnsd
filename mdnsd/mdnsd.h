@@ -47,8 +47,8 @@
 #define NAMEADDR_MSK		~0xc000
 #define QR_MSK			0x8000
 #define TC_MSK			0x200
-#define PKT_QUERY(p)		(!(p)->h.qr)
-#define PKT_RESPONSE(p)		((p)->h.qr)
+#define MDNS_QUERY		0
+#define MDNS_RESPONSE		1
 
 /* Resource record */
 struct rr {
@@ -80,7 +80,6 @@ struct question {
 	u_int16_t		qtype;
 	u_int16_t		qclass;
 	int			uniresp;
-	int			probe;
 };
 
 #define RR_UNIQ(rr) (rr->cacheflush)
@@ -220,7 +219,7 @@ int	pkt_add_anrr(struct pkt *, struct rr *);
 int	pkt_add_nsrr(struct pkt *, struct rr *);
 int	pkt_add_arrr(struct pkt *, struct rr *);
 int	question_set(struct question *, char [MAXHOSTNAMELEN], u_int16_t,
-    u_int16_t, int, int);
+    u_int16_t, int);
 int	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, int, void *, size_t);
 int	rr_rdata_cmp(struct rr *, struct rr *);

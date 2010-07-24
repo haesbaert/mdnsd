@@ -126,7 +126,7 @@ publish_allrr(struct iface *iface)
 	pkt_init(&pub->pkt);
 	if ((mq = calloc(1, sizeof(*mq))) == NULL)
 		fatal("calloc");
-	question_set(mq, conf->myname, T_ANY, C_IN, 1, 1);
+	question_set(mq, conf->myname, T_ANY, C_IN, 1);
 	pkt_add_question(&pub->pkt, mq);
 
 	RB_FOREACH(n, rrt_tree, &iface->rrt) {
@@ -216,6 +216,7 @@ publish_insert(struct iface *iface, struct rr *rr)
 	return (0);
 }
 
+/* XXX: if query type is ANY, won't match. */
 struct rr *
 publish_lookupall(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
@@ -705,7 +706,7 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	if ((qn = calloc(1, sizeof(*qn))) == NULL)
 		fatal("calloc");
 	q = &qn->q;
-	question_set(&q->mq, dname, type, class, 0, 0);
+	question_set(&q->mq, dname, type, class, 0);
 	q->style = s;
 	q->active++;
 	if (RB_INSERT(query_tree, &qtree, qn) != NULL)
@@ -870,7 +871,7 @@ query_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	struct query_node qn;
 
 	bzero(&qn, sizeof(qn));
-	question_set(&qn.q.mq, dname, type, class, 0, 0);
+	question_set(&qn.q.mq, dname, type, class, 0);
 
 	return (RB_FIND(query_tree, &qtree, &qn));
 }

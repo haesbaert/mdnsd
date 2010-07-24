@@ -48,12 +48,13 @@
 
 static struct iface	*find_iface(unsigned int, struct in_addr);
 
-static int      pkt_parse(u_int8_t *, u_int16_t, struct in_addr, struct iface *);
+static int      pkt_handle(u_int8_t *, u_int16_t, struct in_addr, struct iface *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
 static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
-static int	pkt_tryanswerq(struct pkt *);
+static int	pkt_handleq(struct pkt *);
+static int	pkt_should_answerq(struct pkt *, struct question *);
 static ssize_t	serialize_rr(struct rr *, u_int8_t *, u_int16_t);
 static ssize_t	serialize_question(struct question *, u_int8_t *,
     u_int16_t);
@@ -187,7 +188,7 @@ recv_packet(int fd, short event, void *bula)
 		return;
 	}
 
-	if (pkt_parse(buf, len, src.sin_addr, iface) == -1) {
+	if (pkt_handle(buf, len, src.sin_addr, iface) == -1) {
 		log_warnx("pkt_parse returned -1");
 		return;
 	}
@@ -396,7 +397,7 @@ pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 
 int
 question_set(struct question *mq, char dname[MAXHOSTNAMELEN],
-    u_int16_t qtype, u_int16_t qclass, int uniresp, int probe)
+    u_int16_t qtype, u_int16_t qclass, int uniresp)
 {
 	bzero(mq, sizeof(*mq));
 
@@ -405,7 +406,6 @@ question_set(struct question *mq, char dname[MAXHOSTNAMELEN],
 	mq->qclass  = qclass;
 	mq->qtype   = qtype;
 	mq->uniresp = uniresp;
-	mq->probe   = probe;
 	strlcpy(mq->dname, dname, sizeof(mq->dname));
 
 	return (0);
@@ -435,12 +435,11 @@ rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
 int
 rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 {
-	size_t na, nb;
-
-	if (rra->type != rrb->type) {
-		log_warnx("Can't compare rdata for different types");
+	if (rra->type != rrb->type)
 		return (-1);
-	}
+	if (rra->class != rrb->class)
+		return (-1);
+	
 	switch (rra->type) {
 	case T_A:
 		return (rra->rdata.A.s_addr == rrb->rdata.A.s_addr);
@@ -466,8 +465,6 @@ rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 			return (-1);
 		return strcmp(rra->rdata.SRV.dname, rrb->rdata.SRV.dname);
 	case T_HINFO:
-		na = strlen(rra->rdata.HINFO.cpu);
-		nb = strlen(rrb->rdata.HINFO.cpu);
 		if (strcmp(rra->rdata.HINFO.cpu, rrb->rdata.HINFO.cpu) != 0)
 			return (strcmp(rra->rdata.HINFO.cpu,
 			    rrb->rdata.HINFO.cpu));
@@ -505,10 +502,9 @@ find_iface(unsigned int ifindex, struct in_addr src)
 
 /* TODO: When we have an error parsing, we leak memory. */
 static int
-pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
+pkt_handle(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 {
 	u_int16_t	 i;
-	struct question	*mq;
 	struct rr	*rr;
 	struct pkt	 pkt;
 
@@ -529,7 +525,7 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 	/* TODO */
 	
 	/* Parse question section */
-	if (PKT_QUERY(&pkt))
+	if (pkt.h.qr == MDNS_QUERY)
 		for (i = 0; i < pkt.h.qdcount; i++)
 			if (pkt_parse_question(&buf, &len, &pkt) == -1)
 				return (-1);
@@ -579,21 +575,15 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 	 * Packet parsing done, start processing.
 	 */
 	
+	if (pkt_handleq(&pkt) == -1)
+		return (-1);
+	
+	/* Clear all authority section */
 	/* Mark all probe questions, so we don't try to answer them below */
 	while((rr = LIST_FIRST(&pkt.nslist)) != NULL) {
-		LIST_FOREACH(mq, &pkt.qlist, entry) {
-			if (ANSWERS(mq, rr))
-				mq->probe = 1;
-		}
 		LIST_REMOVE(rr, pentry);
 		free(rr);
 	}
-
-	/* Process additional section */
-	
-	/* Process all questions */
-	if (pkt_tryanswerq(&pkt) == -1)
-		log_warnx("pkt_tryanswerq: error");
 
 	/* Process all answers */
 	/*
@@ -601,17 +591,32 @@ pkt_parse(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
 	 * it's used in known answer supression, so, if it's a query,
 	 * discard all answers.
 	 */
-	if (PKT_QUERY(&pkt))
+	switch (pkt.h.qr) {
+	case MDNS_QUERY:
 		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			free(rr);
 		}
-	else /* Response packet, process them */
+		break;
+	case MDNS_RESPONSE:
 		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			cache_process(rr);
 		}
-		
+		/* Process additional section */
+		/* TODO: this isn't very critical, actually it's only used for
+		 * sending an AAAA record for an A question. */
+		break;
+	default:
+		log_warnx("Unknown packet header type %d", pkt.h.qr);
+		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			free(rr);
+		}
+		return (-1);
+		break;		/* NOTREACHED */
+	}
+	
 	return (0);
 }
 
@@ -849,37 +854,91 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	return (0);
 }
 
+/*
+ * Handle all questions in pkt, will remove/free all pkt questions.
+ */
 static int
-pkt_tryanswerq(struct pkt *pkt)
+pkt_handleq(struct pkt *pkt)
 {
-	struct question	*q;
+	struct question *mq;
 	struct rr	*rr;
-	struct pkt	 sendpkt;
-
+	struct pkt	sendpkt;
+	
 	pkt_init(&sendpkt);
-	/* arghhh the following is too fucking ugly, please correct me */
-	while ((q = LIST_FIRST(&pkt->qlist)) != NULL) {
-		if (!q->probe) {
-			log_debug("try answer: %s (type %s)", q->dname,
-			    rr_type_name(q->qtype));
-			/* look into published rr if we have it */
-			rr = publish_lookupall(q->dname, q->qtype, q->qclass);
-			if (rr != NULL && ANSWERS(q, rr)) {
-				if (pkt_add_anrr(&sendpkt, rr) == -1)
-					log_warn("Can't answer question for"
-					    "%s %s",
-					    q->dname, rr_type_name(q->qtype));
-				if (pkt_send_allif(&sendpkt) == -1)
-					log_debug("can't send packet to"
-					    "all interfaces");
-			}
-
+	while ((mq = LIST_FIRST(&pkt->qlist)) != NULL) {
+		/*
+		 * Discard question which shouldn't be handled, can be a probing
+		 * query or we may be already listed in the known answer
+		 * supression list.
+		 */
+		if (!pkt_should_answerq(pkt, mq)) {
+			LIST_REMOVE(mq, entry);
+			free(mq);
+			continue;
 		}
-		LIST_REMOVE(q, entry);
-		free(q);
+		
+		rr = publish_lookupall(mq->dname, mq->qtype, mq->qclass);
+		if (rr != NULL && ANSWERS(mq, rr)) {
+			if (pkt_add_anrr(&sendpkt, rr) == -1)
+				log_warn("Can't answer question for"
+				    "%s %s",
+				    mq->dname, rr_type_name(mq->qtype));
+			if (pkt_send_allif(&sendpkt) == -1)
+				log_debug("can't send packet to"
+				    "all interfaces");
+		}
+		
+		LIST_REMOVE(mq, entry);
+		free(mq);
 	}
-
+	
 	return (0);
+}
+
+static int
+pkt_should_answerq(struct pkt *pkt, struct question *mq)
+{
+	struct rr *rr, *rrans;
+	
+	/*
+	 * If this packet isn't a query, don't even think of answering.
+	 */
+	if (pkt->h.qr == MDNS_RESPONSE)
+		return (0);
+	
+	/*
+	 * If this question belongs to a probe packet, that is, if an answer to
+	 * this question resides in the packet authority section, we're not
+	 * supposed to answer.
+	 */
+	LIST_FOREACH(rr, &pkt->nslist, pentry)
+		if (ANSWERS(mq, rr))
+			return (0);
+	
+	/*
+	 * Check if the answer we would give isn't already in the known answer
+	 * supression list, that is, check that the answer isn't in the answer
+	 * section with a ttl at least half the original value. 
+	 */
+	/* TODO: deal with TC bit! */
+	rrans = publish_lookupall(mq->dname, mq->qtype, mq->qclass);
+	/* We've no answers for it, we should try to answer, but we
+	 * already know we can't so return 0, this is a speed hack. */
+	if (rrans == NULL)
+		return (0);
+	/* So we have an answer, see if we're listed in the known answer
+	   supression list */
+	LIST_FOREACH(rr, &pkt->anlist, pentry) {
+		/* will compare type/class/data */
+		if (rr_rdata_cmp(rr, rrans) != 0)
+			continue;
+		if (rr->ttl < (rrans->ttl / 2))
+			return (1);
+		else
+			return (0);
+	}
+	
+	return (1);
 }
 
 static int
