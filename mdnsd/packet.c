@@ -138,6 +138,7 @@ recv_packet(int fd, short event, void *bula)
 	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
 	static u_int8_t		 buf[MAX_PACKET];
+	struct question		*mq;
 	struct rr		*rr;
 	struct pkt		 pkt;
 	u_int8_t		*pbuf;
@@ -300,6 +301,10 @@ recv_packet(int fd, short event, void *bula)
 			LIST_REMOVE(rr, pentry);
 			free(rr);
 		}
+		while ((rr = LIST_FIRST(&pkt.arlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			free(rr);
+		}
 		break;
 	case MDNS_RESPONSE:
 		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
@@ -307,9 +312,36 @@ recv_packet(int fd, short event, void *bula)
 			cache_process(rr);
 		}
 		/* Process additional section */
+		while ((rr = LIST_FIRST(&pkt.arlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			cache_process(rr);
+		}
+
 		/* TODO: this isn't very critical, actually it's only used for
 		 * sending an AAAA record for an A question. */
 		break;
+	}
+	
+	/* Sanity check, every section must be empty. */
+	while ((mq = LIST_FIRST(&pkt.qlist)) != NULL) {
+		log_warnx("Unprocessed question in Question Section");
+		LIST_REMOVE(mq, entry);
+		free(mq);
+	}
+	while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+		log_warnx("Unprocessed rr in Answer Section");
+		LIST_REMOVE(rr, pentry);
+		free(rr);
+	}
+	while ((rr = LIST_FIRST(&pkt.nslist)) != NULL) {
+		log_warnx("Unprocessed rr in Authority Section");
+		LIST_REMOVE(rr, pentry);
+		free(rr);
+	}
+	while ((rr = LIST_FIRST(&pkt.arlist)) != NULL) {
+		log_warnx("Unprocessed rr in Additional Section");
+		LIST_REMOVE(rr, pentry);
+		free(rr);
 	}
 }
 
