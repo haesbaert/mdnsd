@@ -121,7 +121,6 @@ send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
 	return (0);
 }
 
-/* XXX: This function will leak memory on some errors */
 void
 recv_packet(int fd, short event, void *bula)
 {
@@ -138,9 +137,8 @@ recv_packet(int fd, short event, void *bula)
 	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
 	static u_int8_t		 buf[MAX_PACKET];
-	struct question		*mq;
 	struct rr		*rr;
-	struct pkt		 pkt;
+	struct pkt		*pkt;
 	u_int8_t		*pbuf;
 	u_int16_t		 i, len;
 	ssize_t			 r;
@@ -194,14 +192,19 @@ recv_packet(int fd, short event, void *bula)
 		if (iface->addr.s_addr == ipsrc.sin_addr.s_addr)
 			return;
 
-	pkt_init(&pkt);
+	if ((pkt = calloc(1, sizeof(*pkt))) == NULL)
+		fatal("calloc");
+	pkt_init(pkt);
 	pktcomp_reset(0, buf, len);
 	
 	/*
 	 * Parse header, we'll use the HEADER structure in nameser.h
 	 */
-	if (pkt_parse_header(&pbuf, &len, &pkt) == -1)
+	if (pkt_parse_header(&pbuf, &len, pkt) == -1) {
+		pkt_cleanup(pkt);
+		free(pkt);
 		return;
+	}
 	
 	/*
 	 * Multicastdns draft 4. Source Address check.
@@ -209,12 +212,14 @@ recv_packet(int fd, short event, void *bula)
 	 * source ip address in the packet matches one of our subnets, if not,
 	 * drop it.
 	 */
-	if (pkt.h.qr == MDNS_RESPONSE && ipdst.s_addr != MDNS_ADDRT) {
+	if (pkt->h.qr == MDNS_RESPONSE && ipdst.s_addr != MDNS_ADDRT) {
 		/* if_find_iface will try to match source address */
 		if ((iface = if_find_iface(dst->sdl_index,
 		    ipsrc.sin_addr)) == NULL) {
 			log_warn("recv_packet: "
 			    "cannot find a matching interface (1)");
+			pkt_cleanup(pkt);
+			free(pkt);
 			return;
 		}
 	}
@@ -222,69 +227,81 @@ recv_packet(int fd, short event, void *bula)
 		if ((iface = if_find_index(dst->sdl_index)) == NULL) {
 			log_warn("recv_packet: "
 			    "cannot find a matching interface (2)");
+			pkt_cleanup(pkt);
+			free(pkt);
 			return;
 		}
 
 	/* Parse question section */
-	if (pkt.h.qr == MDNS_QUERY)
-		for (i = 0; i < pkt.h.qdcount; i++)
-			if (pkt_parse_question(&pbuf, &len, &pkt) == -1) {
+	if (pkt->h.qr == MDNS_QUERY)
+		for (i = 0; i < pkt->h.qdcount; i++)
+			if (pkt_parse_question(&pbuf, &len, pkt) == -1) {
 				log_warnx("pkt_parse_question() error");
+				pkt_cleanup(pkt);
+				free(pkt);
 				return;
 			}
 	/* Parse RR sections */
-	for (i = 0; i < pkt.h.ancount; i++) {
+	for (i = 0; i < pkt->h.ancount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
 			log_warnx("Can't parse AN RR");
 			free(rr);
+			pkt_cleanup(pkt);
+			free(pkt);
 			return;
 		}
-		LIST_INSERT_HEAD(&pkt.anlist, rr, pentry);
+		LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
 	}
-	for (i = 0; i < pkt.h.nscount; i++) {
+	for (i = 0; i < pkt->h.nscount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
 			log_warnx("Can't parse NS RR");
 			free(rr);
+			pkt_cleanup(pkt);
+			free(pkt);
 			return;
 		}
-		LIST_INSERT_HEAD(&pkt.nslist, rr, pentry);
+		LIST_INSERT_HEAD(&pkt->nslist, rr, pentry);
 	}
-	for (i = 0; i < pkt.h.arcount; i++) {
+	for (i = 0; i < pkt->h.arcount; i++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
 			log_warnx("Can't parse AR RR");
 			free(rr);
+			pkt_cleanup(pkt);
+			free(pkt);
 			return;
 		}
 
-		LIST_INSERT_HEAD(&pkt.arlist, rr, pentry);
+		LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	}
-	
 	
 	if (len != 0) {
 		log_warnx("Couldn't read all packet, %u bytes left", len);
 		log_warnx("ancount %d, nscount %d, arcount %d",
-		    pkt.h.ancount, pkt.h.nscount, pkt.h.arcount);
-		/* XXX: memory leak */
+		    pkt->h.ancount, pkt->h.nscount, pkt->h.arcount);
+		pkt_cleanup(pkt);
+		free(pkt);
 		return;
 	}
 	
 	/*
 	 * Packet parsing done, our pkt structure is complete.
 	 */
-	if (pkt_handleq(&pkt) == -1) {
+	if (pkt_handleq(pkt) == -1) {
 		log_warnx("pkt_handleq() error");
+		pkt_cleanup(pkt);
+		free(pkt);
 		return;
 	}
 	
 	/* Clear all authority section */
 	/* Mark all probe questions, so we don't try to answer them below */
-	while((rr = LIST_FIRST(&pkt.nslist)) != NULL) {
+	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
 		LIST_REMOVE(rr, pentry);
 		free(rr);
 	}
@@ -295,54 +312,42 @@ recv_packet(int fd, short event, void *bula)
 	 * it's used in known answer supression, so, if it's a query,
 	 * discard all answers.
 	 */
-	switch (pkt.h.qr) {
+	switch (pkt->h.qr) {
 	case MDNS_QUERY:
-		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+		while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			free(rr);
 		}
-		while ((rr = LIST_FIRST(&pkt.arlist)) != NULL) {
+		while ((rr = LIST_FIRST(&pkt->arlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			free(rr);
 		}
 		break;
 	case MDNS_RESPONSE:
-		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+		while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			cache_process(rr);
 		}
 		/* Process additional section */
-		while ((rr = LIST_FIRST(&pkt.arlist)) != NULL) {
+		while ((rr = LIST_FIRST(&pkt->arlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			cache_process(rr);
 		}
-
-		/* TODO: this isn't very critical, actually it's only used for
-		 * sending an AAAA record for an A question. */
 		break;
 	}
 	
 	/* Sanity check, every section must be empty. */
-	while ((mq = LIST_FIRST(&pkt.qlist)) != NULL) {
+	if (!LIST_EMPTY(&pkt->qlist))
 		log_warnx("Unprocessed question in Question Section");
-		LIST_REMOVE(mq, entry);
-		free(mq);
-	}
-	while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+	if (!LIST_EMPTY(&pkt->anlist))
 		log_warnx("Unprocessed rr in Answer Section");
-		LIST_REMOVE(rr, pentry);
-		free(rr);
-	}
-	while ((rr = LIST_FIRST(&pkt.nslist)) != NULL) {
+	if (!LIST_EMPTY(&pkt->nslist))
 		log_warnx("Unprocessed rr in Authority Section");
-		LIST_REMOVE(rr, pentry);
-		free(rr);
-	}
-	while ((rr = LIST_FIRST(&pkt.arlist)) != NULL) {
+	if (!LIST_EMPTY(&pkt->arlist))
 		log_warnx("Unprocessed rr in Additional Section");
-		LIST_REMOVE(rr, pentry);
-		free(rr);
-	}
+	
+	pkt_cleanup(pkt);
+	free(pkt);
 }
 
 int
@@ -500,6 +505,30 @@ pkt_init(struct pkt *pkt)
 	LIST_INIT(&pkt->anlist);
 	LIST_INIT(&pkt->nslist);
 	LIST_INIT(&pkt->arlist);
+}
+
+void
+pkt_cleanup(struct pkt *pkt)
+{
+	struct rr	*rr;
+	struct question *mq;
+	
+	while ((mq = LIST_FIRST(&pkt->qlist)) != NULL) {
+		LIST_REMOVE(mq, entry);
+		free(mq);
+	}
+	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
+		LIST_REMOVE(rr, pentry);
+		free(rr);
+	}
+	while ((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
+		LIST_REMOVE(rr, pentry);
+		free(rr);
+	}
+	while ((rr = LIST_FIRST(&pkt->arlist)) != NULL) {
+		LIST_REMOVE(rr, pentry);
+		free(rr);
+	}
 }
 
 /* packet building */

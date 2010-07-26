@@ -216,6 +216,7 @@ int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
 int	pkt_send_if(struct pkt *, struct iface *);
 int	pkt_send_allif(struct pkt *);
 void	pkt_init(struct pkt *);
+void	pkt_cleanup(struct pkt *);
 int	pkt_add_question(struct pkt *, struct question *);
 int	pkt_add_anrr(struct pkt *, struct rr *);
 int	pkt_add_nsrr(struct pkt *, struct rr *);
