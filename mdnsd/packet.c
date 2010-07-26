@@ -46,9 +46,6 @@
 #include "mdnsd.h"
 #include "log.h"
 
-static struct iface	*find_iface(unsigned int, struct in_addr);
-
-static int      pkt_handle(u_int8_t *, u_int16_t, struct in_addr, struct iface *);
 static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
@@ -124,33 +121,41 @@ send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
 	return (0);
 }
 
+/* XXX: This function will leak memory on some errors */
 void
 recv_packet(int fd, short event, void *bula)
 {
 	union {
 		struct cmsghdr hdr;
-		char	buf[CMSG_SPACE(sizeof(struct sockaddr_dl))];
+		char	buf[CMSG_SPACE(sizeof(struct sockaddr_dl)) +
+		    CMSG_SPACE(sizeof(struct in_addr))];
 	} cmsgbuf;
-	struct sockaddr_in	 src;
+	struct sockaddr_in	 ipsrc;
+	struct in_addr		 ipdst;
 	struct iovec		 iov;
 	struct msghdr		 msg;
 	struct cmsghdr		*cmsg;
 	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
 	static u_int8_t		 buf[MAX_PACKET];
+	struct rr		*rr;
+	struct pkt		 pkt;
+	u_int8_t		*pbuf;
+	u_int16_t		 i, len;
 	ssize_t			 r;
-	u_int16_t		 len;
 
 	if (event != EV_READ)
 		return;
 
 	bzero(&msg, sizeof(msg));
 	bzero(buf, sizeof(buf));
+	ipdst.s_addr = 0;
+	pbuf = buf;
 
 	iov.iov_base = buf;
 	iov.iov_len = MAX_PACKET;
-	msg.msg_name = &src;
-	msg.msg_namelen = sizeof(src);
+	msg.msg_name = &ipsrc;
+	msg.msg_namelen = sizeof(ipsrc);
 	msg.msg_iov = &iov;
 	msg.msg_iovlen = 1;
 	msg.msg_control = &cmsgbuf.buf;
@@ -168,29 +173,143 @@ recv_packet(int fd, short event, void *bula)
 		if (cmsg->cmsg_level == IPPROTO_IP &&
 		    cmsg->cmsg_type == IP_RECVIF) {
 			dst = (struct sockaddr_dl *)CMSG_DATA(cmsg);
-			break;
+			continue;
 		}
+		if (cmsg->cmsg_level == IPPROTO_IP &&
+		    cmsg->cmsg_type == IP_RECVDSTADDR) {
+			ipdst = *(struct in_addr *)CMSG_DATA(cmsg);
+			continue;
+		}
+
 	}
 
-	if (dst == NULL)
+	if (dst == NULL || ipdst.s_addr == 0)
 		return;
 
 	len = (u_int16_t)r;
-
+	
 	/* Check the packet is not from one of the local interfaces */
 	LIST_FOREACH(iface, &conf->iface_list, entry) 
-		if (iface->addr.s_addr == src.sin_addr.s_addr)
+		if (iface->addr.s_addr == ipsrc.sin_addr.s_addr)
 			return;
 
-	/* find a matching interface */
-	if ((iface = find_iface(dst->sdl_index, src.sin_addr)) == NULL) {
-		log_warn("recv_packet: cannot find a matching interface");
+	pkt_init(&pkt);
+	pktcomp_reset(0, buf, len);
+	
+	/*
+	 * Parse header, we'll use the HEADER structure in nameser.h
+	 */
+	if (pkt_parse_header(&pbuf, &len, &pkt) == -1)
+		return;
+	
+	/*
+	 * Multicastdns draft 4. Source Address check.
+	 * If a response packet was sent to an unicast address, check if the
+	 * source ip address in the packet matches one of our subnets, if not,
+	 * drop it.
+	 */
+	if (pkt.h.qr == MDNS_RESPONSE && ipdst.s_addr != MDNS_ADDRT) {
+		/* if_find_iface will try to match source address */
+		if ((iface = if_find_iface(dst->sdl_index,
+		    ipsrc.sin_addr)) == NULL) {
+			log_warn("recv_packet: "
+			    "cannot find a matching interface (1)");
+			return;
+		}
+	}
+	else /* Disregard source ip address, just find a matching iface */
+		if ((iface = if_find_index(dst->sdl_index)) == NULL) {
+			log_warn("recv_packet: "
+			    "cannot find a matching interface (2)");
+			return;
+		}
+
+	/* Parse question section */
+	if (pkt.h.qr == MDNS_QUERY)
+		for (i = 0; i < pkt.h.qdcount; i++)
+			if (pkt_parse_question(&pbuf, &len, &pkt) == -1) {
+				log_warnx("pkt_parse_question() error");
+				return;
+			}
+	/* Parse RR sections */
+	for (i = 0; i < pkt.h.ancount; i++) {
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			fatal("calloc");
+		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
+			log_warnx("Can't parse AN RR");
+			free(rr);
+			return;
+		}
+		LIST_INSERT_HEAD(&pkt.anlist, rr, pentry);
+	}
+	for (i = 0; i < pkt.h.nscount; i++) {
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			fatal("calloc");
+		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
+			log_warnx("Can't parse NS RR");
+			free(rr);
+			return;
+		}
+		LIST_INSERT_HEAD(&pkt.nslist, rr, pentry);
+	}
+	for (i = 0; i < pkt.h.arcount; i++) {
+		if ((rr = calloc(1, sizeof(*rr))) == NULL)
+			fatal("calloc");
+		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
+			log_warnx("Can't parse AR RR");
+			free(rr);
+			return;
+		}
+
+		LIST_INSERT_HEAD(&pkt.arlist, rr, pentry);
+	}
+	
+	
+	if (len != 0) {
+		log_warnx("Couldn't read all packet, %u bytes left", len);
+		log_warnx("ancount %d, nscount %d, arcount %d",
+		    pkt.h.ancount, pkt.h.nscount, pkt.h.arcount);
+		/* XXX: memory leak */
 		return;
 	}
-
-	if (pkt_handle(buf, len, src.sin_addr, iface) == -1) {
-		log_warnx("pkt_parse returned -1");
+	
+	/*
+	 * Packet parsing done, our pkt structure is complete.
+	 */
+	if (pkt_handleq(&pkt) == -1) {
+		log_warnx("pkt_handleq() error");
 		return;
+	}
+	
+	/* Clear all authority section */
+	/* Mark all probe questions, so we don't try to answer them below */
+	while((rr = LIST_FIRST(&pkt.nslist)) != NULL) {
+		LIST_REMOVE(rr, pentry);
+		free(rr);
+	}
+
+	/* Process all answers */
+	/*
+	 * The answer section for query packets is not authoritative,
+	 * it's used in known answer supression, so, if it's a query,
+	 * discard all answers.
+	 */
+	switch (pkt.h.qr) {
+	case MDNS_QUERY:
+		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			free(rr);
+		}
+		break;
+	case MDNS_RESPONSE:
+		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			cache_process(rr);
+		}
+		/* Process additional section */
+		/* TODO: this isn't very critical, actually it's only used for
+		 * sending an AAAA record for an A question. */
+		break;
 	}
 }
 
@@ -478,148 +597,6 @@ rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 	}
 }
 
-static struct iface *
-find_iface(unsigned int ifindex, struct in_addr src)
-{
-	struct iface	*iface = NULL;
-
-	/* returned interface needs to be active */
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		if (ifindex != 0 && ifindex == iface->ifindex &&
-		    (iface->addr.s_addr & iface->mask.s_addr) ==
-		    (src.s_addr & iface->mask.s_addr))
-			/*
-			 * XXX may fail on P2P links because src and dst don't
-			 * have to share a common subnet on the otherhand
-			 * checking something like this will help to support
-			 * multiple networks configured on one interface.
-			 */
-			return (iface);
-	}
-
-	return (NULL);
-}
-
-/* TODO: When we have an error parsing, we leak memory. */
-static int
-pkt_handle(u_int8_t *buf, u_int16_t len, struct in_addr saddr, struct iface *ifa)
-{
-	u_int16_t	 i;
-	struct rr	*rr;
-	struct pkt	 pkt;
-
-	pkt_init(&pkt);
-	pktcomp_reset(0, buf, len);
-	/*
-	 * Parse header, we'll use the HEADER structure in nameser.h
-	 */
-	if (pkt_parse_header(&buf, &len, &pkt) == -1)
-		return (-1);
-	
-	/*
-	 * Multicastdns draft 4. Source Address check.
-	 * If a response packet was sent to an unicast address, check if the
-	 * source ip address in the packed matches one of our subnets, if not,
-	 * drop it.
-	 */
-	/* TODO */
-	
-	/* Parse question section */
-	if (pkt.h.qr == MDNS_QUERY)
-		for (i = 0; i < pkt.h.qdcount; i++)
-			if (pkt_parse_question(&buf, &len, &pkt) == -1)
-				return (-1);
-	/* Parse RR sections */
-	for (i = 0; i < pkt.h.ancount; i++) {
-		if ((rr = calloc(1, sizeof(*rr))) == NULL)
-			fatal("calloc");
-		if (pkt_parse_rr(&buf, &len, rr) == -1) {
-			log_warnx("Can't parse AN RR");
-			free(rr);
-			return (-1);
-		}
-		LIST_INSERT_HEAD(&pkt.anlist, rr, pentry);
-	}
-	for (i = 0; i < pkt.h.nscount; i++) {
-		if ((rr = calloc(1, sizeof(*rr))) == NULL)
-			fatal("calloc");
-		if (pkt_parse_rr(&buf, &len, rr) == -1) {
-			log_warnx("Can't parse NS RR");
-			free(rr);
-			return (-1);
-		}
-		LIST_INSERT_HEAD(&pkt.nslist, rr, pentry);
-	}
-	for (i = 0; i < pkt.h.arcount; i++) {
-		if ((rr = calloc(1, sizeof(*rr))) == NULL)
-			fatal("calloc");
-		if (pkt_parse_rr(&buf, &len, rr) == -1) {
-			log_warnx("Can't parse AR RR");
-			free(rr);
-			return (-1);
-		}
-
-		LIST_INSERT_HEAD(&pkt.arlist, rr, pentry);
-	}
-	
-	
-	if (len != 0) {
-		log_warnx("Couldn't read all packet, %u bytes left", len);
-		log_warnx("ancount %d, nscount %d, arcount %d",
-		    pkt.h.ancount, pkt.h.nscount, pkt.h.arcount);
-		/* XXX: memory leak */
-		return (-1);
-	}
-	
-	/*
-	 * Packet parsing done, start processing.
-	 */
-	
-	if (pkt_handleq(&pkt) == -1)
-		return (-1);
-	
-	/* Clear all authority section */
-	/* Mark all probe questions, so we don't try to answer them below */
-	while((rr = LIST_FIRST(&pkt.nslist)) != NULL) {
-		LIST_REMOVE(rr, pentry);
-		free(rr);
-	}
-
-	/* Process all answers */
-	/*
-	 * The answer section for query packets is not authoritative,
-	 * it's used in known answer supression, so, if it's a query,
-	 * discard all answers.
-	 */
-	switch (pkt.h.qr) {
-	case MDNS_QUERY:
-		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
-			LIST_REMOVE(rr, pentry);
-			free(rr);
-		}
-		break;
-	case MDNS_RESPONSE:
-		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
-			LIST_REMOVE(rr, pentry);
-			cache_process(rr);
-		}
-		/* Process additional section */
-		/* TODO: this isn't very critical, actually it's only used for
-		 * sending an AAAA record for an A question. */
-		break;
-	default:
-		log_warnx("Unknown packet header type %d", pkt.h.qr);
-		while ((rr = LIST_FIRST(&pkt.anlist)) != NULL) {
-			LIST_REMOVE(rr, pentry);
-			free(rr);
-		}
-		return (-1);
-		break;		/* NOTREACHED */
-	}
-	
-	return (0);
-}
-
 static int
 pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 {
@@ -627,7 +604,7 @@ pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 
 	/* MDNS header sanity check */
 	if (*len < HDR_LEN) {
-		log_debug("recv_packet: bad packet size %u", len);
+		log_debug("pkt_parse_header: bad packet size %u", len);
 		return (-1);
 	}
 	pkt->h = *((HEADER *) buf);
@@ -719,20 +696,20 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 
 		if (lablen > (MAXHOSTNAMELEN - strlen(dname)) ||
 		    lablen > MAXLABEL) {
-			log_debug("label won't fit");
+			log_warnx("label won't fit");
 			return (-1);
 		}
 		memcpy(label, buf, lablen);
 		label[lablen] = '\0';
 		/* strlcat needs a proper C string in src */
 		if (strlcat(dname, label, MAXHOSTNAMELEN) >= MAXHOSTNAMELEN)  {
-			log_debug("domain-name truncated");
+			log_warnx("domain-name truncated");
 			return (-1);
 		}
 
 		/* should we leave the dot on the last tag ? */
 		if (strlcat(dname, ".", MAXHOSTNAMELEN) >= MAXHOSTNAMELEN) {
-			log_debug("domain-name truncated");
+			log_warnx("domain-name truncated");
 			return (-1);
 		}
 
@@ -742,7 +719,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	}
 
 	if (i == MAX_LABELS) {
-		log_debug("max labels reached");
+		log_warnx("max labels reached");
 		return (-1);
 	}
 

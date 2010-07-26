@@ -131,6 +131,27 @@ if_find_index(u_short ifindex)
 	return (NULL);
 }
 
+struct iface *
+if_find_iface(unsigned int ifindex, struct in_addr src)
+{
+	struct iface	*iface = NULL;
+
+	/* returned interface needs to be active */
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		if (ifindex != 0 && ifindex == iface->ifindex &&
+		    (iface->addr.s_addr & iface->mask.s_addr) ==
+		    (src.s_addr & iface->mask.s_addr))
+			/*
+			 * XXX may fail on P2P links because src and dst don't
+			 * have to share a common subnet on the otherhand
+			 * checking something like this will help to support
+			 * multiple networks configured on one interface.
+			 */
+			return (iface);
+	}
+
+	return (NULL);
+}
 
 /* actions */
 int
@@ -228,6 +249,12 @@ if_set_opt(int fd)
 	if (setsockopt(fd, IPPROTO_IP, IP_RECVIF, &yes,
 	    sizeof(int)) < 0) {
 		log_warn("if_set_opt: error setting IP_RECVIF");
+		return (-1);
+	}
+	
+	if (setsockopt(fd, IPPROTO_IP, IP_RECVDSTADDR, &yes,
+	    sizeof(int)) < 0) {
+		log_warn("if_set_opt: error setting IP_RECVDSTADDR");
 		return (-1);
 	}
 
@@ -402,3 +429,4 @@ if_new(struct kif *kif)
 
 	return (iface);
 }
+

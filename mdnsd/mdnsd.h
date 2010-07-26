@@ -30,6 +30,7 @@
 
 #define MDNSD_USER		"_mdnsd"
 #define ALL_MDNS_DEVICES	"224.0.0.251"
+#define MDNS_ADDRT		0xFB0000E0 /* the in_addr for 224.0.0.251 */
 #define RT_BUF_SIZE		16384
 #define MAX_RTSOCK_BUF		128 * 1024
 #define MDNS_TTL		255
@@ -185,6 +186,7 @@ int		 if_set_mcast_ttl(int, u_int8_t);
 int		 if_set_opt(int);
 int		 if_set_tos(int, int);
 struct iface *	 if_find_index(u_short);
+struct iface *	 if_find_iface(unsigned int, struct in_addr);
 struct iface *	 if_new(struct kif *);
 void		 if_set_recvbuf(int);
 
