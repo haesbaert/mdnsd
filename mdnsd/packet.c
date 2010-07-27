@@ -1,7 +1,5 @@
 /*
  * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
- * Copyright (c) 2006 Michele Marchetto <mydecay@openbeer.it>
- * Copyright (c) 2004, 2005 Esben Norby <norby@openbsd.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -46,23 +44,32 @@
 #include "mdnsd.h"
 #include "log.h"
 
-static int	pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
-static ssize_t	pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
-static int	pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
-static int	pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
-static int	pkt_handleq(struct pkt *);
-static int	pkt_should_answerq(struct pkt *, struct question *);
-static ssize_t	serialize_rr(struct rr *, u_int8_t *, u_int16_t);
-static ssize_t	serialize_question(struct question *, u_int8_t *,
-    u_int16_t);
-static ssize_t	serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
-static ssize_t	serialize_rdata(struct rr *, u_int8_t *, u_int16_t);
-static int	rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
-static ssize_t  charstr(char [MAX_CHARSTR], u_int8_t *, u_int16_t);
-static void	header_htons(HEADER *);
-static void	header_ntohs(HEADER *);
-static int	pktcomp_add(char [MAXHOSTNAMELEN], u_int16_t);
-static struct namecomp *pktcomp_lookup(char [MAXHOSTNAMELEN]);
+#define CACHEFLUSH_MSK	0x8000
+#define CLASS_MSK	~0x8000
+#define UNIRESP_MSK	0x8000
+#define NAMECOMP_MSK	0xc000
+#define NAMEADDR_MSK	~0xc000
+#define MAX_LABELS	128
+#define MAX_PACKET	10000
+#define HDR_LEN		12
+#define MINQRY_LEN	6 /* 4 (qtype + qclass) +1 (null) + 1 (label len) */
+
+int		 pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
+ssize_t		 pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
+int		 pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
+int		 pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
+int		 pkt_handleq(struct pkt *);
+int		 pkt_should_answerq(struct pkt *, struct question *);
+ssize_t		 serialize_rr(struct rr *, u_int8_t *, u_int16_t);
+ssize_t		 serialize_question(struct question *, u_int8_t *, u_int16_t);
+ssize_t		 serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
+ssize_t		 serialize_rdata(struct rr *, u_int8_t *, u_int16_t);
+int		 rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
+ssize_t		 charstr(char [MAX_CHARSTR], u_int8_t *, u_int16_t);
+void		 header_htons(HEADER *);
+void		 header_ntohs(HEADER *);
+int		 pktcomp_add(char [MAXHOSTNAMELEN], u_int16_t);
+struct namecomp *pktcomp_lookup(char [MAXHOSTNAMELEN]);
 
 extern struct mdnsd_conf *conf;
 
@@ -73,30 +80,16 @@ struct namecomp {
 	u_int16_t		offset;
 };
 
-static struct {
+struct {
 	LIST_HEAD(, namecomp) 	namecomp_list;
 	u_int8_t		*start;
 	u_int16_t	 	len;
 } pktcomp;
 
-/* Util */
-static ssize_t
-charstr(char dest[MAX_CHARSTR], u_int8_t *buf, u_int16_t len)
+void
+packet_init(void)
 {
-	u_int8_t tocpy;
-
-	tocpy = *buf++;
-
-	if (tocpy > len) {
-		log_debug("tocpy: %u > len: %u", tocpy, len);
-		return (-1);
-	}
-
-	/* This isn't a case for strlcpy */
-	memcpy(dest, buf, tocpy);
-	dest[tocpy] = '\0';	/* Assure null terminated */
-
-	return (tocpy + 1);
+	LIST_INIT(&pktcomp.namecomp_list);
 }
 
 /* Send and receive packets */
@@ -658,7 +651,7 @@ rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 	}
 }
 
-static int
+int
 pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 {
 	u_int8_t *buf = *pbuf;
@@ -676,7 +669,7 @@ pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	return (0);
 }
 
-static int
+ int
 pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 {
 	u_int16_t us;
@@ -723,7 +716,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	return (0);
 }
 
-static ssize_t
+ssize_t
 pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
 	size_t i;
@@ -792,7 +785,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 
 
 /* XXX: This function lacks some comments */
-static int
+int
 pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 {
 	u_int16_t us, rdlen, tmplen;
@@ -895,7 +888,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 /*
  * Handle all questions in pkt, will remove/free all pkt questions.
  */
-static int
+int
 pkt_handleq(struct pkt *pkt)
 {
 	struct question *mq;
@@ -933,7 +926,7 @@ pkt_handleq(struct pkt *pkt)
 	return (0);
 }
 
-static int
+int
 pkt_should_answerq(struct pkt *pkt, struct question *mq)
 {
 	struct rr *rr, *rrans;
@@ -979,7 +972,7 @@ pkt_should_answerq(struct pkt *pkt, struct question *mq)
 	return (1);
 }
 
-static int
+int
 rr_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
 	if (pkt_parse_dname(buf, len, dname) == -1) {
@@ -990,7 +983,7 @@ rr_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	return (0);
 }
 
-static ssize_t
+ssize_t
 serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
 	char *end;
@@ -1037,7 +1030,7 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	return (pbuf - buf);
 }
 
-static ssize_t
+ssize_t
 serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t	*pbuf = buf;
@@ -1099,7 +1092,7 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	return (pbuf - buf);
 }
 
-static ssize_t
+ssize_t
 serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t	*pbuf = buf;
@@ -1133,7 +1126,7 @@ serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	return (pbuf - buf);
 }
 
-static ssize_t
+ssize_t
 serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t *pbuf = buf;
@@ -1155,7 +1148,7 @@ serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 	return (pbuf - buf);
 }
 
-static void
+void
 header_htons(HEADER *h)
 {
 	h->qdcount = htons(h->qdcount);
@@ -1164,7 +1157,7 @@ header_htons(HEADER *h)
 	h->arcount = htons(h->arcount);
 }
 
-static void
+void
 header_ntohs(HEADER *h)
 {
 	h->qdcount = ntohs(h->qdcount);
@@ -1179,8 +1172,6 @@ pktcomp_reset(int first, u_int8_t *start, u_int16_t len)
 {
 	struct namecomp *nc;
 	
-	if (first)
-		LIST_INIT(&pktcomp.namecomp_list);
 	while ((nc = LIST_FIRST(&pktcomp.namecomp_list)) != NULL) {
 		LIST_REMOVE(nc, entry);
 		free(nc);
@@ -1189,7 +1180,7 @@ pktcomp_reset(int first, u_int8_t *start, u_int16_t len)
 	pktcomp.len = len;
 }
 
-static int
+int
 pktcomp_add(char dname[MAXHOSTNAMELEN], u_int16_t offset)
 {
 	struct namecomp *nc;
@@ -1203,7 +1194,7 @@ pktcomp_add(char dname[MAXHOSTNAMELEN], u_int16_t offset)
 	return (0);
 }
 
-static struct namecomp *
+struct namecomp *
 pktcomp_lookup(char dname[MAXHOSTNAMELEN])
 {
 	struct namecomp *nc;
@@ -1215,3 +1206,24 @@ pktcomp_lookup(char dname[MAXHOSTNAMELEN])
 	
 	return (NULL);
 }
+
+/* Util */
+ssize_t
+charstr(char dest[MAX_CHARSTR], u_int8_t *buf, u_int16_t len)
+{
+	u_int8_t tocpy;
+
+	tocpy = *buf++;
+
+	if (tocpy > len) {
+		log_debug("tocpy: %u > len: %u", tocpy, len);
+		return (-1);
+	}
+
+	/* This isn't a case for strlcpy */
+	memcpy(dest, buf, tocpy);
+	dest[tocpy] = '\0';	/* Assure null terminated */
+
+	return (tocpy + 1);
+}
+

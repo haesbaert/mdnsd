@@ -42,6 +42,9 @@
 #include "mdnsd.h"
 #include "log.h"
 
+#define RT_BUF_SIZE		16384
+#define MAX_RTSOCK_BUF		128 * 1024
+
 struct kif_node {
 	RB_ENTRY(kif_node)	 entry;
 	struct kif		 k;

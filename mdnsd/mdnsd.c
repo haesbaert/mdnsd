@@ -35,13 +35,13 @@
 #include "log.h"
 #include "control.h"
 
-__dead void		 usage(void);
-static void		 mdnsd_sig_handler(int, short, void *);
-static void		 mdnsd_conf_init(int, char *[]);
-static void		 mdnsd_shutdown(void);
-static int		 mdns_sock(void);
-static void		 fetchmyname(char [MAXHOSTNAMELEN]);
-static void		 fetchhinfo(struct hinfo *);
+__dead void	usage(void);
+void		mdnsd_sig_handler(int, short, void *);
+void		mdnsd_conf_init(int, char *[]);
+void		mdnsd_shutdown(void);
+int		mdns_sock(void);
+void		fetchmyname(char [MAXHOSTNAMELEN]);
+void		fetchhinfo(struct hinfo *);
 
 struct mdnsd_conf	*conf = NULL;
 extern char		*malloc_options;
@@ -56,7 +56,7 @@ usage(void)
 	exit(1);
 }
 
-static void
+void
 mdnsd_conf_init(int argc, char *argv[])
 {
 	int		 found = 0;
@@ -97,7 +97,7 @@ mdnsd_conf_init(int argc, char *argv[])
 }
 
 /* ARGSUSED */
-static void
+void
 mdnsd_sig_handler(int sig, short event, void *arg)
 {
 	/*
@@ -119,7 +119,7 @@ mdnsd_sig_handler(int sig, short event, void *arg)
 	}
 }
 
-static void
+void
 mdnsd_shutdown(void)
 {
 	struct iface	*iface;
@@ -139,7 +139,7 @@ mdnsd_shutdown(void)
 }
 
 
-static int
+int
 mdns_sock(void)
 {
 	int sock;
@@ -175,7 +175,7 @@ mdns_sock(void)
 	return (sock);
 }
 
-static void
+void
 fetchmyname(char myname[MAXHOSTNAMELEN])
 {
 	char	*end;
@@ -189,7 +189,7 @@ fetchmyname(char myname[MAXHOSTNAMELEN])
 		errx(1, "hostname too long %s", myname);
 }
 
-static void
+void
 fetchhinfo(struct hinfo *hi)
 {
 	struct utsname	utsname;
@@ -278,8 +278,8 @@ main(int argc, char *argv[])
 	signal_add(&ev_sighup, NULL);
 	signal(SIGPIPE, SIG_IGN);
 
-	/* init packet compression */
-	pktcomp_reset(1, NULL, 0);
+	/* init some packet internals */
+	packet_init();
 	
 	/* init querier */
 	query_init();
@@ -312,7 +312,7 @@ main(int argc, char *argv[])
 	/* listen on mdns control socket */
 	TAILQ_INIT(&ctl_conns);
 	control_listen();
-
+	
 	/* parent mainloop */
 	event_dispatch();
 

@@ -36,36 +36,34 @@ struct query_node {
 	struct query		q;
 };
 
-static void	publish_fsm(int, short, void *_pub);
+int	cache_insert(struct rr *);
+int	cache_delete(struct rr *);
+void	cache_schedrev(struct rr *);
+void	cache_rev(int, short, void *);
 
-static int	cache_insert(struct rr *);
-static int	cache_delete(struct rr *);
-static void	cache_schedrev(struct rr *);
-static void	cache_rev(int, short, void *);
+void   		   query_fsm(int, short, void *);
+int 		   query_node_compare(struct query_node *, struct query_node *);
+struct query_node *query_lookup_node(char *, u_int16_t, u_int16_t);
 
-void			 rrt_dump(struct rrt_tree *);
-static int		 rrt_compare(struct rrt_node *, struct rrt_node *);
-static struct rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
+void		 rrt_dump(struct rrt_tree *);
+int		 rrt_compare(struct rrt_node *, struct rrt_node *);
+struct rr	*rrt_lookup(struct rrt_tree *, char [MAXHOSTNAMELEN],
     u_int16_t, u_int16_t);
-static struct rr_head	*rrt_lookup_head(struct rrt_tree *,
-    char [MAXHOSTNAMELEN],  u_int16_t, u_int16_t);
-static struct rrt_node	*rrt_lookup_node(struct rrt_tree *,
-    char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
-
-static int	query_node_compare(struct query_node *, struct query_node *);
-static void	query_fsm(int, short, void *);
-static struct query_node *query_lookup_node(char [MAXHOSTNAMELEN], u_int16_t,
-    u_int16_t);
+struct rr_head	*rrt_lookup_head(struct rrt_tree *, char [MAXHOSTNAMELEN],
+    u_int16_t, u_int16_t);
+struct rrt_node	*rrt_lookup_node(struct rrt_tree *, char [MAXHOSTNAMELEN],
+    u_int16_t, u_int16_t);
 
 RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_compare);
-
 RB_HEAD(query_tree, query_node);
 RB_PROTOTYPE(query_tree, query_node, entry, query_node_compare)
 RB_GENERATE(query_tree, query_node, entry, query_node_compare)
 
 extern struct mdnsd_conf	*conf;
-static struct query_tree	 qtree;
-static struct rrt_tree		 rrt_cache;
+struct query_tree		 query_tree;
+struct rrt_tree			 cache_tree;
+
+LIST_HEAD(, publish) probing_list;
 
 /*
  * Publishing
@@ -232,7 +230,7 @@ publish_lookupall(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	return (NULL);
 }
 
-static void
+void
 publish_fsm(int unused, short event, void *v_pub)
 {
 	struct publish		*pub = v_pub;
@@ -389,7 +387,7 @@ cache_init(void)
 		0
 	};
 #endif
-	RB_INIT(&rrt_cache);
+	RB_INIT(&cache_tree);
 #ifdef DUMMY_ENTRIES
 	for (nptr = tnames; *nptr != NULL; nptr++) {
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
@@ -424,10 +422,10 @@ cache_process(struct rr *rr)
 struct rr *
 cache_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
-	return (rrt_lookup(&rrt_cache, dname, type, class));
+	return (rrt_lookup(&cache_tree, dname, type, class));
 }
 
-static int
+int
 cache_insert(struct rr *rr)
 {
 	struct rr_head	*hrr;
@@ -437,14 +435,14 @@ cache_insert(struct rr *rr)
 /* 	log_debug("cache_insert: type: %s name: %s", rr_type_name(rr->type), */
 /* 	    rr->dname); */
 
-	hrr = rrt_lookup_head(&rrt_cache, rr->dname, rr->type, rr->class);
+	hrr = rrt_lookup_head(&cache_tree, rr->dname, rr->type, rr->class);
 	if (hrr == NULL) {
 		if ((n = calloc(1, sizeof(*n))) == NULL)
 			fatal("calloc");
 
 		LIST_INIT(&n->hrr);
 		LIST_INSERT_HEAD(&n->hrr, rr, centry);
-		if (RB_INSERT(rrt_tree, &rrt_cache, n) != NULL)
+		if (RB_INSERT(rrt_tree, &cache_tree, n) != NULL)
 			fatal("rrt_insert: RB_INSERT");
 		cache_schedrev(rr);
 		query_notify(rr, 1);
@@ -488,7 +486,7 @@ cache_insert(struct rr *rr)
 	return (0);
 }
 
-static int
+int
 cache_delete(struct rr *rr)
 {
 	struct rr	*rraux, *next;
@@ -497,7 +495,7 @@ cache_delete(struct rr *rr)
 
 	log_debug("cache_delete: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
-	s = rrt_lookup_node(&rrt_cache, rr->dname, rr->type, rr->class);
+	s = rrt_lookup_node(&cache_tree, rr->dname, rr->type, rr->class);
 	query_notify(rr, 0);
 	if (s == NULL)
 		return (0);
@@ -515,14 +513,14 @@ cache_delete(struct rr *rr)
 	}
 
 	if (LIST_EMPTY(&s->hrr)) {
-		RB_REMOVE(rrt_tree, &rrt_cache, s);
+		RB_REMOVE(rrt_tree, &cache_tree, s);
 		free(s);
 	}
 
 	return (n);
 }
 
-static void
+void
 cache_schedrev(struct rr *rr)
 {
 	struct timeval tv;
@@ -555,7 +553,7 @@ cache_schedrev(struct rr *rr)
 		fatal("rrt_sched_rev");
 }
 
-static void
+void
 cache_rev(int unused, short event, void *v_rr)
 {
 	struct rr	*rr = v_rr;
@@ -597,7 +595,7 @@ rrt_dump(struct rrt_tree *rrt)
 	}
 }
 
-static struct rr_head *
+struct rr_head *
 rrt_lookup_head(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN],
     u_int16_t type, u_int16_t class)
 {
@@ -610,7 +608,7 @@ rrt_lookup_head(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN],
 	return (&tmp->hrr);
 }
 
-static struct rr *
+struct rr *
 rrt_lookup(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct rr_head	*hrr;
@@ -621,7 +619,7 @@ rrt_lookup(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type, u_i
 	return (NULL);
 }
 
-static struct rrt_node *
+struct rrt_node *
 rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct rrt_node	s, *tmp;
@@ -643,7 +641,7 @@ rrt_lookup_node(struct rrt_tree *rrt, char dname[MAXHOSTNAMELEN], u_int16_t type
 	return (tmp);
 }
 
-static int
+int
 rrt_compare(struct rrt_node *a, struct rrt_node *b)
 {
 	struct rr *rra, *rrb;
@@ -670,7 +668,7 @@ rrt_compare(struct rrt_node *a, struct rrt_node *b)
 void
 query_init(void)
 {
-	RB_INIT(&qtree);
+	RB_INIT(&query_tree);
 }
 
 struct query *
@@ -685,7 +683,7 @@ query_lookup(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 }
 
 struct query *
-query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
+query_place(enum query_style s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct query		*q;
 	struct query_node	*qn;
@@ -709,7 +707,7 @@ query_place(int s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	question_set(&q->mq, dname, type, class, 0);
 	q->style = s;
 	q->active++;
-	if (RB_INSERT(query_tree, &qtree, qn) != NULL)
+	if (RB_INSERT(query_tree, &query_tree, qn) != NULL)
 		fatal("query_place: RB_INSERT");
 	/* start the sending machine */
 	event_once(-1, EV_TIMEOUT, query_fsm, q, NULL); /* THIS IS PROBABLY WRONG */
@@ -727,7 +725,7 @@ query_remove(struct query *qrem)
 		return;
 	qfound = &qn->q;
 	if (--qfound->active == 0) {
-		RB_REMOVE(query_tree, &qtree, qn);
+		RB_REMOVE(query_tree, &query_tree, qn);
 		if (evtimer_pending(&qn->q.timer, NULL))
 			evtimer_del(&qn->q.timer);
 		free(qn);
@@ -814,7 +812,7 @@ query_answerctl(struct ctl_conn *c, struct rr *rr, int msgtype)
 	return (0);
 }
 
-static void
+void
 query_fsm(int unused, short event, void *v_query)
 {
 	struct pkt	 pkt;
@@ -851,7 +849,7 @@ query_fsm(int unused, short event, void *v_query)
 	q->sleep++;
 }
 
-static int
+int
 query_node_compare(struct query_node *a, struct query_node *b)
 {
 	if (a->q.mq.qtype < b->q.mq.qtype)
@@ -865,7 +863,7 @@ query_node_compare(struct query_node *a, struct query_node *b)
 	return (strcmp(a->q.mq.dname, b->q.mq.dname));
 }
 
-static struct query_node *
+struct query_node *
 query_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 {
 	struct query_node qn;
@@ -873,5 +871,5 @@ query_lookup_node(char dname[MAXHOSTNAMELEN], u_int16_t type, u_int16_t class)
 	bzero(&qn, sizeof(qn));
 	question_set(&qn.q.mq, dname, type, class, 0);
 
-	return (RB_FIND(query_tree, &qtree, &qn));
+	return (RB_FIND(query_tree, &query_tree, &qn));
 }

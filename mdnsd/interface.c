@@ -58,7 +58,7 @@ const char * const if_action_names[] = {
 	"RESET"
 };
 
-static const char * const if_event_names[] = {
+const char * const if_event_names[] = {
 	"NOTHING",
 	"UP",
 	"DOWN",
