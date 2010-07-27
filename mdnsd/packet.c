@@ -53,6 +53,10 @@
 #define MAX_PACKET	10000
 #define HDR_LEN		12
 #define MINQRY_LEN	6 /* 4 (qtype + qclass) +1 (null) + 1 (label len) */
+/* Defer truncated packets from 400ms-500ms */
+#define RANDOM_DEFERTIME			\
+	(arc4random_uniform((u_int32_t) 100000)	\
+	    + 400000)
 
 int		 pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 ssize_t		 pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
@@ -86,10 +90,14 @@ struct {
 	u_int16_t	 	len;
 } pktcomp;
 
+/* Deferred packets, Known Answer Supression packets with TC bit */
+TAILQ_HEAD(, pkt) deferred_queue;
+
 void
 packet_init(void)
 {
 	LIST_INIT(&pktcomp.namecomp_list);
+	TAILQ_INIT(&deferred_queue);
 }
 
 /* Send and receive packets */
@@ -106,8 +114,8 @@ send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
 
 	if (sendto(iface->fd, pkt, len, 0,
 	    (struct sockaddr *)dst, sizeof(*dst)) == -1) {
-		log_warn("send_packet: error sending packet on interface %s, len %zd",
-		    iface->name, len);
+		log_warn("send_packet: error sending packet on interface "
+                         "%s, len %zd", iface->name, len);
 		return (-1);
 	}
 
@@ -132,10 +140,11 @@ recv_packet(int fd, short event, void *bula)
 	static u_int8_t		 buf[MAX_PACKET];
 	struct rr		*rr;
 	struct pkt		*pkt;
+	struct timeval 		 tv;
 	u_int8_t		*pbuf;
 	u_int16_t		 i, len;
 	ssize_t			 r;
-
+		
 	if (event != EV_READ)
 		return;
 
@@ -285,6 +294,52 @@ recv_packet(int fd, short event, void *bula)
 	/*
 	 * Packet parsing done, our pkt structure is complete.
 	 */
+
+	/*
+	 * TODO: Check if the packet is the continuation of a previous
+	 * truncated packet, see below.
+	 */
+	
+	/*
+	 * Mdns Draft 7.2 Multi-Packet Known Answer Supression
+	 * A Multicast DNS Responder seeing a Multicast DNS Query with the TC
+	 * bit set defers its response for a time period randomly selected in
+	 * the interval 400-500ms. This gives the Multicast DNS Querier time to
+	 * send additional Known Answer packets before the Responder responds.
+	 * If the Responder sees any of its answers listed in the Known Answer
+	 * lists of subsequent packets from the querying host, it SHOULD delete
+	 * that answer from the list of answers it is planning to give, provided
+	 * that no other host on the network is also waiting to receive the same
+	 * answer record.  Check if this packet was truncated, due to too many
+	 * Known Answer Supression entries, if so, defer processing
+	 */
+	
+	if (pkt->h.qr == MDNS_QUERY && pkt->h.tc) {
+		TAILQ_INSERT_TAIL(&deferred_queue, pkt, entry);
+		timerclear(&tv);
+		tv.tv_usec = RANDOM_DEFERTIME;
+		event_once(-1, EV_TIMEOUT, pkt_process, pkt, &tv);
+		
+		return;
+	}
+	
+	/* Use 0 as event as our processing wasn't deferred */
+	pkt_process(-1, 0, pkt);
+}
+
+void
+pkt_process(int unused, short event, void *v_pkt)
+{
+	struct pkt	*pkt = v_pkt;
+	struct rr	*rr;
+	
+	if (event == EV_TIMEOUT) {
+		/* TODO */
+		log_warnx("pkt_process() deferred packet, "
+		    "this wasn't implemented yet !");
+		TAILQ_REMOVE(&deferred_queue, pkt, entry);
+	}
+		
 	if (pkt_handleq(pkt) == -1) {
 		log_warnx("pkt_handleq() error");
 		pkt_cleanup(pkt);
@@ -292,6 +347,7 @@ recv_packet(int fd, short event, void *bula)
 		return;
 	}
 	
+		
 	/* Clear all authority section */
 	/* Mark all probe questions, so we don't try to answer them below */
 	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
@@ -341,6 +397,7 @@ recv_packet(int fd, short event, void *bula)
 	
 	pkt_cleanup(pkt);
 	free(pkt);
+	
 }
 
 int
@@ -951,7 +1008,6 @@ pkt_should_answerq(struct pkt *pkt, struct question *mq)
 	 * supression list, that is, check that the answer isn't in the answer
 	 * section with a ttl at least half the original value. 
 	 */
-	/* TODO: deal with TC bit! */
 	rrans = publish_lookupall(mq->dname, mq->qtype, mq->qclass);
 	/* We've no answers for it, we should try to answer, but we
 	 * already know we can't so return 0, this is a speed hack. */

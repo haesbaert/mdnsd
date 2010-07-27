@@ -74,11 +74,12 @@ struct rr {
 };
 
 struct pkt {
-	HEADER	h;
-	LIST_HEAD(, question) qlist;  /* Question section */
-	LIST_HEAD(, rr)       anlist; /* Answer section */
-	LIST_HEAD(, rr)       nslist; /* Authority section */
-	LIST_HEAD(, rr)       arlist; /* Additional section */
+	TAILQ_ENTRY(pkt)	entry;
+	HEADER			h;
+	LIST_HEAD(, question) 	qlist;	/* Question section */
+	LIST_HEAD(, rr)       	anlist;	/* Answer section */
+	LIST_HEAD(, rr)       	nslist;	/* Authority section */
+	LIST_HEAD(, rr)       	arlist;	/* Additional section */
 };
 
 struct question {
@@ -222,6 +223,7 @@ int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t, pid_t,
 void	packet_init(void);
 void	recv_packet(int, short, void *);   
 int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+void	pkt_process(int, short, void *);
 int	pkt_send_if(struct pkt *, struct iface *);
 int	pkt_send_allif(struct pkt *);
 void	pkt_init(struct pkt *);
