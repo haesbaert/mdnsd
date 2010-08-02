@@ -150,7 +150,7 @@ recv_packet(int fd, short event, void *bula)
 
 	bzero(&msg, sizeof(msg));
 	bzero(buf, sizeof(buf));
-	ipdst.s_addr = 0;
+	bzero(&ipdst, sizeof(ipdst));
 	pbuf = buf;
 
 	iov.iov_base = buf;
@@ -183,8 +183,12 @@ recv_packet(int fd, short event, void *bula)
 		}
 
 	}
-
-	if (dst == NULL || ipdst.s_addr == 0)
+	/*
+	 * We need a valid dst to lookup receiving interface, see below.
+	 * Ipdst must be filled so we can check for unicast answers, see below.
+	 * Mdns draft requires sending port to be 5353.
+	 */
+	if (dst == NULL || ipdst.s_addr == 0 || ntohs(ipsrc.sin_port) != MDNS_PORT)
 		return;
 
 	len = (u_int16_t)r;
