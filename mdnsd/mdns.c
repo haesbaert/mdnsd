@@ -715,7 +715,7 @@ query_place(enum query_style s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_in
 	if (RB_INSERT(query_tree, &query_tree, qn) != NULL)
 		fatal("query_place: RB_INSERT");
 	/* start the sending machine */
-	event_once(-1, EV_TIMEOUT, query_fsm, q, NULL); /* THIS IS PROBABLY WRONG */
+	event_once(-1, EV_TIMEOUT, query_fsm, q, NULL);
 	return (q);
 }
 
