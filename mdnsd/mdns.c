@@ -14,11 +14,14 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/utsname.h>
+
 #include <netinet/in.h>
 #include <arpa/inet.h>
+
 #include <err.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -411,6 +414,8 @@ int
 cache_process(struct rr *rr)
 {
 	evtimer_set(&rr->rev_timer, cache_rev, rr);
+	if (clock_gettime(CLOCK_MONOTONIC, &rr->age) == -1)
+		fatal("clock_gettime");
 	if (rr->ttl == 0)
 		return (cache_delete(rr));
 	if (cache_insert(rr) == -1)
