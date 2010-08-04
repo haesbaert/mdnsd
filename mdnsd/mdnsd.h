@@ -221,19 +221,20 @@ int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t, pid_t,
     int, void *, u_int16_t);
 
 /* packet.c */
-void	packet_init(void);
-void	recv_packet(int, short, void *);   
-int	send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
-void	pkt_process(int, short, void *);
-int	pkt_send_if(struct pkt *, struct iface *);
-int	pkt_send_allif(struct pkt *);
-void	pkt_init(struct pkt *);
-void	pkt_cleanup(struct pkt *);
-int	pkt_add_question(struct pkt *, struct question *);
-int	pkt_add_anrr(struct pkt *, struct rr *);
-int	pkt_add_nsrr(struct pkt *, struct rr *);
-int	pkt_add_arrr(struct pkt *, struct rr *);
-int	rr_rdata_cmp(struct rr *, struct rr *);
+void	  packet_init(void);
+void	  recv_packet(int, short, void *);   
+int	  send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+void	  pkt_process(int, short, void *);
+int	  pkt_send_if(struct pkt *, struct iface *);
+int	  pkt_send_allif(struct pkt *);
+void	  pkt_init(struct pkt *);
+void	  pkt_cleanup(struct pkt *);
+int	  pkt_add_question(struct pkt *, struct question *);
+int	  pkt_add_anrr(struct pkt *, struct rr *);
+int	  pkt_add_nsrr(struct pkt *, struct rr *);
+int	  pkt_add_arrr(struct pkt *, struct rr *);
+int	  rr_rdata_cmp(struct rr *, struct rr *);
+u_int32_t rr_ttl_left(struct rr *);
 void	pktcomp_reset(int, u_int8_t *, u_int16_t);
 int	question_set(struct question *, char [MAXHOSTNAMELEN], u_int16_t,
     u_int16_t, int);

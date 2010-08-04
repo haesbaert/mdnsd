@@ -712,6 +712,19 @@ rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 	}
 }
 
+u_int32_t
+rr_ttl_left(struct rr *rr)
+{
+	struct timespec tnow;
+	struct timespec tr;
+	    
+	if (clock_gettime(CLOCK_MONOTONIC, &tnow))
+		fatal("clock_gettime");
+	timespecsub(&tnow, &rr->age, &tr);
+	
+	return (rr->ttl - (u_int32_t)tr.tv_sec);
+}
+
 int
 pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 {

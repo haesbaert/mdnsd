@@ -844,9 +844,14 @@ query_fsm(int unused, short event, void *v_query)
 
 		/* Known Answer Supression */
 		for (rr = cache_lookup(q->mq.dname, q->mq.qtype, q->mq.qclass);
-		     rr != NULL; rr = LIST_NEXT(rr, centry))
+		     rr != NULL; rr = LIST_NEXT(rr, centry)) {
+			/* Don't include packet if it's too old */
+			if (rr_ttl_left(rr) < rr->ttl / 2)
+				continue;
 			if (pkt_add_arrr(&pkt, rr) == -1)
-				log_warnx("KNA error pkt_add_arrr: %s", rr->dname);
+				log_warnx("KNA error pkt_add_arrr: %s",
+				    rr->dname);
+		}
 	}
 
 	if (pkt_send_allif(&pkt) == -1)
