@@ -63,6 +63,7 @@ void	control_dispatch_imsg(int, short, void *);
 void	control_cleanup(void);
 void	control_addq(struct ctl_conn *, struct query *);
 int	control_hasq(struct ctl_conn *, struct query *);
+int	control_remq(struct ctl_conn *, struct query *);
 
 void	session_socket_blockmode(int, enum blockmodes);
 

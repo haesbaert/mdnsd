@@ -41,6 +41,7 @@ struct ctl_conn	*control_connbypid(pid_t);
 void		 control_close(int);
 void		 control_lookup(struct ctl_conn *, struct imsg *);
 void		 control_browse_add(struct ctl_conn *, struct imsg *);
+void		 control_browse_del(struct ctl_conn *, struct imsg *);
 
 void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
@@ -140,6 +141,34 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		rr = LIST_NEXT(rr, centry);
 	}
 }
+
+void
+control_browse_del(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct mdns_msg_lkup	 mlkup;
+	struct query 		*q;
+
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
+		return;
+
+	memcpy(&mlkup, imsg->data, sizeof(mlkup));
+	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0'; /* assure clients were nice */
+
+	if (mlkup.type != T_PTR) {
+		log_warnx("Browse type %d not supported/implemented",
+		    mlkup.type);
+		return;
+	}
+
+	if (mlkup.class != C_IN) {
+		log_warnx("Browse class %d not supported/implemented",
+		    mlkup.class);
+		return;
+	}
+	q = query_lookup(mlkup.dname, mlkup.type, mlkup.class);
+	if (q != NULL)
+		control_remq(c, q);
+}	
 
 int
 control_init(void)
@@ -334,6 +363,7 @@ control_dispatch_imsg(int fd, short event, void *bula)
 			control_browse_add(c, &imsg);
 			break;
 		case IMSG_CTL_BROWSE_DEL:
+			control_browse_del(c, &imsg);
 			break;
 		default:
 			log_debug("control_dispatch_imsg: "
@@ -372,6 +402,23 @@ control_addq(struct ctl_conn *c, struct query *q)
 		fatal("calloc");
 	cq->q = q;
 	LIST_INSERT_HEAD(&c->qlist, cq, entry);
+}
+
+int
+control_remq(struct ctl_conn *c, struct query *q)
+{
+	struct ctl_query *cq;
+	
+	LIST_FOREACH(cq, &c->qlist, entry) {
+		if (cq->q == q) {
+			LIST_REMOVE(cq, entry);
+			query_remove(cq->q);
+			free(cq);
+			return (0);
+		}
+	}
+	
+	return (-1);
 }
 
 int
