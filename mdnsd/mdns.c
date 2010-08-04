@@ -608,7 +608,7 @@ rrt_dump(struct rrt_tree *rrt)
 	RB_FOREACH(n, rrt_tree, rrt) {
 		rr = LIST_FIRST(&n->hrr);
 		LIST_FOREACH(rr, &n->hrr, centry)
-		    log_debug_rrdata(rr);
+		    log_debug_rr(rr);
 	}
 }
 

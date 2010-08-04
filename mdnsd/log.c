@@ -222,10 +222,9 @@ rr_type_name(uint16_t type)
 }
 
 void
-log_debug_rrdata(struct rr *rr)
+log_debug_rr(struct rr *rr)
 {
-	log_debug("-->%s record UNIQ: %s NAME: %s", rr_type_name(rr->type),
-	    RR_UNIQ(rr) ? "yes" : "no", rr->dname);
+	log_debug("-->%s (%s)", rr->dname, rr_type_name(rr->type));
 
 	switch(rr->type) {
 	case T_A:
@@ -257,7 +256,8 @@ log_debug_rrdata(struct rr *rr)
 		log_debug("\t implement me");
 		break;
 	default:
-		log_debug("log_debug_rrdata: Unknown rr type");
+		log_debug("log_debug_rr: Unknown rr type");
 		break;
 	}
+	log_debug("<--");
 }
