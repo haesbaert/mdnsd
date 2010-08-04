@@ -416,8 +416,20 @@ cache_process(struct rr *rr)
 	evtimer_set(&rr->rev_timer, cache_rev, rr);
 	if (clock_gettime(CLOCK_MONOTONIC, &rr->age) == -1)
 		fatal("clock_gettime");
-	if (rr->ttl == 0)
-		return (cache_delete(rr));
+	/*
+	 * If ttl is 0 this is a Goodbye RR. cache_delete() will look for all
+	 * corresponding RR in our cache and remove/free them. This rr isn't in
+	 * cache, therefore cache_delete() won't free it, this is the only
+	 * special case when we call cache_delete() on a rr that isn't in *
+	 * cache.
+	 */
+	if (rr->ttl == 0) {
+		cache_delete(rr);
+		free(rr);
+		
+		return (0);
+	}
+	
 	if (cache_insert(rr) == -1)
 		return (-1);
 
@@ -500,8 +512,8 @@ cache_delete(struct rr *rr)
 
 	log_debug("cache_delete: type: %s name: %s", rr_type_name(rr->type),
 	    rr->dname);
-	s = rrt_lookup_node(&cache_tree, rr->dname, rr->type, rr->class);
 	query_notify(rr, 0);
+	s = rrt_lookup_node(&cache_tree, rr->dname, rr->type, rr->class);
 	if (s == NULL)
 		return (0);
 
