@@ -542,39 +542,28 @@ void
 cache_schedrev(struct rr *rr)
 {
 	struct timeval tv;
-	u_int32_t oper, var;
+	u_int32_t var;
 
 	timerclear(&tv);
 
 	switch (rr->revision) {
 	case 0:
-		/* Expire at 80% of ttl */
-		oper = arc4random_uniform(2);
-		if (oper)
-			var = 80 + arc4random_uniform(3);
-		else
-			var = 80 - arc4random_uniform(3);
-		tv.tv_usec = ((1000 * rr->ttl) * var) / 100;
+		/* Expire at 80%-82% of ttl */
+		var = 80 + arc4random_uniform(3);
+		tv.tv_sec = ((10 * rr->ttl) * var) / 1000;
 		break;
 	case 1:
-		/* Expire at 90% of ttl */
-		oper = arc4random_uniform(2);
-		if (oper)
-			var = 90 + arc4random_uniform(3);
-		else
-			var = 90 - arc4random_uniform(3);
-		tv.tv_usec  = ((1000 * rr->ttl) * var) / 100;
-		tv.tv_usec -= ((1000 * rr->ttl) * 0.8) / 100;
+		/* Expire at 90%-92% of ttl */
+		var = 90 + arc4random_uniform(3);
+		tv.tv_sec  = ((10 * rr->ttl) * var) / 1000;
+		tv.tv_sec -= ((10 * rr->ttl) * 80)  / 1000;
 		break;
 	case 2:
-		/* Expire at 95% of ttl */
-		oper = arc4random_uniform(2);
-		if (oper)
-			var = 95 + arc4random_uniform(3);
-		else
-			var = 95 - arc4random_uniform(3);
-		tv.tv_usec  = ((1000 * rr->ttl) * var) / 100;
-		tv.tv_usec -= ((1000 * rr->ttl) * 0.9) / 100;
+		/* Expire at 95%-97% of ttl */
+		var = 95 + arc4random_uniform(3);
+		tv.tv_sec  = ((10 * rr->ttl) * var) / 1000;
+		tv.tv_sec -= ((10 * rr->ttl) * 90)  / 1000;
+		log_debug("2 -> %u", tv.tv_sec);
 		break;
 	case 3:	/* expired, delete from cache in 1 sec */
 		tv.tv_sec = 1;
@@ -598,8 +587,8 @@ cache_rev(int unused, short event, void *v_rr)
 	struct query	*q;
 	struct pkt	 pkt;
 
-	log_debug("cache_rev: timeout rr type: %s, name: %s (%u)",
-	    rr_type_name(rr->type), rr->dname, rr->ttl);
+/* 	log_debug("cache_rev: timeout rr type: %s, name: %s (%u)", */
+/* 	    rr_type_name(rr->type), rr->dname, rr->ttl); */
 
 	/* If we have an active query, try to renew the answer */
 	if ((q = query_lookup(rr->dname, rr->type, rr->class)) != NULL) {
