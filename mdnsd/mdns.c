@@ -548,34 +548,38 @@ cache_schedrev(struct rr *rr)
 
 	switch (rr->revision) {
 	case 0:
+		/* Expire at 80% of ttl */
 		oper = arc4random_uniform(2);
-		var = arc4random_uniform(3);
 		if (oper)
-			tv.tv_sec = rr->ttl * (0.8 + var);
+			var = 80 + arc4random_uniform(3);
 		else
-			tv.tv_sec = rr->ttl * (0.8 - var);
+			var = 80 - arc4random_uniform(3);
+		tv.tv_usec = ((1000 * rr->ttl) * var) / 100;
 		break;
 	case 1:
+		/* Expire at 90% of ttl */
 		oper = arc4random_uniform(2);
-		var = arc4random_uniform(3);
 		if (oper)
-			tv.tv_sec = rr->ttl - rr->ttl * (0.9 + var);
+			var = 90 + arc4random_uniform(3);
 		else
-			tv.tv_sec = rr->ttl - rr->ttl * (0.9 - var);
+			var = 90 - arc4random_uniform(3);
+		tv.tv_usec  = ((1000 * rr->ttl) * var) / 100;
+		tv.tv_usec -= ((1000 * rr->ttl) * 0.8) / 100;
 		break;
 	case 2:
+		/* Expire at 95% of ttl */
 		oper = arc4random_uniform(2);
-		var = arc4random_uniform(3);
 		if (oper)
-			tv.tv_sec = rr->ttl - rr->ttl * (0.95 + var);
+			var = 95 + arc4random_uniform(3);
 		else
-			tv.tv_sec = rr->ttl - rr->ttl * (0.95 - var);
+			var = 95 - arc4random_uniform(3);
+		tv.tv_usec  = ((1000 * rr->ttl) * var) / 100;
+		tv.tv_usec -= ((1000 * rr->ttl) * 0.9) / 100;
 		break;
 	case 3:	/* expired, delete from cache in 1 sec */
 		tv.tv_sec = 1;
 		break;
 	}
-
 /* 	log_debug("cache_schedrev: schedule rr type: %s, name: %s (%d)", */
 /* 	    rr_type_name(rr->type), rr->dname, tv.tv_sec); */
 
