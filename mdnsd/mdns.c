@@ -31,7 +31,8 @@
 #include "log.h"
 
 #define INTERVAL_PROBETIME	250000
-#define RANDOM_PROBETIME	arc4random_uniform((u_int32_t) 250000)
+#define RANDOM_PROBETIME	arc4random_uniform(250000)
+#define FIRST_QUERYTIME		(arc4random_uniform(120000) + 20000)
 #define MAX_QUERYTIME		(60 * 60) /* one hour */
 
 struct query_node {
@@ -704,6 +705,7 @@ query_place(enum query_style s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_in
 {
 	struct query		*q;
 	struct query_node	*qn;
+	struct timeval		 tv;
 
 	q = query_lookup(dname, type, class);
 	/* existing query, increase active */
@@ -727,7 +729,9 @@ query_place(enum query_style s, char dname[MAXHOSTNAMELEN], u_int16_t type, u_in
 	if (RB_INSERT(query_tree, &query_tree, qn) != NULL)
 		fatal("query_place: RB_INSERT");
 	/* start the sending machine */
-	event_once(-1, EV_TIMEOUT, query_fsm, q, NULL);
+	timerclear(&tv);
+	tv.tv_usec = FIRST_QUERYTIME;
+	event_once(-1, EV_TIMEOUT, query_fsm, q, &tv);
 	return (q);
 }
 

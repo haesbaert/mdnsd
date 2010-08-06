@@ -968,6 +968,8 @@ pkt_handleq(struct pkt *pkt)
 	struct question *mq;
 	struct rr	*rr;
 	struct pkt	sendpkt;
+
+	/* TODO: Mdns draft 6.3 Duplicate Question Suppression */
 	
 	pkt_init(&sendpkt);
 	while ((mq = LIST_FIRST(&pkt->qlist)) != NULL) {
