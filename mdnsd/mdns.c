@@ -542,20 +542,36 @@ void
 cache_schedrev(struct rr *rr)
 {
 	struct timeval tv;
+	u_int32_t oper, var;
 
 	timerclear(&tv);
 
 	switch (rr->revision) {
 	case 0:
-		tv.tv_sec = rr->ttl * 0.8;
+		oper = arc4random_uniform(2);
+		var = arc4random_uniform(3);
+		if (oper)
+			tv.tv_sec = rr->ttl * (0.8 + var);
+		else
+			tv.tv_sec = rr->ttl * (0.8 - var);
 		break;
 	case 1:
-		tv.tv_sec = rr->ttl - (rr->ttl * 0.9);
+		oper = arc4random_uniform(2);
+		var = arc4random_uniform(3);
+		if (oper)
+			tv.tv_sec = rr->ttl - rr->ttl * (0.9 + var);
+		else
+			tv.tv_sec = rr->ttl - rr->ttl * (0.9 - var);
 		break;
 	case 2:
-		tv.tv_sec = rr->ttl - (rr->ttl * 0.95);
+		oper = arc4random_uniform(2);
+		var = arc4random_uniform(3);
+		if (oper)
+			tv.tv_sec = rr->ttl - rr->ttl * (0.95 + var);
+		else
+			tv.tv_sec = rr->ttl - rr->ttl * (0.95 - var);
 		break;
-	case 3:			/* expired, delete from cache in 1 sec */
+	case 3:	/* expired, delete from cache in 1 sec */
 		tv.tv_sec = 1;
 		break;
 	}
