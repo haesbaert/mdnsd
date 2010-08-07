@@ -19,6 +19,7 @@
 
 #include <sys/param.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <netinet/in.h>
 #include <net/if.h>
 
@@ -237,7 +238,7 @@ int	  rr_rdata_cmp(struct rr *, struct rr *);
 u_int32_t rr_ttl_left(struct rr *);
 void	pktcomp_reset(int, u_int8_t *, u_int16_t);
 int	question_set(struct question *, char [MAXHOSTNAMELEN], u_int16_t,
-    u_int16_t, struct in_addr);
+    u_int16_t, in_addr_t);
 int	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, int, void *, size_t);
 

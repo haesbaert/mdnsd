@@ -630,15 +630,15 @@ pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 
 int
 question_set(struct question *mq, char dname[MAXHOSTNAMELEN],
-    u_int16_t qtype, u_int16_t qclass, struct in_addr src)
+    u_int16_t qtype, u_int16_t qclass, in_addr_t src)
 {
 	bzero(mq, sizeof(*mq));
 
 	if (qclass != C_IN)
 		return (-1);
-	mq->qclass = qclass;
-	mq->qtype  = qtype;
-	mq->src  = src;
+	mq->qclass     = qclass;
+	mq->qtype      = qtype;
+	mq->src.s_addr = src;
 	strlcpy(mq->dname, dname, sizeof(mq->dname));
 
 	return (0);
@@ -1220,6 +1220,7 @@ ssize_t
 serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t *pbuf = buf;
+	u_int16_t qclass;
 	ssize_t n;
 
 	n = serialize_dname(pbuf, len, mq->dname);
@@ -1233,7 +1234,11 @@ serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 	if (len < 4)	/* must fit type, class */
 		return (-1);
 	PUTSHORT(mq->qtype, pbuf);
-	PUTSHORT(mq->qclass, pbuf);
+	
+	qclass = mq->qclass;
+	if (mq->src.s_addr)
+		qclass = mq->qclass | UNIRESP_MSK;
+	PUTSHORT(qclass, pbuf);
 
 	return (pbuf - buf);
 }

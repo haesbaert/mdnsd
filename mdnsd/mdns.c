@@ -257,7 +257,12 @@ publish_fsm(int unused, short event, void *v_pub)
 		if (pkt_send_allif(&pub->pkt) == -1)
 			log_debug("can't send packet to all interfaces");
 		pub->sent++;
-		if (pub->sent == 3) { /* enough probing, start announcing */
+		/* Send only the first 2 question as QU */
+		if (pub->sent == 2)
+			LIST_FOREACH(mq, &pub->pkt.qlist, entry)
+				mq->src.s_addr = 0;
+		/* enough probing, start announcing */
+		else if (pub->sent == 3) { 
 			/* cool, so now that we're done, remove it from
 			 * probing list, now the record is ours. */
 			LIST_REMOVE(pub, entry);
@@ -563,7 +568,6 @@ cache_schedrev(struct rr *rr)
 		var = 95 + arc4random_uniform(3);
 		tv.tv_sec  = ((10 * rr->ttl) * var) / 1000;
 		tv.tv_sec -= ((10 * rr->ttl) * 90)  / 1000;
-		log_debug("2 -> %u", tv.tv_sec);
 		break;
 	case 3:	/* expired, delete from cache in 1 sec */
 		tv.tv_sec = 1;
