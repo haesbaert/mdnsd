@@ -30,9 +30,10 @@
 #include "mdnsd.h"
 #include "log.h"
 
-#define INTERVAL_PROBETIME	250000
-#define RANDOM_PROBETIME	arc4random_uniform(250000)
-#define FIRST_QUERYTIME		(arc4random_uniform(120000) + 20000)
+/* These are in microseconds */
+#define INTERVAL_PROBETIME	(250000 * 1000)
+#define RANDOM_PROBETIME	(arc4random_uniform(250000) * 1000)
+#define FIRST_QUERYTIME		(arc4random_uniform(120000) + 20000 * 1000)
 #define MAX_QUERYTIME		(60 * 60) /* one hour */
 
 struct query_node {
