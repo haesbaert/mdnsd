@@ -59,8 +59,9 @@
 
 int		 pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 ssize_t		 pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
-int		 pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
 int		 pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
+int		 pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *,
+	struct sockaddr_in *);
 int		 pkt_handleq(struct pkt *);
 int		 pkt_should_answerq(struct pkt *, struct question *);
 ssize_t		 serialize_rr(struct rr *, u_int8_t *, u_int16_t);
@@ -185,9 +186,8 @@ recv_packet(int fd, short event, void *bula)
 	/*
 	 * We need a valid dst to lookup receiving interface, see below.
 	 * Ipdst must be filled so we can check for unicast answers, see below.
-	 * Mdns draft requires sending port to be 5353.
 	 */
-	if (dst == NULL || ipdst.s_addr == 0 || ntohs(ipsrc.sin_port) != MDNS_PORT)
+	if (dst == NULL || ipdst.s_addr == 0)
 		return;
 
 	len = (u_int16_t)r;
@@ -240,8 +240,7 @@ recv_packet(int fd, short event, void *bula)
 	/* Parse question section */
 	if (pkt->h.qr == MDNS_QUERY)
 		for (i = 0; i < pkt->h.qdcount; i++)
-			if (pkt_parse_question(&pbuf, &len, pkt) == -1) {
-				log_warnx("pkt_parse_question() error");
+			if (pkt_parse_question(&pbuf, &len, pkt, &ipsrc) == -1) {
 				pkt_cleanup(pkt);
 				free(pkt);
 				return;
@@ -630,15 +629,15 @@ pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 
 int
 question_set(struct question *mq, char dname[MAXHOSTNAMELEN],
-    u_int16_t qtype, u_int16_t qclass, int uniresp)
+    u_int16_t qtype, u_int16_t qclass, struct in_addr src)
 {
 	bzero(mq, sizeof(*mq));
 
 	if (qclass != C_IN)
 		return (-1);
-	mq->qclass  = qclass;
-	mq->qtype   = qtype;
-	mq->uniresp = uniresp;
+	mq->qclass = qclass;
+	mq->qtype  = qtype;
+	mq->src  = src;
 	strlcpy(mq->dname, dname, sizeof(mq->dname));
 
 	return (0);
@@ -742,12 +741,13 @@ pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	return (0);
 }
 
- int
-pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
+int
+pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt,
+    struct sockaddr_in *ipsrc)
 {
-	u_int16_t us;
+	u_int16_t	 us;
 	struct question *mq;
-	ssize_t n;
+	ssize_t		 n;
 
 	/* MDNS question sanity check */
 	if (*len < MINQRY_LEN) {
@@ -773,13 +773,28 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
 
-	mq->uniresp = !!(us & UNIRESP_MSK);
+	if (us & UNIRESP_MSK) {
+		/* Unicast questions may have ephemeral source ports */
+		mq->src = ipsrc->sin_addr;
+	}
+	else {
+		/* Make sure source port is MDNS_PORT */
+		if (ntohs(ipsrc->sin_port) != MDNS_PORT) {
+			log_warnx("pkt_parse_question: Non unicast question "
+			    "from %s:%u with ephemeral source port, "
+			    "droping packet", inet_ntoa(ipsrc->sin_addr),
+			    ipsrc->sin_port);
+			free(mq);
+			return (-1);
+		}
+			
+	}
 	mq->qclass = us & CLASS_MSK;
 
 	/* This really sucks, we can't know if the class is valid prior to
 	 * parsing the labels, I mean, we could but would be ugly */
 	if (mq->qclass != C_ANY && mq->qclass != C_IN) {
-		log_debug("pkt_parse_question: Invalid packet qclass %u", mq->qclass);
+		log_warnx("pkt_parse_question: Invalid packet qclass %u", mq->qclass);
 		free(mq);
 		return (-1);
 	}
