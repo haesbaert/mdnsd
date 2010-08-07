@@ -54,8 +54,9 @@
 #define HDR_LEN		12
 #define MINQRY_LEN	6 /* 4 (qtype + qclass) +1 (null) + 1 (label len) */
 /* Defer truncated packets from 400ms-500ms */
-#define RANDOM_DEFERTIME				\
-	(arc4random_uniform(100000) + 400000 * 1000)
+#define RANDOM_DEFERTIME			\
+	(arc4random_uniform((u_int32_t) 100000)	\
+	    + 400000)
 
 int		 pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 ssize_t		 pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
