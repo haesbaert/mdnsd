@@ -253,7 +253,7 @@ publish_fsm(int unused, short event, void *v_pub)
 		LIST_INSERT_HEAD(&probing_list, pub, entry);
 		/* FALLTHROUGH */
 	case PUB_PROBE:
-		pub->pkt.h.qr = 0;
+		pub->pkt.h.qr = MDNS_QUERY;
 		if (pkt_send_allif(&pub->pkt) == -1)
 			log_debug("can't send packet to all interfaces");
 		pub->sent++;
@@ -266,9 +266,9 @@ publish_fsm(int unused, short event, void *v_pub)
 			/* cool, so now that we're done, remove it from
 			 * probing list, now the record is ours. */
 			LIST_REMOVE(pub, entry);
-			pub->state  = PUB_ANNOUNCE;
-			pub->sent   = 0;
-			pub->pkt.h.qr = 1;
+			pub->state    = PUB_ANNOUNCE;
+			pub->sent     = 0;
+			pub->pkt.h.qr = MDNS_RESPONSE;
 			/* remove questions */
 			while ((mq = (LIST_FIRST(&pub->pkt.qlist))) != NULL) {
 				LIST_REMOVE(mq, entry);
@@ -856,6 +856,7 @@ query_fsm(int unused, short event, void *v_query)
 
 	q = v_query;
 	pkt_init(&pkt);
+	pkt.h.qr = MDNS_QUERY;
 	pkt_add_question(&pkt, &q->mq);
 
 	if (q->style == QUERY_BROWSE) {
@@ -877,8 +878,8 @@ query_fsm(int unused, short event, void *v_query)
 			/* Don't include packet if it's too old */
 			if (rr_ttl_left(rr) < rr->ttl / 2)
 				continue;
-			if (pkt_add_arrr(&pkt, rr) == -1)
-				log_warnx("KNA error pkt_add_arrr: %s",
+			if (pkt_add_anrr(&pkt, rr) == -1)
+				log_warnx("KNA error pkt_add_anrr: %s",
 				    rr->dname);
 		}
 	}

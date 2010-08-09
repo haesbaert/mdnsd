@@ -605,7 +605,6 @@ pkt_add_anrr(struct pkt *pkt, struct rr *rr)
 		return (-1);
 	LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
 	pkt->h.ancount++;
-	pkt->h.qr = 1;
 
 	return (0);
 }
@@ -987,6 +986,7 @@ pkt_handleq(struct pkt *pkt)
 	/* TODO: Mdns draft 6.3 Duplicate Question Suppression */
 	
 	pkt_init(&sendpkt);
+	sendpkt.h.qr = MDNS_RESPONSE;
 	while ((mq = LIST_FIRST(&pkt->qlist)) != NULL) {
 		/*
 		 * Discard question which shouldn't be handled, can be a probing
