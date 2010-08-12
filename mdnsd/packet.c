@@ -298,9 +298,43 @@ recv_packet(int fd, short event, void *bula)
 	 */
 
 	/*
-	 * TODO: Check if the packet is the continuation of a previous
-	 * truncated packet, see below.
+	 * Check if the packet is the continuation of a previous truncated
+	 * packet, see below. A query packet with no questions and with answers
+	 * in is a continuation. Merge this answer with the previous packet.
 	 */
+	evtimer_set(&pkt->timer, pkt_process, pkt);
+	if (pkt->h.qr == MDNS_QUERY &&
+	    pkt->h.qdcount == 0 && pkt->h.arcount == 0 &&
+	    pkt->h.nscount == 0 && pkt->h.ancount > 0) {
+		struct pkt	*dpkt, *match = NULL;
+		
+		TAILQ_FOREACH(dpkt, &deferred_queue, entry) {
+			/* XXX: Should we compare source port as well ? */
+			if (dpkt->ipsrc.sin_addr.s_addr !=
+			    pkt->ipsrc.sin_addr.s_addr)
+				continue;
+			/* Found a match */
+			match = dpkt;
+			break;
+		}
+		if (match != NULL) {
+			if (evtimer_pending(&match->timer, NULL))
+				evtimer_del(&match->timer);
+			TAILQ_REMOVE(&deferred_queue, match, entry);
+			/* Merge pkt into match */
+			while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
+				LIST_REMOVE(rr, pentry);
+				LIST_INSERT_HEAD(&match->anlist, rr, pentry);
+			}
+			pkt_cleanup(pkt);
+			free(pkt);
+			pkt = match;
+		}
+		else
+			log_warnx("Got a continuation packet from %s:%s "
+			    "but no match", inet_ntoa(pkt->ipsrc.sin_addr),
+			    ntohs(pkt->ipsrc.sin_port));
+	}
 	
 	/*
 	 * Mdns Draft 7.2 Multi-Packet Known Answer Supression
@@ -320,8 +354,7 @@ recv_packet(int fd, short event, void *bula)
 		TAILQ_INSERT_TAIL(&deferred_queue, pkt, entry);
 		timerclear(&tv);
 		tv.tv_usec = RANDOM_DEFERTIME;
-		event_once(-1, EV_TIMEOUT, pkt_process, pkt, &tv);
-		
+		evtimer_add(&pkt->timer, &tv);
 		return;
 	}
 	
@@ -336,9 +369,8 @@ pkt_process(int unused, short event, void *v_pkt)
 	struct rr	*rr;
 	
 	if (event == EV_TIMEOUT) {
-		/* TODO */
-		log_warnx("pkt_process() deferred packet, "
-		    "this wasn't implemented yet !");
+		log_debug("pkt deferred from %s:%u",
+		    inet_ntoa(pkt->ipsrc.sin_addr), ntohs(pkt->ipsrc.sin_port));
 		TAILQ_REMOVE(&deferred_queue, pkt, entry);
 	}
 		

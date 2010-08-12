@@ -77,12 +77,13 @@ struct rr {
 
 struct pkt {
 	TAILQ_ENTRY(pkt)	entry;
-	struct sockaddr_in	ipsrc;
 	HEADER			h;
 	LIST_HEAD(, question) 	qlist;	/* Question section */
 	LIST_HEAD(, rr)       	anlist;	/* Answer section */
 	LIST_HEAD(, rr)       	nslist;	/* Authority section */
 	LIST_HEAD(, rr)       	arlist;	/* Additional section */
+	struct sockaddr_in	ipsrc;
+	struct event		timer;
 };
 
 struct question {
