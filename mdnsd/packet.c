@@ -61,8 +61,7 @@
 int		 pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 ssize_t		 pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 int		 pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
-int		 pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *,
-	struct sockaddr_in *);
+int		 pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
 int		 pkt_handleq(struct pkt *);
 int		 pkt_should_answerq(struct pkt *, struct question *);
 ssize_t		 serialize_rr(struct rr *, u_int8_t *, u_int16_t);
@@ -202,7 +201,7 @@ recv_packet(int fd, short event, void *bula)
 		fatal("calloc");
 	pkt_init(pkt);
 	pktcomp_reset(0, buf, len);
-	
+	pkt->ipsrc = ipsrc;
 	/*
 	 * Parse header, we'll use the HEADER structure in nameser.h
 	 */
@@ -221,7 +220,7 @@ recv_packet(int fd, short event, void *bula)
 	if (pkt->h.qr == MDNS_RESPONSE && ipdst.s_addr != MDNS_ADDRT) {
 		/* if_find_iface will try to match source address */
 		if ((iface = if_find_iface(dst->sdl_index,
-		    ipsrc.sin_addr)) == NULL) {
+		    pkt->ipsrc.sin_addr)) == NULL) {
 			log_warn("recv_packet: "
 			    "cannot find a matching interface (1)");
 			pkt_cleanup(pkt);
@@ -241,7 +240,7 @@ recv_packet(int fd, short event, void *bula)
 	/* Parse question section */
 	if (pkt->h.qr == MDNS_QUERY)
 		for (i = 0; i < pkt->h.qdcount; i++)
-			if (pkt_parse_question(&pbuf, &len, pkt, &ipsrc) == -1) {
+			if (pkt_parse_question(&pbuf, &len, pkt) == -1) {
 				pkt_cleanup(pkt);
 				free(pkt);
 				return;
@@ -742,8 +741,7 @@ pkt_parse_header(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 }
 
 int
-pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt,
-    struct sockaddr_in *ipsrc)
+pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 {
 	u_int16_t	 us;
 	struct question *mq;
@@ -775,15 +773,15 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt,
 
 	if (us & UNIRESP_MSK) {
 		/* Unicast questions may have ephemeral source ports */
-		mq->src = ipsrc->sin_addr;
+		mq->src = pkt->ipsrc.sin_addr;
 	}
 	else {
 		/* Make sure source port is MDNS_PORT */
-		if (ntohs(ipsrc->sin_port) != MDNS_PORT) {
+		if (ntohs(pkt->ipsrc.sin_port) != MDNS_PORT) {
 			log_warnx("pkt_parse_question: Non unicast question "
 			    "from %s:%u with ephemeral source port, "
-			    "droping packet", inet_ntoa(ipsrc->sin_addr),
-			    ipsrc->sin_port);
+			    "droping packet", inet_ntoa(pkt->ipsrc.sin_addr),
+			    pkt->ipsrc.sin_port);
 			free(mq);
 			return (-1);
 		}

@@ -77,6 +77,7 @@ struct rr {
 
 struct pkt {
 	TAILQ_ENTRY(pkt)	entry;
+	struct sockaddr_in	ipsrc;
 	HEADER			h;
 	LIST_HEAD(, question) 	qlist;	/* Question section */
 	LIST_HEAD(, rr)       	anlist;	/* Answer section */
