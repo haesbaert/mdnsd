@@ -482,49 +482,35 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 		pbuf += n;
 		left -= n;
 	}
-	/* Append all answers, they must fit a single packet. */
-	LIST_FOREACH(rr, &pkt->anlist, pentry) {
-		n = serialize_rr(rr, pbuf, left);
-		if (n == -1 || n > left)
-			return (-1);
-		h->ancount++;
-		pbuf += n;
-		left -= n;
-	}
-	/* Append all authorities, they must fit a single packet. */
-	LIST_FOREACH(rr, &pkt->nslist, pentry) {
-		n = serialize_rr(rr, pbuf, left);
-		if (n == -1 || n > left)
-			return (-1);
-		h->nscount++;
-		pbuf += n;
-		left -= n;
-	}
 	/*
-	 * This is where the shit happens, if we are querying and our additional
-	 * section won't fit in a single packet, we fragment. The following
-	 * could be a recursive call, passing a flag telling us if we're in a
-	 * "fragmented" state or not, but if so, we would need to make buf
-	 * non-static, allocating MAX_PACKET for each fragmenting packet. This
-	 * might seem like premature optimization but it's also easier to
-	 * maintain.
+	 * This is where the shit happens, if we are querying and our known
+	 * answers section won't fit in a single packet, we fragment. The
+	 * following could be a recursive call, passing a flag telling us if
+	 * we're in a "fragmented" state or not, but if so, we would need to
+	 * make buf non-static, allocating MAX_PACKET for each fragmenting
+	 * packet. This might seem like premature optimization but it's also
+	 * easier to maintain.
 	 */
-	LIST_FOREACH(rr, &pkt->arlist, pentry) {
+	LIST_FOREACH(rr, &pkt->anlist, pentry) {
 		int in_retry;
 
 		in_retry = 0;
 	retry:
 		n = serialize_rr(rr, pbuf, left);
 		/* Unexpected n */
-		if (n > left)
+		if (n > left) {
+			log_warnx("No space left on packet for an section.");
 			return (-1);
+		}
 		/*
 		 * Fragmentation only for queries, on answer is an
 		 * error, actually only for queries with known answer
 		 * supression.
 		 */
-		if (n == -1 && h->qr)
+		if (n == -1 && h->qr == MDNS_RESPONSE) {
+			log_warnx("Can't fragment for response packets");
 			return (-1);
+		}
 		/*
 		 * Won't fit, send what we have, restart the ball.
 		 */
@@ -538,6 +524,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 			bzero(buf, sizeof(buf));
 			left = iface->mtu;
 			pbuf = buf;
+			/* XXX: alignment bug? */
 			h    = (HEADER *) buf;
 			n    = 0;
 			pktcomp_reset(0, buf, left);
@@ -553,10 +540,34 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 			in_retry = 1;
 			goto retry;
 		}
+		h->ancount++;
+		pbuf += n;
+		left -= n;
+	}
+	
+	/* Append all authorities, they must fit a single packet. */
+	LIST_FOREACH(rr, &pkt->nslist, pentry) {
+		n = serialize_rr(rr, pbuf, left);
+		if (n == -1 || n > left) {
+			return (-1);
+		}
+		h->nscount++;
+		pbuf += n;
+		left -= n;
+	}
+	
+	/* Append all additionals, they must fit a single packet. */
+	LIST_FOREACH(rr, &pkt->arlist, pentry) {
+		n = serialize_rr(rr, pbuf, left);
+		if (n == -1 || n > left) {
+			return (-1);
+		}
 		h->arcount++;
 		pbuf += n;
 		left -= n;
 	}
+
+
 	/* Close packet and send. */
 	header_htons(h);
 	if (send_packet(iface, buf, pbuf - buf, &dst) == -1)
@@ -571,7 +582,7 @@ pkt_send_allif(struct pkt *pkt)
 	int		 succ  = 0;
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		if (pkt_send_if(pkt, iface) == -1)
-			log_warnx("Can't send packet though %s", iface->name);
+			log_warnx("Can't send packet through %s", iface->name);
 		else
 			succ++;
 	}
