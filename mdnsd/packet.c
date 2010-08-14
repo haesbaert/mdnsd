@@ -632,8 +632,6 @@ pkt_add_question(struct pkt *pkt, struct question *mq)
 int
 pkt_add_anrr(struct pkt *pkt, struct rr *rr)
 {
-	if (pkt->h.qdcount)
-		return (-1);
 	LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
 	pkt->h.ancount++;
 
