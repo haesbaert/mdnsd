@@ -324,7 +324,8 @@ recv_packet(int fd, short event, void *bula)
 			/* Merge pkt into match */
 			while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
 				LIST_REMOVE(rr, pentry);
-				LIST_INSERT_HEAD(&match->anlist, rr, pentry);
+				pkt->h.ancount--;
+				pkt_add_anrr(match, rr);
 			}
 			pkt_cleanup(pkt);
 			free(pkt);
@@ -631,11 +632,12 @@ int
 pkt_add_question(struct pkt *pkt, struct question *mq)
 {
 	/* can't have questions and answers in the same packet */
+	/* TODO: remove this */
 	if (pkt->h.ancount || pkt->h.nscount || pkt->h.arcount)
 		return (-1);
 	LIST_INSERT_HEAD(&pkt->qlist, mq, entry);
 	pkt->h.qdcount++;
-	pkt->h.qr = 0;
+	pkt->h.qr = 0;	/* TODO: remove this */
 
 	return (0);
 }
