@@ -129,6 +129,7 @@ publish_allrr(struct iface *iface)
 	if ((mq = calloc(1, sizeof(*mq))) == NULL)
 		fatal("calloc");
 	question_set(mq, conf->myname, T_ANY, C_IN, 1);
+	pub->pkt.h.qr = MDNS_QUERY;
 	pkt_add_question(&pub->pkt, mq);
 
 	RB_FOREACH(n, rrt_tree, &iface->rrt) {
@@ -597,6 +598,7 @@ cache_rev(int unused, short event, void *v_rr)
 	/* If we have an active query, try to renew the answer */
 	if ((q = query_lookup(rr->dname, rr->type, rr->class)) != NULL) {
 		pkt_init(&pkt);
+		pkt.h.qr = MDNS_QUERY;
 		pkt_add_question(&pkt, &q->mq);
 		if (pkt_send_allif(&pkt) == -1)
 			log_warnx("can't send packet to all interfaces");

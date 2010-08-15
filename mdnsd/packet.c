@@ -631,13 +631,8 @@ pkt_cleanup(struct pkt *pkt)
 int
 pkt_add_question(struct pkt *pkt, struct question *mq)
 {
-	/* can't have questions and answers in the same packet */
-	/* TODO: remove this */
-	if (pkt->h.ancount || pkt->h.nscount || pkt->h.arcount)
-		return (-1);
 	LIST_INSERT_HEAD(&pkt->qlist, mq, entry);
 	pkt->h.qdcount++;
-	pkt->h.qr = 0;	/* TODO: remove this */
 
 	return (0);
 }
