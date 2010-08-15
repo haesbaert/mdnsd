@@ -430,6 +430,8 @@ cache_process(struct rr *rr)
 	 * special case when we call cache_delete() on a rr that isn't in *
 	 * cache.
 	 */
+	
+	/* TODO: schedule it for 1 second */
 	if (rr->ttl == 0) {
 		cache_delete(rr);
 		free(rr);
