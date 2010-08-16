@@ -46,9 +46,9 @@ void		 control_browse_del(struct ctl_conn *, struct imsg *);
 void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct mdns_msg_lkup	 mlkup;
-	struct rr		*rr;
-	struct query 		*q;
+	struct rrset	 mlkup;
+	struct rr	*rr;
+	struct query 	*q;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
@@ -78,7 +78,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	log_debug("looking up %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
 
-	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
+	rr = cache_lookup(&mlkup);
 	/* cache hit */
 	if (rr != NULL) {
 		if (query_answerctl(c, rr, IMSG_CTL_LOOKUP) == -1)
@@ -87,7 +87,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	}
 
 	/* cache miss */
-	q = query_place(QUERY_LKUP, mlkup.dname, mlkup.type, mlkup.class);
+	q = query_place(QUERY_LKUP, &mlkup);
 	if (q == NULL)
 		log_warnx("Can't place query");
 	control_addq(c, q);
@@ -96,9 +96,9 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 void
 control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct mdns_msg_lkup	 mlkup;
-	struct rr		*rr;
-	struct query 		*q;
+	struct rrset	 mlkup;
+	struct rr	*rr;
+	struct query 	*q;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
@@ -119,7 +119,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	}
 	
 	/* Check if control has this query already, if so don't do anything */
-	if ((q = query_lookup(mlkup.dname, mlkup.type, mlkup.class)) != NULL &&
+	if ((q = query_lookup(&mlkup)) != NULL &&
 	    control_hasq(c, q)) {
 		log_debug("Control has query for %s %s", mlkup.dname,
 		    rr_type_name(mlkup.type));
@@ -129,12 +129,12 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	    mlkup.class);
 	
 	/* Place query in an existing query or make a new one */
-	q = query_place(QUERY_BROWSE, mlkup.dname, mlkup.type, mlkup.class);
+	q = query_place(QUERY_BROWSE, &mlkup);
 	if (q == NULL)
 		log_warnx("Can't place query");
 	/* Controllers must hold their queries */
 	control_addq(c, q);
-	rr = cache_lookup(mlkup.dname, mlkup.type, mlkup.class);
+	rr = cache_lookup(&mlkup);
 	while (rr != NULL) {
 		if (query_answerctl(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
 			log_warnx("query_answerctl error");
@@ -145,8 +145,8 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 void
 control_browse_del(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct mdns_msg_lkup	 mlkup;
-	struct query 		*q;
+	struct rrset	 mlkup;
+	struct query 	*q;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
@@ -165,7 +165,7 @@ control_browse_del(struct ctl_conn *c, struct imsg *imsg)
 		    mlkup.class);
 		return;
 	}
-	q = query_lookup(mlkup.dname, mlkup.type, mlkup.class);
+	q = query_lookup(&mlkup);
 	if (q != NULL)
 		control_remq(c, q);
 }	

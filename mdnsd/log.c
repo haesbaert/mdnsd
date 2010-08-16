@@ -224,9 +224,9 @@ rr_type_name(uint16_t type)
 void
 log_debug_rr(struct rr *rr)
 {
-	log_debug("-->%s (%s)", rr->dname, rr_type_name(rr->type));
+	log_debug("-->%s (%s)", rr->rrs.dname, rr_type_name(rr->rrs.type));
 
-	switch(rr->type) {
+	switch(rr->rrs.type) {
 	case T_A:
 		log_debug("\t %s", inet_ntoa(rr->rdata.A));
 		break;

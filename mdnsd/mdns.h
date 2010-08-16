@@ -55,7 +55,7 @@ struct mdns_browse {
 	void		*udata;
 };
 
-struct mdns_msg_lkup {
+struct rrset {
 	char		dname[MAXHOSTNAMELEN];
 	u_int16_t	type;
 	u_int16_t	class;

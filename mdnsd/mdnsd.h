@@ -39,26 +39,25 @@
 #define MDNS_RESPONSE		1
 
 #define ANSWERS(q, rr)							\
-	((((q)->qtype == T_ANY) || ((q)->qtype == (rr)->type))    &&	\
-	    (q)->qclass == (rr)->class                            &&	\
-	    strcmp((q)->dname, (rr)->dname) == 0)
+	((((q)->rrs.type == T_ANY) || ((q)->rrs.type == (rr)->rrs.type)) && \
+	    (q)->rrs.class == (rr)->rrs.class                            && \
+	    (strcmp((q)->rrs.dname, (rr)->rrs.dname)) == 0)
 
 #define RR_UNIQ(rr) (rr->cacheflush)
 
 struct rrt_node {
 	RB_ENTRY(rrt_node)      entry;
-	LIST_HEAD(rr_head, rr) 	hrr; /* head rr */
+	struct rrset		rrs;
+	LIST_HEAD(, rr) 	hrr;	/* head rr */
 };
 RB_HEAD(rrt_tree, rrt_node);
-RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_compare);
+RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_cmp);
 
 struct rr {
 	LIST_ENTRY(rr)		centry; /* cache entry */
 	LIST_ENTRY(rr)		pentry; /* packet entry */
-	char			dname[MAXHOSTNAMELEN];
-	u_int16_t		type;
+	struct rrset 		rrs;
 	int			cacheflush;
-	u_int16_t		class;
 	u_int32_t		ttl;
 	union {
 		struct in_addr	A;
@@ -88,9 +87,7 @@ struct pkt {
 
 struct question {
 	LIST_ENTRY(question)	entry;
-	char			dname[MAXHOSTNAMELEN];
-	u_int16_t		qtype;
-	u_int16_t		qclass;
+	struct rrset 		rrs;			
 	struct in_addr		src; /* If unicast response, src != 0 */
 };
 
@@ -239,8 +236,6 @@ int	  pkt_add_arrr(struct pkt *, struct rr *);
 int	  rr_rdata_cmp(struct rr *, struct rr *);
 u_int32_t rr_ttl_left(struct rr *);
 void	pktcomp_reset(int, u_int8_t *, u_int16_t);
-int	question_set(struct question *, char [MAXHOSTNAMELEN], u_int16_t,
-    u_int16_t, in_addr_t);
 int	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, int, void *, size_t);
 
@@ -249,17 +244,19 @@ void		 publish_init(void);
 void		 publish_allrr(struct iface *);
 int		 publish_insert(struct iface *, struct rr *);
 int		 publish_delete(struct iface *, struct rr *);
-struct rr *	 publish_lookupall(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+struct rr *	 publish_lookupall(struct rrset *);
 void		 publish_fsm(int, short, void *_pub);
 void		 query_init(void);
-struct query *	 query_place(enum query_style, char *, u_int16_t, u_int16_t);
-struct query *	 query_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+struct query *	 query_place(enum query_style, struct rrset *);
+struct query *	 query_lookup(struct rrset *);
 int		 query_answerctl(struct ctl_conn *, struct rr *, int);
 int		 query_notify(struct rr *, int);
 void		 query_remove(struct query *);
 void		 cache_init(void);
 int		 cache_process(struct rr *);
-struct rr	*cache_lookup(char [MAXHOSTNAMELEN], u_int16_t, u_int16_t);
+struct rr	*cache_lookup(struct rrset *);
+int		 rrset_cmp(struct rrset *a, struct rrset *b);
+
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;

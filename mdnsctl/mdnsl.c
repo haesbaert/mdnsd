@@ -202,7 +202,7 @@ static int
 mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto,
     int msgtype)
 {
-	struct mdns_msg_lkup	mlkup;
+	struct rrset mlkup;
 
 	if (app != NULL && strlen(app) > MAXHOSTNAMELEN) {
 		errno = ENAMETOOLONG;
@@ -325,10 +325,10 @@ reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
 static int
 mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 {
-	struct imsg		imsg;
-	struct mdns_msg_lkup	mlkup;
-	struct imsgbuf		ibuf;
-	int			err, sockfd;
+	struct imsg	imsg;
+	struct rrset	mlkup;
+	struct imsgbuf	ibuf;
+	int		err, sockfd;
 
 	switch (type) {
 	case T_A:		/* FALLTHROUGH */

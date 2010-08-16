@@ -665,30 +665,14 @@ pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 }
 
 int
-question_set(struct question *mq, char dname[MAXHOSTNAMELEN],
-    u_int16_t qtype, u_int16_t qclass, in_addr_t src)
-{
-	bzero(mq, sizeof(*mq));
-
-	if (qclass != C_IN)
-		return (-1);
-	mq->qclass     = qclass;
-	mq->qtype      = qtype;
-	mq->src.s_addr = src;
-	strlcpy(mq->dname, dname, sizeof(mq->dname));
-
-	return (0);
-}
-
-int
 rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
     u_int16_t type, u_int16_t class, u_int32_t ttl,
     int cacheflush, void *rdata, size_t rdlen)
 {
 	bzero(rr, sizeof(*rr));
 
-	rr->type = type;
-	rr->class = class;
+	rr->rrs.type = type;
+	rr->rrs.class = class;
 	rr->ttl = ttl;
 	rr->cacheflush = cacheflush;
 	if (rdlen > sizeof(rr->rdata)) {
@@ -696,7 +680,7 @@ rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
 		return (-1);
 	}
 	memcpy(&rr->rdata, rdata, rdlen);
-	strlcpy(rr->dname, dname, sizeof(rr->dname));
+	strlcpy(rr->rrs.dname, dname, sizeof(rr->rrs.dname));
 
 	return (0);
 }
@@ -704,12 +688,12 @@ rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
 int
 rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 {
-	if (rra->type != rrb->type)
+	if (rra->rrs.type != rrb->rrs.type)
 		return (-1);
-	if (rra->class != rrb->class)
+	if (rra->rrs.class != rrb->rrs.class)
 		return (-1);
 	
-	switch (rra->type) {
+	switch (rra->rrs.type) {
 	case T_A:
 		return (rra->rdata.A.s_addr == rrb->rdata.A.s_addr);
 		break;		/* NOTREACHED */
@@ -741,7 +725,8 @@ rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 			return (strcmp(rra->rdata.HINFO.os,
 			    rrb->rdata.HINFO.os));
 	default:
-		log_warnx("Unknown rr->type (%d), can't compare", rra->type);
+		log_warnx("Unknown rr->type (%d), can't compare",
+		    rra->rrs.type);
 		fatalx("Fatal, won't accept bogus comparisons");
 		break;
 	}
@@ -794,7 +779,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	if ((mq = calloc(1, sizeof(*mq))) == NULL)
 		fatal("calloc");
 
-	n = pkt_parse_dname(*pbuf, *len, mq->dname);
+	n = pkt_parse_dname(*pbuf, *len, mq->rrs.dname);
 	if (n == -1) {
 		free(mq);
 		return (-1);
@@ -803,7 +788,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	*pbuf += n;
 	*len  -= n;
 
-	GETSHORT(mq->qtype, *pbuf);
+	GETSHORT(mq->rrs.type, *pbuf);
 	*len -= INT16SZ;
 
 	GETSHORT(us, *pbuf);
@@ -825,12 +810,13 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 		}
 			
 	}
-	mq->qclass = us & CLASS_MSK;
+	mq->rrs.class = us & CLASS_MSK;
 
 	/* This really sucks, we can't know if the class is valid prior to
 	 * parsing the labels, I mean, we could but would be ugly */
-	if (mq->qclass != C_ANY && mq->qclass != C_IN) {
-		log_warnx("pkt_parse_question: Invalid packet qclass %u", mq->qclass);
+	if (mq->rrs.class != C_ANY && mq->rrs.class != C_IN) {
+		log_warnx("pkt_parse_question: Invalid packet qclass %u",
+		    mq->rrs.class);
 		free(mq);
 		return (-1);
 	}
@@ -917,7 +903,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	ssize_t n;
 	char *buf;
 
-	n = pkt_parse_dname(*pbuf, *len, rr->dname);
+	n = pkt_parse_dname(*pbuf, *len, rr->rrs.dname);
 	if (n == -1)
 		return (-1);
 	*pbuf += n;
@@ -927,15 +913,15 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 		log_debug("Unexpected packet len");
 		return (-1);
 	}
-	GETSHORT(rr->type, *pbuf);
+	GETSHORT(rr->rrs.type, *pbuf);
 	*len -= INT16SZ;
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
 	rr->cacheflush = !!(us & CACHEFLUSH_MSK);
-	rr->class      = us & CLASS_MSK;
-	if (rr->class != C_ANY && rr->class != C_IN) {
+	rr->rrs.class  = us & CLASS_MSK;
+	if (rr->rrs.class != C_ANY && rr->rrs.class != C_IN) {
 		log_debug("pkt_parse_rr: %s (%s) Invalid packet class %u",
-		    rr_type_name(rr->type), rr->dname, rr->class);
+		    rr_type_name(rr->rrs.type), rr->rrs.dname, rr->rrs.class);
 		return (-1);
 	}
 	GETLONG(rr->ttl, *pbuf);
@@ -947,7 +933,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 		    *len, rdlen);
 		return (-1);
 	}
-	switch (rr->type) {
+	switch (rr->rrs.type) {
 	case T_A:
 		buf = *pbuf;
 		if (rdlen != INT32SZ) {
@@ -998,7 +984,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	case T_AAAA:
 		break;
 	default:
-		log_debug("Unknown record type %u 0x%x", rr->type, rr->type);
+		log_debug("Unknown record type %u", rr->rrs.type);
 		return (-1);
 		break;
 	}
@@ -1035,12 +1021,12 @@ pkt_handleq(struct pkt *pkt)
 			continue;
 		}
 		
-		rr = publish_lookupall(mq->dname, mq->qtype, mq->qclass);
+		rr = publish_lookupall(&mq->rrs);
 		if (rr != NULL && ANSWERS(mq, rr)) {
 			if (pkt_add_anrr(&sendpkt, rr) == -1)
 				log_warn("Can't answer question for"
 				    "%s %s",
-				    mq->dname, rr_type_name(mq->qtype));
+				    mq->rrs.dname, rr_type_name(mq->rrs.type));
 			if (pkt_send_allif(&sendpkt) == -1)
 				log_debug("can't send packet to"
 				    "all interfaces");
@@ -1078,7 +1064,7 @@ pkt_should_answerq(struct pkt *pkt, struct question *mq)
 	 * supression list, that is, check that the answer isn't in the answer
 	 * section with a ttl at least half the original value. 
 	 */
-	rrans = publish_lookupall(mq->dname, mq->qtype, mq->qclass);
+	rrans = publish_lookupall(&mq->rrs);
 	/* We've no answers for it, we should try to answer, but we
 	 * already know we can't so return 0, this is a speed hack. */
 	if (rrans == NULL)
@@ -1164,7 +1150,7 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	u_int16_t	 rdlen = 0, *prdlen;
 	u_int8_t	 cpulen, oslen;
 
-	switch (rr->type) {
+	switch (rr->rrs.type) {
 	case T_HINFO:
 		cpulen = strlen(rr->rdata.HINFO.cpu);
 		oslen = strlen(rr->rdata.HINFO.os);
@@ -1211,7 +1197,7 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		break;
 	default:
 		log_warnx("serialize_rdata: Don't know how to serialize %s (%d)",
-		    rr_type_name(rr->type), rr->type);
+		    rr_type_name(rr->rrs.type), rr->rrs.type);
 		return (-1);
 		break;		/* NOTREACHED */
 	}
@@ -1225,7 +1211,7 @@ serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	u_int16_t	 us   = 0;
 	ssize_t		 n;
 
-	n = serialize_dname(pbuf, len, rr->dname);
+	n = serialize_dname(pbuf, len, rr->rrs.dname);
 	if (n == -1 || n > len)
 		return (-1);
 	pbuf += n;
@@ -1235,8 +1221,8 @@ serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 
 	if (len < 8) /* must fit type, class, ttl */
 		return (-1);
-	PUTSHORT(rr->type, pbuf);
-	us = rr->class;
+	PUTSHORT(rr->rrs.type, pbuf);
+	us = rr->rrs.class;
 	if (rr->cacheflush)
 		us |= CACHEFLUSH_MSK;
 	PUTSHORT(us, pbuf);
@@ -1259,7 +1245,7 @@ serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 	u_int16_t qclass;
 	ssize_t n;
 
-	n = serialize_dname(pbuf, len, mq->dname);
+	n = serialize_dname(pbuf, len, mq->rrs.dname);
 	if (n == -1 || n > len)
 		return (-1);
 	pbuf += n;
@@ -1269,11 +1255,11 @@ serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 
 	if (len < 4)	/* must fit type, class */
 		return (-1);
-	PUTSHORT(mq->qtype, pbuf);
+	PUTSHORT(mq->rrs.type, pbuf);
 	
-	qclass = mq->qclass;
+	qclass = mq->rrs.class;
 	if (mq->src.s_addr)
-		qclass = mq->qclass | UNIRESP_MSK;
+		qclass = mq->rrs.class | UNIRESP_MSK;
 	PUTSHORT(qclass, pbuf);
 
 	return (pbuf - buf);
