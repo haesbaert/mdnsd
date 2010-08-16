@@ -357,8 +357,10 @@ mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
 	mlkup.type  = type;
 	mlkup.class = C_IN;
 	if (ibuf_send_imsg(&ibuf, IMSG_CTL_LOOKUP,
-	    &mlkup, sizeof(mlkup)) == -1)
+	    &mlkup, sizeof(mlkup)) == -1) {
+		imsg_clear(&ibuf);
 		return (-1); /* XXX: set errno */
+	}
 	if (ibuf_read_imsg(&ibuf, &imsg) == -1) {
 		err = errno;
 		imsg_clear(&ibuf);
