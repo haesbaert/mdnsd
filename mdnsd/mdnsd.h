@@ -112,7 +112,6 @@ enum publish_state {
 };
 
 struct publish {
-	LIST_ENTRY(publish)	entry;
 	struct pkt		pkt;
 	struct event		timer;	/* probe/announce timer */
 	struct iface	       *iface;

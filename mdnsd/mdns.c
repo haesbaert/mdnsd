@@ -256,7 +256,6 @@ publish_fsm(int unused, short event, void *v_pub)
 		else if (pub->sent == 3) { 
 			/* cool, so now that we're done, remove it from
 			 * probing list, now the record is ours. */
-			LIST_REMOVE(pub, entry);
 			pub->state    = PUB_ANNOUNCE;
 			pub->sent     = 0;
 			pub->pkt.h.qr = MDNS_RESPONSE;
