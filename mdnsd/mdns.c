@@ -850,10 +850,7 @@ query_fsm(int unused, short event, void *v_query)
 
 	if (q->style == QUERY_BROWSE) {
 		/* This will send at seconds 0, 1, 2, 4, 8, 16... */
-		if (q->sent == 0)
-			tosleep = 1;
-		else
-			tosleep = (1 << (q->sent + 1)) - (1 << (q->sent));
+		tosleep = (1 << (q->sent + 1)) - (1 << (q->sent));
 		
 		if (tosleep > MAX_QUERYTIME)
 			tosleep = MAX_QUERYTIME;
