@@ -99,7 +99,7 @@ enum query_style {
 struct query {
 	int			active;
 	enum query_style	style;
-	int			sleep;
+	u_int			sent;
 	struct question		mq;
 	struct event		timer;
 };
@@ -116,6 +116,7 @@ struct publish {
 	struct event		timer;	/* probe/announce timer */
 	struct iface	       *iface;
 	enum publish_state	state;
+	/* TODO: make sent unsigned */
 	int			sent;	/* how many send packets */
 	unsigned long		id;	/* unique id */
 };

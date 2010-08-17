@@ -231,11 +231,11 @@ publish_lookupall(struct rrset *rrs)
 void
 publish_fsm(int unused, short event, void *v_pub)
 {
-	struct publish		*pub = v_pub;
-	struct timeval		 tv;
-	struct rr		*rr;
-	struct question		*mq;
-	static unsigned long	pubid;
+	struct publish	*pub = v_pub;
+	struct timeval	 tv;
+	struct rr	*rr;
+	struct question	*mq;
+	static u_long	 pubid;
 	
 	timerclear(&tv);
 	switch (pub->state) {
@@ -731,7 +731,8 @@ query_place(enum query_style s, struct rrset *rrs)
 	/* start the sending machine */
 	timerclear(&tv);
 	tv.tv_usec = FIRST_QUERYTIME;
-	event_once(-1, EV_TIMEOUT, query_fsm, q, &tv);
+	evtimer_set(&q->timer, query_fsm, q);
+	evtimer_add(&q->timer, &tv);
 	return (q);
 }
 
@@ -840,6 +841,7 @@ query_fsm(int unused, short event, void *v_query)
 	struct timeval	 tv;
 	struct query	*q;
 	struct rr	*rr;
+	long		 tosleep;
 
 	q = v_query;
 	pkt_init(&pkt);
@@ -848,15 +850,15 @@ query_fsm(int unused, short event, void *v_query)
 
 	if (q->style == QUERY_BROWSE) {
 		/* This will send at seconds 0, 1, 2, 4, 8, 16... */
-		if (!q->sleep)
-			q->sleep = 1;
+		if (q->sent == 0)
+			tosleep = 1;
 		else
-			q->sleep = q->sleep * 2;
-		if (q->sleep > MAX_QUERYTIME)
-			q->sleep = MAX_QUERYTIME;
+			tosleep = (1 << (q->sent + 1)) - (1 << (q->sent));
+		
+		if (tosleep > MAX_QUERYTIME)
+			tosleep = MAX_QUERYTIME;
 		timerclear(&tv);
-		tv.tv_sec = q->sleep;
-		evtimer_set(&q->timer, query_fsm, q);
+		tv.tv_sec = tosleep;
 		evtimer_add(&q->timer, &tv);
 
 		/* Known Answer Supression */
@@ -873,7 +875,7 @@ query_fsm(int unused, short event, void *v_query)
 
 	if (pkt_send_allif(&pkt) == -1)
 		log_warnx("can't send packet to all interfaces");
-	q->sleep++;
+	q->sent++;
 }
 
 int
