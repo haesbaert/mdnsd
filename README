@@ -31,10 +31,6 @@ architecture was designed in order to support it. So goals:
         publish names/services as they see fit.
         * Have a mdns control program, which is mainly a crude
         interface to the API.
-I have decided to support the .local domain only, the draft says it
-should support any domains, but I find it dumb and error-prone, nobody
-in it's sane conscience will use another domain for mdns. If you do,
-you're wrong.
 
 MDNSD Design
 ------------
