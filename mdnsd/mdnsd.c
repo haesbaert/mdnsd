@@ -14,12 +14,12 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/utsname.h>
-#include <sys/types.h>
 #include <sys/wait.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <err.h>
 #include <event.h>
@@ -210,7 +210,7 @@ main(int argc, char *argv[])
 	struct passwd	*pw;
 	struct iface	*iface;
 	struct event	 ev_sigint, ev_sigterm, ev_sighup;
-
+	
 	log_init(1);	/* log to stderr until daemonized */
 
 	while ((ch = getopt(argc, argv, "d")) != -1) {
@@ -271,6 +271,7 @@ main(int argc, char *argv[])
 	event_init();
 
 	/* setup signals */
+	signal_set(&ev_sigint, SIGINT, mdnsd_sig_handler, NULL);
 	signal_set(&ev_sigterm, SIGTERM, mdnsd_sig_handler, NULL);
 	signal_set(&ev_sighup, SIGHUP, mdnsd_sig_handler, NULL);
 	signal_add(&ev_sigint, NULL);
