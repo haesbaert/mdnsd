@@ -77,6 +77,18 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		    mlkup.class);
 		return;
 	}
+	
+	/* Check if control has this query already, if so don't do anything */
+	LIST_FOREACH(q, &c->qlist, entry) {
+		if (q->style != QUERY_LOOKUP)
+			continue;
+		LIST_FOREACH(rr, &q->rrlist, qentry)
+		    if (rrset_cmp(&rr->rrs, &mlkup) == 0) {
+			    log_debug("control already querying for %s",
+				rrs_str(&rr->rrs));
+			    return;
+		    }
+	}
 
 	log_debug("looking up %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
@@ -138,13 +150,17 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	}
 	
-/* 	/\* Check if control has this query already, if so don't do anything *\/ */
-/* 	if ((q = query_lookup(&mlkup)) != NULL && */
-/* 	    control_hasq(c, q)) { */
-/* 		log_debug("Control has query for %s %s", mlkup.dname, */
-/* 		    rr_type_name(mlkup.type)); */
-/* 		return; */
-/* 	} */
+	/* Check if control has this query already, if so don't do anything */
+	LIST_FOREACH(q, &c->qlist, entry) {
+		if (q->style != QUERY_BROWSE)
+			continue;
+		LIST_FOREACH(rr, &q->rrlist, qentry)
+		    if (rrset_cmp(&rr->rrs, &mlkup) == 0) {
+			    log_debug("control already querying for %s",
+				rrs_str(&rr->rrs));
+			    return;
+		    }
+	}
 	
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
@@ -349,17 +365,6 @@ control_close(int fd)
 	close(c->iev.ibuf.fd);
 	while ((q = (LIST_FIRST(&c->qlist))) != NULL)
 		query_remove(q);
-/* 	while ((q = (LIST_FIRST(&c->qlist))) != NULL) { */
-/* 		while ((rr = (LIST_FIRST(&q->rrlist))) != NULL) { */
-/* 			question_remove(&rr->rrs); */
-/* 			LIST_REMOVE(rr, qentry); */
-/* 			free(rr); */
-/* 		} */
-/* 		if (evtimer_pending(&q->timer, NULL)) */
-/* 			evtimer_del(&q->timer); */
-/* 		LIST_REMOVE(q, entry); */
-/* 		free(q); */
-/* 	} */
 	free(c);
 }
 
