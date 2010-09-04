@@ -691,6 +691,7 @@ question_add(struct rrset *rrs)
 	}
 	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
+	qst->active++;
 	qst->rrs = *rrs;
 	if (RB_INSERT(question_tree, &question_tree, qst) != NULL)
 		fatal("question_add: RB_INSERT");
