@@ -113,6 +113,9 @@ mdnsd_sig_handler(int sig, short event, void *arg)
 		/* reconfigure */
 		/* ... */
 		break;
+	case SIGINT:
+		log_debug("got SIGINT");
+		break;
 	default:
 		fatalx("unexpected signal");
 		/* NOTREACHED */
