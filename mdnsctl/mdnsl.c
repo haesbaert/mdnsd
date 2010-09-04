@@ -109,16 +109,11 @@ mdns_lkup_PTR(struct mdns *m, const char *ptr)
 }
 
 int
-mdns_lkup_rev(struct mdns *m, struct in_addr addr)
+mdns_lkup_rev(struct mdns *m, struct in_addr *addr)
 {
-/* 	char	*addrstr; */
 	char	name[MAXHOSTNAMELEN];
-/* 	char	res[MAXHOSTNAMELEN]; */
-/* 	int	r; */
 
-/* 	if ((addrstr = inet_ntoa(addr)) == NULL) */
-/* 		return (-1); */
-	reversstr(name, &addr);
+	reversstr(name, addr);
 	name[sizeof(name) - 1] = '\0';
 	
 	return (mdns_lkup_PTR(m, name));

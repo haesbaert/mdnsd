@@ -103,7 +103,7 @@ void	mdns_set_udata(struct mdns *, void *);
 int	mdns_lkup_A(struct mdns *, const char *);
 int	mdns_lkup_PTR(struct mdns *m, const char *);
 int	mdns_lkup_HINFO(struct mdns *, const char *);
-int	mdns_lkup_rev(struct mdns *, struct in_addr);
+int	mdns_lkup_rev(struct mdns *, struct in_addr *);
 
 void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 

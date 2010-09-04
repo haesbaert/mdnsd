@@ -41,6 +41,7 @@
 __dead void	usage(void);
 void		bhook(char *, char *, char *, int, void *);
 void		my_lkup_A_hook(struct mdns *, int, char *, struct in_addr);
+void		my_lkup_PTR_hook(struct mdns *, int, char *, char *);
 void		my_browse_hook(struct mdns *, int, char *, char *, char *);
 
 struct parse_result	*res;
@@ -67,6 +68,7 @@ main(int argc, char *argv[])
 		err(1, "mdns_open");
 	
 	mdns_set_lkup_A_hook(&mdns, my_lkup_A_hook);
+	mdns_set_lkup_PTR_hook(&mdns, my_lkup_PTR_hook);
 	mdns_set_browse_hook(&mdns, my_browse_hook);
 
 	/* process user request */
@@ -83,7 +85,10 @@ main(int argc, char *argv[])
 		if (res->flags & F_HINFO)
 			if (mdns_lkup_HINFO(&mdns, res->hostname) == -1)
 				err(1, "mdns_lkup_A");
-
+		break;
+	case RLOOKUP:
+		if (mdns_lkup_rev(&mdns, &res->addr) == -1)
+			err(1, "mdns_lkup_A");
 		break;
 	case BROWSE_PROTO:
 		if (mdns_browse_add(&mdns, res->app, res->proto) == -1)
@@ -122,6 +127,25 @@ my_lkup_A_hook(struct mdns *m, int ev, char *host, struct in_addr a)
 	}
 	
 	exit(0);
+}
+
+void
+my_lkup_PTR_hook(struct mdns *m, int ev, char *name, char *ptr)
+{
+	switch (ev) {
+	case LOOKUP_SUCCESS:
+		printf("Hostname: %s\n", ptr);
+		break;
+	case LOOKUP_FAILURE:
+		printf("Hostname not found\n");
+		break;
+	default:
+		errx(1, "Unhandled event");
+		break;	/* NOTREACHED */
+	}
+	
+	exit(0);
+
 }
 
 void
