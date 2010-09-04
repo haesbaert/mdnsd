@@ -455,7 +455,6 @@ cache_insert(struct rr *rr)
 		if (RB_INSERT(rrt_tree, &cache_tree, n) != NULL)
 			fatal("rrt_insert: RB_INSERT");
 		cache_schedrev(rr);
-		/* query_notify(rr, 1); */
 		rr_notify_in(rr);
 
 		return (0);
@@ -471,7 +470,6 @@ cache_insert(struct rr *rr)
 		}
 		LIST_INSERT_HEAD(&n->hrr, rr, centry);
 		cache_schedrev(rr);
-/* 		query_notify(rr, 1); */
 		rr_notify_in(rr);
 
 		return (0);
@@ -507,8 +505,7 @@ cache_delete(struct rr *rr)
 
 	log_debug("cache_delete: type: %s name: %s", rr_type_name(rr->rrs.type),
 	    rr->rrs.dname);
-/* 	query_notify(rr, 0); */
-/* 	rr_notifiy_out(rr); */
+	rr_notify_out(rr);
 	s = cache_lookup_node(&rr->rrs);
 	if (s == NULL)
 		return (0);
@@ -704,42 +701,6 @@ question_add(struct rrset *rrs)
 	return (qst);
 }
 
-/* struct query * */
-/* query_place(enum query_style s, struct rrset *rrs) */
-/* { */
-/* 	struct query		*q; */
-/* 	struct query_node	*qn; */
-/* 	struct timeval		 tv; */
-
-/* 	q = query_lookup(rrs); */
-/* 	/\* existing query, increase active *\/ */
-/* 	if (q != NULL) { */
-/* 		if (s != q->style) { */
-/* 			log_warnx("trying to change a query style"); */
-/* 			return (NULL); */
-/* 		} */
-/* 		q->active++; */
-/* 		log_debug("existing query active = %d", q->active); */
-/* 		return (q); */
-/* 	} */
-/* 	/\* no query, make a new one *\/ */
-/* 	log_debug("making new query"); */
-/* 	if ((qn = calloc(1, sizeof(*qn))) == NULL) */
-/* 		fatal("calloc"); */
-/* 	q = &qn->q; */
-/* 	q->qst.rrs = *rrs; */
-/* 	q->style = s; */
-/* 	q->active++; */
-/* 	if (RB_INSERT(query_tree, &query_tree, qn) != NULL) */
-/* 		fatal("query_place: RB_INSERT"); */
-/* 	/\* start the sending machine *\/ */
-/* 	timerclear(&tv); */
-/* 	tv.tv_usec = FIRST_QUERYTIME; */
-/* 	evtimer_set(&q->timer, query_fsm, q); */
-/* 	evtimer_add(&q->timer, &tv); */
-/* 	return (q); */
-/* } */
-
 void
 question_remove(struct rrset *rrs)
 {
@@ -756,50 +717,6 @@ question_remove(struct rrset *rrs)
 	}
 }
 
-/* int */
-/* query_notify(struct rr *rr, int in) */
-/* { */
-/* 	struct ctl_conn *c; */
-/* 	struct query	*q; */
-/* 	int		 tosee; */
-/* 	int		 msgtype; */
-
-/* 	q = query_lookup(&rr->rrs); */
-/* 	if (q == NULL) */
-/* 		return (0); */
-/* 	/\* try to answer the controllers *\/ */
-/* 	tosee = q->active; */
-/* 	TAILQ_FOREACH(c, &ctl_conns, entry) { */
-/* 		if (!tosee) */
-/* 			break; */
-/* 		if (!control_hasq(c, q)) */
-/* 			continue; */
-/* 		/\* sanity check *\/ */
-/* 		if (!ANSWERS(&q->qst, rr)) { */
-/* 			log_warnx("Bogus pointer, report me"); */
-/* 			return (0); */
-/* 		} */
-/* 		/\* notify controller *\/ */
-/* 		switch (q->style) { */
-/* 		case QUERY_LOOKUP: */
-/* 			msgtype = IMSG_CTL_LOOKUP; */
-/* 			break; */
-/* 		case QUERY_BROWSE: */
-/* 			msgtype = in ? IMSG_CTL_BROWSE_ADD */
-/* 			    : IMSG_CTL_BROWSE_DEL; */
-/* 			break; */
-/* 		default: */
-/* 			log_warnx("Unknown query style"); */
-/* 			return (-1); */
-/* 		} */
-/* 		if (query_answerctl(c, rr, msgtype) == -1) */
-/* 			log_warnx("Query_answerctl error"); */
-/* 	} */
-
-/* 	/\* number of notified controllers *\/ */
-/* 	return (q->active - tosee); */
-/* } */
-
 void
 query_remove(struct query *q)
 {
@@ -815,160 +732,6 @@ query_remove(struct query *q)
 		evtimer_del(&q->timer);
 	free(q);
 }
-
-/* int */
-/* rr_notify_out(struct rr *rr) */
-/* { */
-/* 	struct ctl_conn *c; */
-/* 	struct query	*q; */
-/* 	struct question *qst; */
-/* 	struct rr	*rraux; */
-/* 	int		 msgtype; */
-
-/* 	if ((qst = question_lookup(&rr->rrs)) == NULL) */
-/* 		return (0); */
-	
-/* 	TAILQ_FOREACH(c, &ctl_conns, entry) { */
-/* 		LIST_FOREACH(q, &c->qlist, entry) { */
-/* 			if (q->style == QUERY_LOOKUP) */
-/* 				continue; */
-/* 			LIST_FOREACH(rraux, &q->rrlist, qentry) { */
-/* 				/\* */
-/* 				 * Check if controller is interested */
-/* 				 * only if question wasn't answered. */
-/* 				 *\/ */
-/* 				if (rraux->answered || */
-/* 				    rrset_cmp(&rr->rrs, &rraux->rrs) != 0) */
-/* 					continue; */
-/* 				/\* */
-/* 				 * Notify controller with full RR. */
-/* 				 *\/ */
-/* 				if (q->style != QUERY_BROWSE) { */
-/* 					log_warnx("Unexpected query style %d", */
-/* 					    q->style); */
-/* 					return (-1); */
-/* 				} */
-					
-/* 				switch (q->style) { */
-/* 				case QUERY_BROWSE: */
-/* 					msgtype = IMSG_CTL_BROWSE_ADD; */
-/* 					break; */
-/* 				default: */
-/* 					log_warnx("Unknown query style"); */
-/* 					return (-1); */
-/* 				} */
-/* 				if (control_send_rr(c, rr, msgtype) == -1) */
-/* 					log_warnx("control_send_rr error"); */
-/* 				rraux->answered = 1; */
-/* 			} */
-/* 		} */
-/* 	} */
-
-/* 	return (0); */
-/* } */
-
-int
-rr_notify_in(struct rr *rr)
-{
-	struct ctl_conn *c;
-	struct query	*q, *nextq;
-	struct question *qst;
-	struct rr	*rraux;
-	int		 msgtype;
-
-	if ((qst = question_lookup(&rr->rrs)) == NULL)
-		return (0);
-	
-	TAILQ_FOREACH(c, &ctl_conns, entry) {
-		for (q = LIST_FIRST(&c->qlist); q != NULL; q = nextq) {
-			/* We may delete queries... */
-			nextq = LIST_NEXT(q, entry);
-			LIST_FOREACH(rraux, &q->rrlist, qentry) {
-				/*
-				 * Check if controller is interested
-				 * only if question wasn't answered.
-				 */
-				if (rraux->answered ||
-				    rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
-					continue;
-				/*
-				 * Notify controller with full RR.
-				 */
-				switch (q->style) {
-				case QUERY_LOOKUP:
-					msgtype = IMSG_CTL_LOOKUP;
-					break;
-				case QUERY_BROWSE:
-					msgtype = IMSG_CTL_BROWSE_ADD;
-					break;
-				default:
-					log_warnx("Unknown query style");
-					return (-1);
-				}
-				if (control_send_rr(c, rr, msgtype) == -1)
-					log_warnx("control_send_rr error");
-				rraux->answered = 1;
-				if (q->style == QUERY_LOOKUP) {
-					query_remove(q);
-					break;
-				}
-			}
-		}
-	}
-
-	return (0);
-}
-/* RR in/out, 1 = in, 0 = out */
-/* TODO: Revise this, is all wrong */
-/* int */
-/* query_notify(struct rr *rr, int in) */
-/* { */
-/* 	struct ctl_conn *c; */
-/* 	struct query	*q; */
-/* 	struct question *qst; */
-/* 	struct rr	*rraux; */
-/* 	int		 msgtype; */
-
-/* 	if ((qst = question_lookup(&rr->rrs)) == NULL) */
-/* 		return (0); */
-	
-/* 	TAILQ_FOREACH(c, &ctl_conns, entry) { */
-/* 		/\* */
-/* 		 * Check if controller is interested */
-/* 		 * only if question wasn't answered. */
-/* 		 *\/ */
-/* 		LIST_FOREACH(q, &c->qlist, entry) { */
-/* 			/\* Lookup only wants in events *\/ */
-/* 			if (q->style == QUERY_LOOKUP && in == 0) */
-/* 				continue; */
-/* 			LIST_FOREACH(rraux, &q->rrlist, qentry) { */
-/* 				if (rraux->answered || */
-/* 				    rrset_cmp(&rr->rrs, &rraux->rrs) != 0) */
-/* 					continue; */
-/* 				/\* */
-/* 				 * Notify controller with full RR. */
-/* 				 *\/ */
-/* 				switch (q->style) { */
-/* 				case QUERY_LOOKUP: */
-/* 					msgtype = IMSG_CTL_LOOKUP; */
-/* 					break; */
-/* 				case QUERY_BROWSE: */
-/* 					msgtype = in ? IMSG_CTL_BROWSE_ADD */
-/* 					    : IMSG_CTL_BROWSE_DEL; */
-/* 					break; */
-/* 				default: */
-/* 					log_warnx("Unknown query style"); */
-/* 					return (-1); */
-/* 				} */
-/* 				if (control_send_rr(c, rr, msgtype) == -1) */
-/* 					log_warnx("control_send_rr error"); */
-/* 				rraux->answered = 1; */
-/* 			} */
-/* 		} */
-/* 	} */
-
-/* 	return (0); */
-/* } */
 
 void
 query_fsm(int unused, short event, void *v_query)
@@ -1044,50 +807,93 @@ query_fsm(int unused, short event, void *v_query)
 	evtimer_add(&q->timer, &tv);
 }
 
-/* void */
-/* query_fsm(int unused, short event, void *v_query) */
-/* { */
-/* 	struct pkt	 pkt; */
-/* 	struct timeval	 tv; */
-/* 	struct query	*q; */
-/* 	struct rr	*rr; */
-/* 	long		 tosleep; */
-
-/* 	q = v_query; */
-/* 	pkt_init(&pkt); */
-/* 	pkt.h.qr = MDNS_QUERY; */
-/* 	pkt_add_question(&pkt, &q->qst); */
-
-/* 	if (q->style == QUERY_BROWSE) { */
-/* 		/\* This will send at seconds 0, 1, 2, 4, 8, 16... *\/ */
-/* 		tosleep = (2 << q->sent) - (1 << q->sent); */
-		
-/* 		if (tosleep > MAX_QUERYTIME) */
-/* 			tosleep = MAX_QUERYTIME; */
-/* 		timerclear(&tv); */
-/* 		tv.tv_sec = tosleep; */
-/* 		evtimer_add(&q->timer, &tv); */
-
-/* 		/\* Known Answer Supression *\/ */
-/* 		for (rr = cache_lookup(&q->qst.rrs); rr != NULL; */
-/* 		     rr = LIST_NEXT(rr, centry)) { */
-/* 			/\* Don't include packet if it's too old *\/ */
-/* 			if (rr_ttl_left(rr) < rr->ttl / 2) */
-/* 				continue; */
-/* 			if (pkt_add_anrr(&pkt, rr) == -1) */
-/* 				log_warnx("KNA error pkt_add_anrr: %s", */
-/* 				    rr->rrs.dname); */
-/* 		} */
-/* 	} */
-
-/* 	if (pkt_send_allif(&pkt) == -1) */
-/* 		log_warnx("can't send packet to all interfaces"); */
-/* 	q->sent++; */
-/* } */
-
 int
 question_cmp(struct question *a, struct question *b)
 {
 	return (rrset_cmp(&a->rrs, &b->rrs));
+}
+
+int
+rr_notify_in(struct rr *rr)
+{
+	struct ctl_conn *c;
+	struct query	*q, *nextq;
+	struct question *qst;
+	struct rr	*rraux;
+	int		 msgtype;
+	
+	if ((qst = question_lookup(&rr->rrs)) == NULL)
+		return (0);
+	
+	TAILQ_FOREACH(c, &ctl_conns, entry) {
+		for (q = LIST_FIRST(&c->qlist); q != NULL; q = nextq) {
+			/* We may delete queries... */
+			nextq = LIST_NEXT(q, entry);
+			LIST_FOREACH(rraux, &q->rrlist, qentry) {
+				/*
+				 * Check if controller is interested
+				 * only if question wasn't answered.
+				 */
+				if ((q->style == QUERY_LOOKUP &&
+				    rraux->answered) ||
+				    rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
+					continue;
+				/*
+				 * Notify controller with full RR.
+				 */
+				switch (q->style) {
+				case QUERY_LOOKUP:
+					msgtype = IMSG_CTL_LOOKUP;
+					break;
+				case QUERY_BROWSE:
+					msgtype = IMSG_CTL_BROWSE_ADD;
+					break;
+				default:
+					log_warnx("Unknown query style");
+					return (-1);
+				}
+				if (control_send_rr(c, rr, msgtype) == -1)
+					log_warnx("control_send_rr error");
+				rraux->answered = 1;
+				if (q->style == QUERY_LOOKUP) {
+					query_remove(q);
+					break;
+				}
+			}
+		}
+	}
+
+	return (0);
+}
+
+int
+rr_notify_out(struct rr *rr)
+{
+	struct ctl_conn *c;
+	struct query	*q;
+	struct question *qst;
+	struct rr	*rraux;
+
+	if ((qst = question_lookup(&rr->rrs)) == NULL)
+		return (0);
+	
+	TAILQ_FOREACH(c, &ctl_conns, entry) {
+		LIST_FOREACH(q, &c->qlist, entry) {
+			if (q->style != QUERY_BROWSE)
+				continue;
+			LIST_FOREACH(rraux, &q->rrlist, qentry) {
+				if (rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
+					continue;
+				/*
+				 * Notify controller with full RR.
+				 */
+				if (control_send_rr(c, rr, IMSG_CTL_BROWSE_DEL)
+				    == -1)
+					log_warnx("control_send_rr error");
+			}
+		}
+	}
+
+	return (0);
 }
 

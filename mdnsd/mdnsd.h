@@ -267,10 +267,8 @@ struct rr *	 publish_lookupall(struct rrset *);
 void		 publish_fsm(int, short, void *_pub);
 void		 query_init(void);
 void   		 query_fsm(int, short, void *);
-/* struct query *	 query_place(enum query_style, struct rrset *); */
 struct query *	 query_lookup(struct rrset *);
 void		 query_remove(struct query *);
-/* int		 query_notify(struct rr *, int); */
 void		 query_remove(struct query *);
 struct question *question_add(struct rrset *);
 void		 question_remove(struct rrset *);
@@ -279,6 +277,7 @@ int		 cache_process(struct rr *);
 struct rr	*cache_lookup(struct rrset *);
 int		 rrset_cmp(struct rrset *a, struct rrset *b);
 int		 rr_notify_in(struct rr *);
+int		 rr_notify_out(struct rr *);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
