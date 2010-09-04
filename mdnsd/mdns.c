@@ -1037,8 +1037,9 @@ query_fsm(int unused, short event, void *v_query)
 		}
 	}
 
-	if (pkt_send_allif(&pkt) == -1)
-		log_warnx("can't send packet to all interfaces");
+	if (pkt.h.qdcount > 0)
+		if (pkt_send_allif(&pkt) == -1)
+			log_warnx("can't send packet to all interfaces");
 	q->count++;
 	evtimer_add(&q->timer, &tv);
 }
