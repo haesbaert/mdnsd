@@ -1005,7 +1005,7 @@ query_fsm(int unused, short event, void *v_query)
 		 * If we're in our third call we're still alive,
 		 * consider a failure.
 		 */
-		if (q->style == QUERY_LOOKUP && q->count > 2) {
+		if (q->style == QUERY_LOOKUP && q->count == 2) {
 			control_send_rr(q->ctl, rr, IMSG_CTL_LOOKUP_FAILURE);
 			query_remove(q);
 			return;
