@@ -51,26 +51,26 @@ struct token {
 };
 
 static const struct token t_main[];
-static const struct token t_lkup[];
-static const struct token t_rlkup[];
+static const struct token t_lookup[];
+static const struct token t_rlookup[];
 static const struct token t_browse_proto[];
 static const struct token t_browse_app[];
 
 
 static const struct token t_main[] = {
-	{KEYWORD,	"lkup",		NONE,		t_lkup},
-	{KEYWORD,	"rlkup",	NONE,		t_rlkup},
+	{KEYWORD,	"lookup",	NONE,		t_lookup},
+	{KEYWORD,	"rlookup",	NONE,		t_rlookup},
 	{KEYWORD,	"browse",	NONE,		t_browse_app},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_lkup[] = {
-	{ FLAGS	,	"-",		NONE,		t_lkup},
+static const struct token t_lookup[] = {
+	{ FLAGS	,	"-",		NONE,		t_lookup},
 	{ HOSTNAME,     "",             LOOKUP,		NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_rlkup[] = {
+static const struct token t_rlookup[] = {
 	{ ADDRESS,	"",		RLOOKUP,	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };

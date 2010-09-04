@@ -40,9 +40,9 @@
 
 __dead void	usage(void);
 void		bhook(char *, char *, char *, int, void *);
-void		my_lkup_A_hook(struct mdns *, int, char *, struct in_addr);
-void		my_lkup_PTR_hook(struct mdns *, int, char *, char *);
-void		my_lkup_HINFO_hook(struct mdns *, int, char *, char *, char *);
+void		my_lookup_A_hook(struct mdns *, int, char *, struct in_addr);
+void		my_lookup_PTR_hook(struct mdns *, int, char *, char *);
+void		my_lookup_HINFO_hook(struct mdns *, int, char *, char *, char *);
 void		my_browse_hook(struct mdns *, int, char *, char *, char *);
 
 struct parse_result	*res;
@@ -68,9 +68,9 @@ main(int argc, char *argv[])
 	if ((sockfd = mdns_open(&mdns)) == -1)
 		err(1, "mdns_open");
 	
-	mdns_set_lkup_A_hook(&mdns, my_lkup_A_hook);
-	mdns_set_lkup_PTR_hook(&mdns, my_lkup_PTR_hook);
-	mdns_set_lkup_HINFO_hook(&mdns, my_lkup_HINFO_hook);
+	mdns_set_lookup_A_hook(&mdns, my_lookup_A_hook);
+	mdns_set_lookup_PTR_hook(&mdns, my_lookup_PTR_hook);
+	mdns_set_lookup_HINFO_hook(&mdns, my_lookup_HINFO_hook);
 	mdns_set_browse_hook(&mdns, my_browse_hook);
 
 	/* process user request */
@@ -81,20 +81,20 @@ main(int argc, char *argv[])
 		break;
 	case LOOKUP:
 		if (res->flags & F_A || !res->flags)
-			if (mdns_lkup_A(&mdns, res->hostname) == -1)
-				err(1, "mdns_lkup_A");
+			if (mdns_lookup_A(&mdns, res->hostname) == -1)
+				err(1, "mdns_lookup_A");
 
 		if (res->flags & F_HINFO)
-			if (mdns_lkup_HINFO(&mdns, res->hostname) == -1)
-				err(1, "mdns_lkup_A");
+			if (mdns_lookup_HINFO(&mdns, res->hostname) == -1)
+				err(1, "mdns_lookup_A");
 		
 		if (res->flags & F_PTR)
-			if (mdns_lkup_PTR(&mdns, res->hostname) == -1)
-				err(1, "mdns_lkup_A");
+			if (mdns_lookup_PTR(&mdns, res->hostname) == -1)
+				err(1, "mdns_lookup_A");
 		break;
 	case RLOOKUP:
-		if (mdns_lkup_rev(&mdns, &res->addr) == -1)
-			err(1, "mdns_lkup_A");
+		if (mdns_lookup_rev(&mdns, &res->addr) == -1)
+			err(1, "mdns_lookup_A");
 		break;
 	case BROWSE_PROTO:
 		if (mdns_browse_add(&mdns, res->app, res->proto) == -1)
@@ -120,7 +120,7 @@ main(int argc, char *argv[])
 }
 
 void
-my_lkup_A_hook(struct mdns *m, int ev, char *host, struct in_addr a)
+my_lookup_A_hook(struct mdns *m, int ev, char *host, struct in_addr a)
 {
 	switch (ev) {
 	case LOOKUP_SUCCESS:
@@ -138,7 +138,7 @@ my_lkup_A_hook(struct mdns *m, int ev, char *host, struct in_addr a)
 }
 
 void
-my_lkup_PTR_hook(struct mdns *m, int ev, char *name, char *ptr)
+my_lookup_PTR_hook(struct mdns *m, int ev, char *name, char *ptr)
 {
 	switch (ev) {
 	case LOOKUP_SUCCESS:
@@ -156,7 +156,7 @@ my_lkup_PTR_hook(struct mdns *m, int ev, char *name, char *ptr)
 }
 
 void
-my_lkup_HINFO_hook(struct mdns *m, int ev, char *name, char *cpu, char *os)
+my_lookup_HINFO_hook(struct mdns *m, int ev, char *name, char *cpu, char *os)
 {
 	switch (ev) {
 	case LOOKUP_SUCCESS:

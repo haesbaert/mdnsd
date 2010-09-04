@@ -35,7 +35,7 @@
 #include "mdns.h"
 
 static int	mdns_connect(void);
-static int 	mdns_lkup_do(struct mdns *, const char [MAXHOSTNAMELEN],
+static int 	mdns_lookup_do(struct mdns *, const char [MAXHOSTNAMELEN],
     u_int16_t, u_int16_t);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
@@ -44,7 +44,7 @@ static int	splitdname(char [MAXHOSTNAMELEN], char [MAXHOSTNAMELEN],
 
 static int	mdns_browse_adddel(struct mdns *, const char *,
     const char *, int);
-int mdns_handle_lkup(struct mdns *, struct rr *, int);
+int mdns_handle_lookup(struct mdns *, struct rr *, int);
 static int mdns_handle_browse(struct mdns *, struct rr *, int);
 
 int
@@ -67,19 +67,19 @@ mdns_close(struct mdns *m)
 }
 
 void
-mdns_set_lkup_A_hook(struct mdns *m, lkup_A_hook lhk)
+mdns_set_lookup_A_hook(struct mdns *m, lookup_A_hook lhk)
 {
 	m->lhk_A = lhk;
 }
 
 void
-mdns_set_lkup_PTR_hook(struct mdns *m, lkup_PTR_hook lhk)
+mdns_set_lookup_PTR_hook(struct mdns *m, lookup_PTR_hook lhk)
 {
 	m->lhk_PTR = lhk;
 }
 
 void
-mdns_set_lkup_HINFO_hook(struct mdns *m, lkup_HINFO_hook hhk)
+mdns_set_lookup_HINFO_hook(struct mdns *m, lookup_HINFO_hook hhk)
 {
 	m->lhk_HINFO = hhk;
 }
@@ -103,36 +103,36 @@ mdns_set_udata(struct mdns *m, void *udata)
 }
 
 int
-mdns_lkup_A(struct mdns *m, const char *host)
+mdns_lookup_A(struct mdns *m, const char *host)
 {
-	return (mdns_lkup_do(m, host, T_A, C_IN));
+	return (mdns_lookup_do(m, host, T_A, C_IN));
 }
 
 int
-mdns_lkup_PTR(struct mdns *m, const char *ptr)
+mdns_lookup_PTR(struct mdns *m, const char *ptr)
 {
-	return (mdns_lkup_do(m, ptr, T_PTR, C_IN));
+	return (mdns_lookup_do(m, ptr, T_PTR, C_IN));
 }
 
 int
-mdns_lkup_rev(struct mdns *m, struct in_addr *addr)
+mdns_lookup_rev(struct mdns *m, struct in_addr *addr)
 {
 	char	name[MAXHOSTNAMELEN];
 
 	reversstr(name, addr);
 	name[sizeof(name) - 1] = '\0';
 	
-	return (mdns_lkup_PTR(m, name));
+	return (mdns_lookup_PTR(m, name));
 }
 
 int
-mdns_lkup_HINFO(struct mdns *m, const char *host)
+mdns_lookup_HINFO(struct mdns *m, const char *host)
 {
-	return (mdns_lkup_do(m, host, T_HINFO, C_IN));
+	return (mdns_lookup_do(m, host, T_HINFO, C_IN));
 }
 
 static int
-mdns_lkup_do(struct mdns *m, const char name[MAXHOSTNAMELEN], u_int16_t type,
+mdns_lookup_do(struct mdns *m, const char name[MAXHOSTNAMELEN], u_int16_t type,
     u_int16_t class)
 {
 	struct rrset rrs;
@@ -217,7 +217,7 @@ mdns_read(struct mdns *m)
 			if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(rr))
 				return (-1);
 			memcpy(&rr, imsg.data, sizeof(rr));
-			r = mdns_handle_lkup(m, &rr, ev);
+			r = mdns_handle_lookup(m, &rr, ev);
 			break;
 		case IMSG_CTL_BROWSE_ADD:
 		case IMSG_CTL_BROWSE_DEL:
@@ -243,7 +243,7 @@ mdns_read(struct mdns *m)
 }
 
 int
-mdns_handle_lkup(struct mdns *m, struct rr *rr, int ev)
+mdns_handle_lookup(struct mdns *m, struct rr *rr, int ev)
 {
 	struct hinfo *h;
 	switch (rr->rrs.type) {
