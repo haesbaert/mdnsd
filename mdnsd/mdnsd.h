@@ -100,7 +100,7 @@ struct query {
 	int			active;
 	enum query_style	style;
 	u_int			sent;
-	struct question		mq;
+	struct question		qst;
 	struct event		timer;
 };
 

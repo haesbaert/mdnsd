@@ -440,7 +440,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 {
 	struct sockaddr_in	 dst;
 	static u_int8_t		 buf[MAX_PACKET];
-	struct question		*mq;
+	struct question		*qst;
 	struct rr		*rr;
 	HEADER			*h;
 	u_int8_t		*pbuf;
@@ -472,8 +472,8 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 	left  -= HDR_LEN;
 	pbuf  += HDR_LEN;
 	/* Append all questions, they must fit a single packet. */
-	LIST_FOREACH(mq, &pkt->qlist, entry) {
-		n = serialize_question(mq, pbuf, left);
+	LIST_FOREACH(qst, &pkt->qlist, entry) {
+		n = serialize_question(qst, pbuf, left);
 		if (n == -1 || n > left) {
 			log_warnx("pkt_send_if: "
 			    "can't serialize question section");
@@ -607,11 +607,11 @@ void
 pkt_cleanup(struct pkt *pkt)
 {
 	struct rr	*rr;
-	struct question *mq;
+	struct question *qst;
 	
-	while ((mq = LIST_FIRST(&pkt->qlist)) != NULL) {
-		LIST_REMOVE(mq, entry);
-		free(mq);
+	while ((qst = LIST_FIRST(&pkt->qlist)) != NULL) {
+		LIST_REMOVE(qst, entry);
+		free(qst);
 	}
 	while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
 		LIST_REMOVE(rr, pentry);
@@ -629,9 +629,9 @@ pkt_cleanup(struct pkt *pkt)
 
 /* packet building */
 int
-pkt_add_question(struct pkt *pkt, struct question *mq)
+pkt_add_question(struct pkt *pkt, struct question *qst)
 {
-	LIST_INSERT_HEAD(&pkt->qlist, mq, entry);
+	LIST_INSERT_HEAD(&pkt->qlist, qst, entry);
 	pkt->h.qdcount++;
 
 	return (0);
@@ -767,7 +767,7 @@ int
 pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 {
 	u_int16_t	 us;
-	struct question *mq;
+	struct question *qst;
 	ssize_t		 n;
 
 	/* MDNS question sanity check */
@@ -776,19 +776,19 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 		return (-1);
 	}
 
-	if ((mq = calloc(1, sizeof(*mq))) == NULL)
+	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
 
-	n = pkt_parse_dname(*pbuf, *len, mq->rrs.dname);
+	n = pkt_parse_dname(*pbuf, *len, qst->rrs.dname);
 	if (n == -1) {
-		free(mq);
+		free(qst);
 		return (-1);
 	}
 
 	*pbuf += n;
 	*len  -= n;
 
-	GETSHORT(mq->rrs.type, *pbuf);
+	GETSHORT(qst->rrs.type, *pbuf);
 	*len -= INT16SZ;
 
 	GETSHORT(us, *pbuf);
@@ -796,7 +796,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 
 	if (us & UNIRESP_MSK) {
 		/* Unicast questions may have ephemeral source ports */
-		mq->src = pkt->ipsrc.sin_addr;
+		qst->src = pkt->ipsrc.sin_addr;
 	}
 	else {
 		/* Make sure source port is MDNS_PORT */
@@ -805,23 +805,23 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 			    "from %s:%u with ephemeral source port, "
 			    "droping packet", inet_ntoa(pkt->ipsrc.sin_addr),
 			    pkt->ipsrc.sin_port);
-			free(mq);
+			free(qst);
 			return (-1);
 		}
 			
 	}
-	mq->rrs.class = us & CLASS_MSK;
+	qst->rrs.class = us & CLASS_MSK;
 
 	/* This really sucks, we can't know if the class is valid prior to
 	 * parsing the labels, I mean, we could but would be ugly */
-	if (mq->rrs.class != C_ANY && mq->rrs.class != C_IN) {
+	if (qst->rrs.class != C_ANY && qst->rrs.class != C_IN) {
 		log_warnx("pkt_parse_question: Invalid packet qclass %u",
-		    mq->rrs.class);
-		free(mq);
+		    qst->rrs.class);
+		free(qst);
 		return (-1);
 	}
 
-	LIST_INSERT_HEAD(&pkt->qlist, mq, entry);
+	LIST_INSERT_HEAD(&pkt->qlist, qst, entry);
 
 	return (0);
 }
@@ -1001,7 +1001,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 int
 pkt_handleq(struct pkt *pkt)
 {
-	struct question *mq;
+	struct question *qst;
 	struct rr	*rr;
 	struct pkt	sendpkt;
 
@@ -1009,38 +1009,38 @@ pkt_handleq(struct pkt *pkt)
 	
 	pkt_init(&sendpkt);
 	sendpkt.h.qr = MDNS_RESPONSE;
-	while ((mq = LIST_FIRST(&pkt->qlist)) != NULL) {
+	while ((qst = LIST_FIRST(&pkt->qlist)) != NULL) {
 		/*
 		 * Discard question which shouldn't be handled, can be a probing
 		 * query or we may be already listed in the known answer
 		 * supression list.
 		 */
-		if (!pkt_should_answerq(pkt, mq)) {
-			LIST_REMOVE(mq, entry);
-			free(mq);
+		if (!pkt_should_answerq(pkt, qst)) {
+			LIST_REMOVE(qst, entry);
+			free(qst);
 			continue;
 		}
 		
-		rr = publish_lookupall(&mq->rrs);
-		if (rr != NULL && ANSWERS(mq, rr)) {
+		rr = publish_lookupall(&qst->rrs);
+		if (rr != NULL && ANSWERS(qst, rr)) {
 			if (pkt_add_anrr(&sendpkt, rr) == -1)
 				log_warn("Can't answer question for"
 				    "%s %s",
-				    mq->rrs.dname, rr_type_name(mq->rrs.type));
+				    qst->rrs.dname, rr_type_name(qst->rrs.type));
 			if (pkt_send_allif(&sendpkt) == -1)
 				log_debug("can't send packet to"
 				    "all interfaces");
 		}
 		
-		LIST_REMOVE(mq, entry);
-		free(mq);
+		LIST_REMOVE(qst, entry);
+		free(qst);
 	}
 	
 	return (0);
 }
 
 int
-pkt_should_answerq(struct pkt *pkt, struct question *mq)
+pkt_should_answerq(struct pkt *pkt, struct question *qst)
 {
 	struct rr *rr, *rrans;
 	
@@ -1056,7 +1056,7 @@ pkt_should_answerq(struct pkt *pkt, struct question *mq)
 	 * supposed to answer.
 	 */
 	LIST_FOREACH(rr, &pkt->nslist, pentry)
-		if (ANSWERS(mq, rr))
+		if (ANSWERS(qst, rr))
 			return (0);
 	
 	/*
@@ -1064,7 +1064,7 @@ pkt_should_answerq(struct pkt *pkt, struct question *mq)
 	 * supression list, that is, check that the answer isn't in the answer
 	 * section with a ttl at least half the original value. 
 	 */
-	rrans = publish_lookupall(&mq->rrs);
+	rrans = publish_lookupall(&qst->rrs);
 	/* We've no answers for it, we should try to answer, but we
 	 * already know we can't so return 0, this is a speed hack. */
 	if (rrans == NULL)
@@ -1239,13 +1239,13 @@ serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 }
 
 ssize_t
-serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
+serialize_question(struct question *qst, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t *pbuf = buf;
 	u_int16_t qclass;
 	ssize_t n;
 
-	n = serialize_dname(pbuf, len, mq->rrs.dname);
+	n = serialize_dname(pbuf, len, qst->rrs.dname);
 	if (n == -1 || n > len)
 		return (-1);
 	pbuf += n;
@@ -1255,11 +1255,11 @@ serialize_question(struct question *mq, u_int8_t *buf, u_int16_t len)
 
 	if (len < 4)	/* must fit type, class */
 		return (-1);
-	PUTSHORT(mq->rrs.type, pbuf);
+	PUTSHORT(qst->rrs.type, pbuf);
 	
-	qclass = mq->rrs.class;
-	if (mq->src.s_addr)
-		qclass = mq->rrs.class | UNIRESP_MSK;
+	qclass = qst->rrs.class;
+	if (qst->src.s_addr)
+		qclass = qst->rrs.class | UNIRESP_MSK;
 	PUTSHORT(qclass, pbuf);
 
 	return (pbuf - buf);

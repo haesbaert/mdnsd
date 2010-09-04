@@ -107,7 +107,7 @@ publish_init(void)
 void
 publish_allrr(struct iface *iface)
 {
-	struct question		*mq;
+	struct question		*qst;
 	struct rr		*rr, *rrcopy;
 	struct publish		*pub;
 	struct rrt_node		*n;
@@ -118,13 +118,13 @@ publish_allrr(struct iface *iface)
 		fatal("calloc");
 	pub->state = PUB_INITIAL;
 	pkt_init(&pub->pkt);
-	if ((mq = calloc(1, sizeof(*mq))) == NULL)
+	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
-	strlcpy(mq->rrs.dname, conf->myname, sizeof(mq->rrs.dname));
-	mq->rrs.type  = T_ANY;
-	mq->rrs.class = C_IN;
+	strlcpy(qst->rrs.dname, conf->myname, sizeof(qst->rrs.dname));
+	qst->rrs.type  = T_ANY;
+	qst->rrs.class = C_IN;
 	pub->pkt.h.qr = MDNS_QUERY;
-	pkt_add_question(&pub->pkt, mq);
+	pkt_add_question(&pub->pkt, qst);
 
 	RB_FOREACH(n, rrt_tree, &iface->rrt) {
 		/* now go through all our rr and add to the same packet */
@@ -234,7 +234,7 @@ publish_fsm(int unused, short event, void *v_pub)
 	struct publish	*pub = v_pub;
 	struct timeval	 tv;
 	struct rr	*rr;
-	struct question	*mq;
+	struct question	*qst;
 	static u_long	 pubid;
 	
 	timerclear(&tv);
@@ -250,8 +250,8 @@ publish_fsm(int unused, short event, void *v_pub)
 		pub->sent++;
 		/* Send only the first 2 question as QU */
 		if (pub->sent == 2)
-			LIST_FOREACH(mq, &pub->pkt.qlist, entry)
-				mq->src.s_addr = 0;
+			LIST_FOREACH(qst, &pub->pkt.qlist, entry)
+				qst->src.s_addr = 0;
 		/* enough probing, start announcing */
 		else if (pub->sent == 3) { 
 			/* cool, so now that we're done, remove it from
@@ -260,10 +260,10 @@ publish_fsm(int unused, short event, void *v_pub)
 			pub->sent     = 0;
 			pub->pkt.h.qr = MDNS_RESPONSE;
 			/* remove questions */
-			while ((mq = (LIST_FIRST(&pub->pkt.qlist))) != NULL) {
-				LIST_REMOVE(mq, entry);
+			while ((qst = (LIST_FIRST(&pub->pkt.qlist))) != NULL) {
+				LIST_REMOVE(qst, entry);
 				pub->pkt.h.qdcount--;
-				free(mq);
+				free(qst);
 			}
 			/* move all ns records to answer records */
 			while ((rr = (LIST_FIRST(&pub->pkt.nslist))) != NULL) {
@@ -309,10 +309,10 @@ publish_fsm(int unused, short event, void *v_pub)
 			pub->pkt.h.arcount--;
 			free(rr);
 		}
-		while ((mq = LIST_FIRST(&pub->pkt.qlist)) != NULL) {
-			LIST_REMOVE(mq, entry);
+		while ((qst = LIST_FIRST(&pub->pkt.qlist)) != NULL) {
+			LIST_REMOVE(qst, entry);
 			pub->pkt.h.qdcount--;
-			free(mq);
+			free(qst);
 		}
 		free(pub);
 		break;
@@ -596,7 +596,7 @@ cache_rev(int unused, short event, void *v_rr)
 	if ((q = query_lookup(&rr->rrs)) != NULL) {
 		pkt_init(&pkt);
 		pkt.h.qr = MDNS_QUERY;
-		pkt_add_question(&pkt, &q->mq);
+		pkt_add_question(&pkt, &q->qst);
 		if (pkt_send_allif(&pkt) == -1)
 			log_warnx("can't send packet to all interfaces");
 	}
@@ -685,7 +685,7 @@ query_lookup_node(struct rrset *rrs)
 	struct query_node qn;
 
 	bzero(&qn, sizeof(qn));
-	qn.q.mq.rrs = *rrs;
+	qn.q.qst.rrs = *rrs;
 	return (RB_FIND(query_tree, &query_tree, &qn));
 }
 
@@ -723,7 +723,7 @@ query_place(enum query_style s, struct rrset *rrs)
 	if ((qn = calloc(1, sizeof(*qn))) == NULL)
 		fatal("calloc");
 	q = &qn->q;
-	q->mq.rrs = *rrs;
+	q->qst.rrs = *rrs;
 	q->style = s;
 	q->active++;
 	if (RB_INSERT(query_tree, &query_tree, qn) != NULL)
@@ -742,7 +742,7 @@ query_remove(struct query *qrem)
 	struct query *qfound;
 	struct query_node *qn;
 
-	qn = query_lookup_node(&qrem->mq.rrs);
+	qn = query_lookup_node(&qrem->qst.rrs);
 	if (qn == NULL)
 		return;
 	qfound = &qn->q;
@@ -774,7 +774,7 @@ query_notify(struct rr *rr, int in)
 		if (!control_hasq(c, q))
 			continue;
 		/* sanity check */
-		if (!ANSWERS(&q->mq, rr)) {
+		if (!ANSWERS(&q->qst, rr)) {
 			log_warnx("Bogus pointer, report me");
 			return (0);
 		}
@@ -846,7 +846,7 @@ query_fsm(int unused, short event, void *v_query)
 	q = v_query;
 	pkt_init(&pkt);
 	pkt.h.qr = MDNS_QUERY;
-	pkt_add_question(&pkt, &q->mq);
+	pkt_add_question(&pkt, &q->qst);
 
 	if (q->style == QUERY_BROWSE) {
 		/* This will send at seconds 0, 1, 2, 4, 8, 16... */
@@ -859,7 +859,7 @@ query_fsm(int unused, short event, void *v_query)
 		evtimer_add(&q->timer, &tv);
 
 		/* Known Answer Supression */
-		for (rr = cache_lookup(&q->mq.rrs); rr != NULL;
+		for (rr = cache_lookup(&q->qst.rrs); rr != NULL;
 		     rr = LIST_NEXT(rr, centry)) {
 			/* Don't include packet if it's too old */
 			if (rr_ttl_left(rr) < rr->ttl / 2)
@@ -878,6 +878,6 @@ query_fsm(int unused, short event, void *v_query)
 int
 query_node_cmp(struct query_node *a, struct query_node *b)
 {
-	return (rrset_cmp(&a->q.mq.rrs, &b->q.mq.rrs));
+	return (rrset_cmp(&a->q.qst.rrs, &b->q.qst.rrs));
 }
 
