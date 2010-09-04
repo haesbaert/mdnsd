@@ -30,25 +30,14 @@
 #include "mdnsd.h"
 #include "log.h"
 
-#define INTERVAL_PROBETIME	250000
-#define RANDOM_PROBETIME	arc4random_uniform(250000)
-#define FIRST_QUERYTIME		(arc4random_uniform(120000) + 20000)
-#define MAX_QUERYTIME		(60 * 60) /* one hour */
-
-struct query_node {
-	RB_ENTRY(query_node)	entry;
-	struct query		q;
-};
-
 int		 cache_insert(struct rr *);
 int		 cache_delete(struct rr *);
 void		 cache_schedrev(struct rr *);
 void		 cache_rev(int, short, void *);
 struct rrt_node *cache_lookup_node(struct rrset *);
 
-void   		   query_fsm(int, short, void *);
-int 		   query_node_cmp(struct query_node *, struct query_node *);
-struct query_node *query_lookup_node(struct rrset *);
+int 		   question_cmp(struct question *, struct question *);
+struct question    *question_lookup(struct rrset *);
 
 void		 rrt_dump(struct rrt_tree *);
 int		 rrt_cmp(struct rrt_node *, struct rrt_node *);
@@ -56,12 +45,12 @@ struct rr	*rrt_lookup(struct rrt_tree *, struct rrset *);
 struct rrt_node	*rrt_lookup_node(struct rrt_tree *, struct rrset *);
 
 RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_cmp);
-RB_HEAD(query_tree, query_node);
-RB_PROTOTYPE(query_tree, query_node, entry, query_node_cmp)
-RB_GENERATE(query_tree, query_node, entry, query_node_cmp)
+RB_HEAD(question_tree, question);
+RB_PROTOTYPE(question_tree, question, qst_entry, question_cmp);
+RB_GENERATE(question_tree, question, qst_entry, question_cmp);
 
 extern struct mdnsd_conf	*conf;
-struct query_tree		 query_tree;
+struct question_tree		 question_tree;
 struct rrt_tree			 cache_tree;
 
 /*
@@ -586,17 +575,17 @@ void
 cache_rev(int unused, short event, void *v_rr)
 {
 	struct rr	*rr = v_rr;
-	struct query	*q;
+	struct question	*qst;
 	struct pkt	 pkt;
 
 /* 	log_debug("cache_rev: timeout rr type: %s, name: %s (%u)", */
 /* 	    rr_type_name(rr->type), rr->dname, rr->ttl); */
 
-	/* If we have an active query, try to renew the answer */
-	if ((q = query_lookup(&rr->rrs)) != NULL) {
+	/* If we have an active question, try to renew the answer */
+	if ((qst = question_lookup(&rr->rrs)) != NULL) {
 		pkt_init(&pkt);
 		pkt.h.qr = MDNS_QUERY;
-		pkt_add_question(&pkt, &q->qst);
+		pkt_add_question(&pkt, qst);
 		if (pkt_send_allif(&pkt) == -1)
 			log_warnx("can't send packet to all interfaces");
 	}
@@ -676,127 +665,181 @@ rrset_cmp(struct rrset *a, struct rrset *b)
 void
 query_init(void)
 {
-	RB_INIT(&query_tree);
+	RB_INIT(&question_tree);
 }
 
-struct query_node *
-query_lookup_node(struct rrset *rrs)
+struct question *
+question_lookup(struct rrset *rrs)
 {
-	struct query_node qn;
-
-	bzero(&qn, sizeof(qn));
-	qn.q.qst.rrs = *rrs;
-	return (RB_FIND(query_tree, &query_tree, &qn));
+	struct question qst;
+	
+	bzero(&qst, sizeof(qst));
+	qst.rrs = *rrs;
+	
+	return (RB_FIND(question_tree, &question_tree, &qst));
 }
 
-struct query *
-query_lookup(struct rrset *rrs)
+struct question *
+question_add(struct rrset *rrs)
 {
-	struct query_node *qn;
+	struct question *qst;
 
-	qn = query_lookup_node(rrs);
-	if (qn != NULL)
-		return (&qn->q);
-	return (NULL);
-}
-
-struct query *
-query_place(enum query_style s, struct rrset *rrs)
-{
-	struct query		*q;
-	struct query_node	*qn;
-	struct timeval		 tv;
-
-	q = query_lookup(rrs);
-	/* existing query, increase active */
-	if (q != NULL) {
-		if (s != q->style) {
-			log_warnx("trying to change a query style");
-			return (NULL);
-		}
-		q->active++;
-		log_debug("existing query active = %d", q->active);
-		return (q);
+	qst = question_lookup(rrs);
+	if (qst != NULL) {
+		qst->active++;
+		return (qst);
 	}
-	/* no query, make a new one */
-	log_debug("making new query");
-	if ((qn = calloc(1, sizeof(*qn))) == NULL)
+	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
-	q = &qn->q;
-	q->qst.rrs = *rrs;
-	q->style = s;
-	q->active++;
-	if (RB_INSERT(query_tree, &query_tree, qn) != NULL)
-		fatal("query_place: RB_INSERT");
-	/* start the sending machine */
-	timerclear(&tv);
-	tv.tv_usec = FIRST_QUERYTIME;
-	evtimer_set(&q->timer, query_fsm, q);
-	evtimer_add(&q->timer, &tv);
-	return (q);
+	qst->rrs = *rrs;
+	if (RB_INSERT(question_tree, &question_tree, qst) != NULL)
+		fatal("question_add: RB_INSERT");
+	
+	return (qst);
 }
+
+/* struct query * */
+/* query_place(enum query_style s, struct rrset *rrs) */
+/* { */
+/* 	struct query		*q; */
+/* 	struct query_node	*qn; */
+/* 	struct timeval		 tv; */
+
+/* 	q = query_lookup(rrs); */
+/* 	/\* existing query, increase active *\/ */
+/* 	if (q != NULL) { */
+/* 		if (s != q->style) { */
+/* 			log_warnx("trying to change a query style"); */
+/* 			return (NULL); */
+/* 		} */
+/* 		q->active++; */
+/* 		log_debug("existing query active = %d", q->active); */
+/* 		return (q); */
+/* 	} */
+/* 	/\* no query, make a new one *\/ */
+/* 	log_debug("making new query"); */
+/* 	if ((qn = calloc(1, sizeof(*qn))) == NULL) */
+/* 		fatal("calloc"); */
+/* 	q = &qn->q; */
+/* 	q->qst.rrs = *rrs; */
+/* 	q->style = s; */
+/* 	q->active++; */
+/* 	if (RB_INSERT(query_tree, &query_tree, qn) != NULL) */
+/* 		fatal("query_place: RB_INSERT"); */
+/* 	/\* start the sending machine *\/ */
+/* 	timerclear(&tv); */
+/* 	tv.tv_usec = FIRST_QUERYTIME; */
+/* 	evtimer_set(&q->timer, query_fsm, q); */
+/* 	evtimer_add(&q->timer, &tv); */
+/* 	return (q); */
+/* } */
 
 void
-query_remove(struct query *qrem)
+question_remove(struct rrset *rrs)
 {
-	struct query *qfound;
-	struct query_node *qn;
+	struct question *qst;
 
-	qn = query_lookup_node(&qrem->qst.rrs);
-	if (qn == NULL)
+	qst = question_lookup(rrs);
+	if (qst == NULL) {
+		log_warnx("trying to remove non existant question");
 		return;
-	qfound = &qn->q;
-	if (--qfound->active == 0) {
-		RB_REMOVE(query_tree, &query_tree, qn);
-		if (evtimer_pending(&qn->q.timer, NULL))
-			evtimer_del(&qn->q.timer);
-		free(qn);
+	}
+	if (--qst->active == 0) {
+		RB_REMOVE(question_tree, &question_tree, qst);
+		free(qst);
 	}
 }
 
+/* int */
+/* query_notify(struct rr *rr, int in) */
+/* { */
+/* 	struct ctl_conn *c; */
+/* 	struct query	*q; */
+/* 	int		 tosee; */
+/* 	int		 msgtype; */
+
+/* 	q = query_lookup(&rr->rrs); */
+/* 	if (q == NULL) */
+/* 		return (0); */
+/* 	/\* try to answer the controllers *\/ */
+/* 	tosee = q->active; */
+/* 	TAILQ_FOREACH(c, &ctl_conns, entry) { */
+/* 		if (!tosee) */
+/* 			break; */
+/* 		if (!control_hasq(c, q)) */
+/* 			continue; */
+/* 		/\* sanity check *\/ */
+/* 		if (!ANSWERS(&q->qst, rr)) { */
+/* 			log_warnx("Bogus pointer, report me"); */
+/* 			return (0); */
+/* 		} */
+/* 		/\* notify controller *\/ */
+/* 		switch (q->style) { */
+/* 		case QUERY_LKUP: */
+/* 			msgtype = IMSG_CTL_LOOKUP; */
+/* 			break; */
+/* 		case QUERY_BROWSE: */
+/* 			msgtype = in ? IMSG_CTL_BROWSE_ADD */
+/* 			    : IMSG_CTL_BROWSE_DEL; */
+/* 			break; */
+/* 		default: */
+/* 			log_warnx("Unknown query style"); */
+/* 			return (-1); */
+/* 		} */
+/* 		if (query_answerctl(c, rr, msgtype) == -1) */
+/* 			log_warnx("Query_answerctl error"); */
+/* 	} */
+
+/* 	/\* number of notified controllers *\/ */
+/* 	return (q->active - tosee); */
+/* } */
+
 /* RR in/out, 1 = in, 0 = out */
+/* TODO: Revise this, is all wrong */
 int
 query_notify(struct rr *rr, int in)
 {
 	struct ctl_conn *c;
 	struct query	*q;
-	int		 tosee;
+	struct question *qst;
+	struct rr	*rraux;
 	int		 msgtype;
 
-	q = query_lookup(&rr->rrs);
-	if (q == NULL)
+	if ((qst = question_lookup(&rr->rrs)) == NULL)
 		return (0);
-	/* try to answer the controllers */
-	tosee = q->active;
+	
 	TAILQ_FOREACH(c, &ctl_conns, entry) {
-		if (!tosee)
-			break;
-		if (!control_hasq(c, q))
-			continue;
-		/* sanity check */
-		if (!ANSWERS(&q->qst, rr)) {
-			log_warnx("Bogus pointer, report me");
-			return (0);
+		/*
+		 * Check if controller is interested if question wasn't answered.
+		 */
+		LIST_FOREACH(q, &c->qlist, entry) {
+			LIST_FOREACH(rraux, &q->rrlist, qentry) {
+				if (rraux->answered ||
+				    rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
+					continue;
+				/*
+				 * Notify controller with full RR.
+				 */
+				switch (q->style) {
+				case QUERY_LKUP:
+					msgtype = IMSG_CTL_LOOKUP;
+					break;
+				case QUERY_BROWSE:
+					msgtype = in ? IMSG_CTL_BROWSE_ADD
+					    : IMSG_CTL_BROWSE_DEL;
+					break;
+				default:
+					log_warnx("Unknown query style");
+					return (-1);
+				}
+				if (query_answerctl(c, rr, msgtype) == -1)
+					log_warnx("Query_answerctl error");
+				rraux->answered = 1;
+			}
 		}
-		/* notify controller */
-		switch (q->style) {
-		case QUERY_LKUP:
-			msgtype = IMSG_CTL_LOOKUP;
-			break;
-		case QUERY_BROWSE:
-			msgtype = in ? IMSG_CTL_BROWSE_ADD
-			    : IMSG_CTL_BROWSE_DEL;
-			break;
-		default:
-			log_warnx("Unknown query style");
-			return (-1);
-		}
-		if (query_answerctl(c, rr, msgtype) == -1)
-			log_warnx("Query_answerctl error");
 	}
 
-	/* number of notified controllers */
-	return (q->active - tosee);
+	return (0);
 }
 
 int
@@ -838,46 +881,112 @@ void
 query_fsm(int unused, short event, void *v_query)
 {
 	struct pkt	 pkt;
-	struct timeval	 tv;
 	struct query	*q;
-	struct rr	*rr;
+	struct question	*qst;
+	struct rr	*rr, *rraux;
 	long		 tosleep;
+	struct timespec	 tnow, tdiff;
+	struct timeval	 tv;
 
 	q = v_query;
 	pkt_init(&pkt);
 	pkt.h.qr = MDNS_QUERY;
-	pkt_add_question(&pkt, &q->qst);
+	
+	/* This will send at seconds 0, 1, 2, 4, 8, 16... */
+	tosleep = (2 << q->count) - (1 << q->count);
+	if (tosleep > MAX_QUERYTIME)
+		tosleep = MAX_QUERYTIME;
+	timerclear(&tv);
+	tv.tv_sec = tosleep;
 
-	if (q->style == QUERY_BROWSE) {
-		/* This will send at seconds 0, 1, 2, 4, 8, 16... */
-		tosleep = (2 << q->sent) - (1 << q->sent);
+	if (clock_gettime(CLOCK_MONOTONIC, &tnow) == -1)
+		fatal("clock_gettime");
+	
+	/*
+	 * If we're in our third call we're still alive, consider a failure.
+	 */
+	if (q->style == QUERY_LKUP && q->count > 2)
+		log_warnx("TODO: FAILED");
+	
+	LIST_FOREACH(rr, &q->rrlist, qentry) {
+		if ((qst = question_lookup(&rr->rrs)) == NULL) {
+			log_warnx("Can't find question in query_fsm");
+			/* XXX: we leak memory */
+			return;
+		}
+
+		timespecsub(&tnow, &qst->ts, &tdiff);
+		/* Only 1 time a second per question  */
+		if (qst->sent != 0 && tdiff.tv_sec < 1)
+			continue;
 		
-		if (tosleep > MAX_QUERYTIME)
-			tosleep = MAX_QUERYTIME;
-		timerclear(&tv);
-		tv.tv_sec = tosleep;
-		evtimer_add(&q->timer, &tv);
-
-		/* Known Answer Supression */
-		for (rr = cache_lookup(&q->qst.rrs); rr != NULL;
-		     rr = LIST_NEXT(rr, centry)) {
-			/* Don't include packet if it's too old */
-			if (rr_ttl_left(rr) < rr->ttl / 2)
-				continue;
-			if (pkt_add_anrr(&pkt, rr) == -1)
-				log_warnx("KNA error pkt_add_anrr: %s",
-				    rr->rrs.dname);
+		pkt_add_question(&pkt, qst);
+		qst->sent++;
+		if (q->style == QUERY_BROWSE) {
+			/* Known Answer Supression */
+			for (rraux = cache_lookup(&qst->rrs);
+			     rraux != NULL;
+			     rraux = LIST_NEXT(rraux, centry)) {
+				/* Don't include rr if it's too old */
+				if (rr_ttl_left(rraux) < rraux->ttl / 2)
+					continue;
+				if (pkt_add_anrr(&pkt, rraux) == -1)
+					log_warnx("KNA error pkt_add_anrr: %s",
+					    rraux->rrs.dname);
+			}
 		}
 	}
 
 	if (pkt_send_allif(&pkt) == -1)
 		log_warnx("can't send packet to all interfaces");
-	q->sent++;
+	q->count++;
+	evtimer_add(&q->timer, &tv);
 }
 
+/* void */
+/* query_fsm(int unused, short event, void *v_query) */
+/* { */
+/* 	struct pkt	 pkt; */
+/* 	struct timeval	 tv; */
+/* 	struct query	*q; */
+/* 	struct rr	*rr; */
+/* 	long		 tosleep; */
+
+/* 	q = v_query; */
+/* 	pkt_init(&pkt); */
+/* 	pkt.h.qr = MDNS_QUERY; */
+/* 	pkt_add_question(&pkt, &q->qst); */
+
+/* 	if (q->style == QUERY_BROWSE) { */
+/* 		/\* This will send at seconds 0, 1, 2, 4, 8, 16... *\/ */
+/* 		tosleep = (2 << q->sent) - (1 << q->sent); */
+		
+/* 		if (tosleep > MAX_QUERYTIME) */
+/* 			tosleep = MAX_QUERYTIME; */
+/* 		timerclear(&tv); */
+/* 		tv.tv_sec = tosleep; */
+/* 		evtimer_add(&q->timer, &tv); */
+
+/* 		/\* Known Answer Supression *\/ */
+/* 		for (rr = cache_lookup(&q->qst.rrs); rr != NULL; */
+/* 		     rr = LIST_NEXT(rr, centry)) { */
+/* 			/\* Don't include packet if it's too old *\/ */
+/* 			if (rr_ttl_left(rr) < rr->ttl / 2) */
+/* 				continue; */
+/* 			if (pkt_add_anrr(&pkt, rr) == -1) */
+/* 				log_warnx("KNA error pkt_add_anrr: %s", */
+/* 				    rr->rrs.dname); */
+/* 		} */
+/* 	} */
+
+/* 	if (pkt_send_allif(&pkt) == -1) */
+/* 		log_warnx("can't send packet to all interfaces"); */
+/* 	q->sent++; */
+/* } */
+
 int
-query_node_cmp(struct query_node *a, struct query_node *b)
+question_cmp(struct question *a, struct question *b)
 {
-	return (rrset_cmp(&a->q.qst.rrs, &b->q.qst.rrs));
+	return (rrset_cmp(&a->rrs, &b->rrs));
 }
 

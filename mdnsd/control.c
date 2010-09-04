@@ -51,6 +51,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	struct rrset	 mlkup;
 	struct rr	*rr;
 	struct query 	*q;
+	struct timeval	 tv;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
@@ -88,11 +89,26 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	}
 
+	if (question_add(&mlkup) == NULL) {
+		log_warnx("Can't add question for %s (%s)", rr->rrs.dname,
+		    rr_type_name(rr->rrs.type));
+		return;
+	}
+	
 	/* cache miss */
-	q = query_place(QUERY_LKUP, &mlkup);
-	if (q == NULL)
-		log_warnx("Can't place query");
-	control_addq(c, q);
+	if ((q = calloc(1, sizeof(*q))) == NULL)
+		fatal("calloc");
+	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+		fatal("calloc");
+	LIST_INIT(&q->rrlist);
+	q->style = QUERY_LKUP;
+	rr->rrs = mlkup;
+	LIST_INSERT_HEAD(&q->rrlist, rr, qentry);
+	LIST_INSERT_HEAD(&c->qlist, q, entry);
+	timerclear(&tv);
+	tv.tv_usec = FIRST_QUERYTIME;
+	evtimer_set(&q->timer, query_fsm, q);
+	evtimer_add(&q->timer, &tv);
 }
 
 void
@@ -101,6 +117,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	struct rrset	 mlkup;
 	struct rr	*rr;
 	struct query 	*q;
+	struct timeval	 tv;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
@@ -120,56 +137,71 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	}
 	
-	/* Check if control has this query already, if so don't do anything */
-	if ((q = query_lookup(&mlkup)) != NULL &&
-	    control_hasq(c, q)) {
-		log_debug("Control has query for %s %s", mlkup.dname,
-		    rr_type_name(mlkup.type));
-		return;
-	}
+/* 	/\* Check if control has this query already, if so don't do anything *\/ */
+/* 	if ((q = query_lookup(&mlkup)) != NULL && */
+/* 	    control_hasq(c, q)) { */
+/* 		log_debug("Control has query for %s %s", mlkup.dname, */
+/* 		    rr_type_name(mlkup.type)); */
+/* 		return; */
+/* 	} */
+	
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
-	
-	/* Place query in an existing query or make a new one */
-	q = query_place(QUERY_BROWSE, &mlkup);
-	if (q == NULL)
-		log_warnx("Can't place query");
-	/* Controllers must hold their queries */
-	control_addq(c, q);
+
 	rr = cache_lookup(&mlkup);
 	while (rr != NULL) {
 		if (query_answerctl(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
 			log_warnx("query_answerctl error");
 		rr = LIST_NEXT(rr, centry);
 	}
+
+	if (question_add(&mlkup) == NULL) {
+		log_warnx("Can't add question for %s (%s)", rr->rrs.dname,
+		    rr_type_name(rr->rrs.type));
+		return;
+	}
+	
+	if ((q = calloc(1, sizeof(*q))) == NULL)
+		fatal("calloc");
+	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+		fatal("calloc");
+	LIST_INIT(&q->rrlist);
+	q->style = QUERY_BROWSE;
+	rr->rrs = mlkup;
+	LIST_INSERT_HEAD(&q->rrlist, rr, qentry);
+	LIST_INSERT_HEAD(&c->qlist, q, entry);
+	timerclear(&tv);
+	tv.tv_usec = FIRST_QUERYTIME;
+	evtimer_set(&q->timer, query_fsm, q);
+	evtimer_add(&q->timer, &tv);
 }
 
 void
 control_browse_del(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct rrset	 mlkup;
-	struct query 	*q;
+/* 	struct rrset	 mlkup; */
+/* 	struct query 	*q; */
 
-	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
-		return;
+/* 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup)) */
+/* 		return; */
 
-	memcpy(&mlkup, imsg->data, sizeof(mlkup));
-	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0'; /* assure clients were nice */
+/* 	memcpy(&mlkup, imsg->data, sizeof(mlkup)); */
+/* 	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0'; /\* assure clients were nice *\/ */
 
-	if (mlkup.type != T_PTR) {
-		log_warnx("Browse type %d not supported/implemented",
-		    mlkup.type);
-		return;
-	}
+/* 	if (mlkup.type != T_PTR) { */
+/* 		log_warnx("Browse type %d not supported/implemented", */
+/* 		    mlkup.type); */
+/* 		return; */
+/* 	} */
 
-	if (mlkup.class != C_IN) {
-		log_warnx("Browse class %d not supported/implemented",
-		    mlkup.class);
-		return;
-	}
-	q = query_lookup(&mlkup);
-	if (q != NULL)
-		control_remq(c, q);
+/* 	if (mlkup.class != C_IN) { */
+/* 		log_warnx("Browse class %d not supported/implemented", */
+/* 		    mlkup.class); */
+/* 		return; */
+/* 	} */
+/* 	q = query_lookup(&mlkup); */
+/* 	if (q != NULL) */
+/* 		control_remq(c, q); */
 }	
 
 int
@@ -302,7 +334,8 @@ void
 control_close(int fd)
 {
 	struct ctl_conn	*c;
-	struct ctl_query *cq;
+	struct query	*q;
+	struct rr	*rr;
 
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_close: fd %d: not found", fd);
@@ -313,12 +346,16 @@ control_close(int fd)
 
 	event_del(&c->iev.ev);
 	close(c->iev.ibuf.fd);
-	while ((cq = (LIST_FIRST(&c->qlist))) != NULL) {
-		/* Cleanup our references */
-		LIST_REMOVE(cq, entry);
-		/* Remove query reference count */
-		query_remove(cq->q);
-		free(cq);
+	while ((q = (LIST_FIRST(&c->qlist))) != NULL) {
+		while ((rr = (LIST_FIRST(&q->rrlist))) != NULL) {
+			question_remove(&rr->rrs);
+			LIST_REMOVE(rr, qentry);
+			free(rr);
+		}
+		if (evtimer_pending(&q->timer, NULL))
+			evtimer_del(&q->timer);
+		LIST_REMOVE(q, entry);
+		free(q);
 	}
 	free(c);
 }
@@ -393,44 +430,4 @@ session_socket_blockmode(int fd, enum blockmodes bm)
 
 	if ((flags = fcntl(fd, F_SETFL, flags)) == -1)
 		fatal("fcntl F_SETFL");
-}
-
-void
-control_addq(struct ctl_conn *c, struct query *q)
-{
-	struct ctl_query *cq;
-	
-	if ((cq = calloc(1, sizeof(*cq))) == NULL)
-		fatal("calloc");
-	cq->q = q;
-	LIST_INSERT_HEAD(&c->qlist, cq, entry);
-}
-
-int
-control_remq(struct ctl_conn *c, struct query *q)
-{
-	struct ctl_query *cq;
-	
-	LIST_FOREACH(cq, &c->qlist, entry) {
-		if (cq->q == q) {
-			LIST_REMOVE(cq, entry);
-			query_remove(cq->q);
-			free(cq);
-			return (0);
-		}
-	}
-	
-	return (-1);
-}
-
-int
-control_hasq(struct ctl_conn *c, struct query *q)
-{
-	struct ctl_query *cq;
-	
-	LIST_FOREACH(cq, &c->qlist, entry)
-		if (cq->q == q)
-			return (1);
-	    
-	return (0);
 }

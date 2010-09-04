@@ -37,6 +37,10 @@
 #define TTL_HNAME		120
 #define MDNS_QUERY		0
 #define MDNS_RESPONSE		1
+#define INTERVAL_PROBETIME	250000
+#define RANDOM_PROBETIME	arc4random_uniform(250000)
+#define FIRST_QUERYTIME		(arc4random_uniform(120000) + 20000)
+#define MAX_QUERYTIME		(60 * 60) /* one hour */
 
 #define ANSWERS(q, rr)							\
 	((((q)->rrs.type == T_ANY) || ((q)->rrs.type == (rr)->rrs.type)) && \
@@ -54,8 +58,9 @@ RB_HEAD(rrt_tree, rrt_node);
 RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_cmp);
 
 struct rr {
-	LIST_ENTRY(rr)		centry; /* cache entry */
-	LIST_ENTRY(rr)		pentry; /* packet entry */
+	LIST_ENTRY(rr)		centry;	/* cache entry */
+	LIST_ENTRY(rr)		pentry;	/* packet entry */
+	LIST_ENTRY(rr)		qentry;	/* query entry */
 	struct rrset 		rrs;
 	int			cacheflush;
 	u_int32_t		ttl;
@@ -72,6 +77,7 @@ struct rr {
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
 	struct event	rev_timer;	/* cache revision timer */
 	struct timespec	age;
+	int		answered;
 };
 
 struct pkt {
@@ -87,8 +93,12 @@ struct pkt {
 
 struct question {
 	LIST_ENTRY(question)	entry;
+	RB_ENTRY(question)	qst_entry;
 	struct rrset 		rrs;			
 	struct in_addr		src; /* If unicast response, src != 0 */
+	int			active;
+	u_int			sent;
+	struct timespec		ts;
 };
 
 enum query_style {
@@ -97,12 +107,20 @@ enum query_style {
 };
 
 struct query {
-	int			active;
+	LIST_ENTRY(query)	entry;
+	LIST_HEAD(, rr)		rrlist;
 	enum query_style	style;
-	u_int			sent;
-	struct question		qst;
 	struct event		timer;
+	u_int			count;
 };
+
+/* struct query { */
+/* 	int			active; */
+/* 	enum query_style	style; */
+/* 	u_int			sent; */
+/* 	struct question		qst; */
+/* 	struct event		timer; */
+/* }; */
 
 enum publish_state {
 	PUB_INITIAL,
@@ -247,11 +265,14 @@ int		 publish_delete(struct iface *, struct rr *);
 struct rr *	 publish_lookupall(struct rrset *);
 void		 publish_fsm(int, short, void *_pub);
 void		 query_init(void);
-struct query *	 query_place(enum query_style, struct rrset *);
+void   		 query_fsm(int, short, void *);
+/* struct query *	 query_place(enum query_style, struct rrset *); */
 struct query *	 query_lookup(struct rrset *);
 int		 query_answerctl(struct ctl_conn *, struct rr *, int);
 int		 query_notify(struct rr *, int);
 void		 query_remove(struct query *);
+struct question *question_add(struct rrset *);
+void		 question_remove(struct rrset *);
 void		 cache_init(void);
 int		 cache_process(struct rr *);
 struct rr	*cache_lookup(struct rrset *);
@@ -260,5 +281,6 @@ int		 rrset_cmp(struct rrset *a, struct rrset *b);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
+int	control_notify_rr(struct ctl_conn *, struct rr *, int);
 
 #endif /* _MDNSD_H_ */
