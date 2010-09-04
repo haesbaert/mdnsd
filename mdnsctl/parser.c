@@ -274,9 +274,9 @@ parse_addr(const char *word, struct in_addr *addr)
 int
 parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN])
 {
-	if (word == NULL)
+	if (word == NULL || *word == '-')
 		return (0);
-
+	
 	if (strlen(word) < 7 ||	/* shorter host is a.local */
 	    strcmp(&word[strlen(word) - 6], ".local") != 0) {
 		fprintf(stderr, "Invalid domain, must be .local\n");
@@ -291,7 +291,7 @@ int
 parse_flags(const char *word, int *flags)
 {
 	int r = 0;
-
+	
 	if (word == NULL || *word != '-')
 		return (r);
 	word++;
