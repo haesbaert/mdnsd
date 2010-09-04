@@ -113,7 +113,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	if ((rr = calloc(1, sizeof(*rr))) == NULL)
 		fatal("calloc");
 	LIST_INIT(&q->rrlist);
-	q->style = QUERY_LKUP;
+	q->style = QUERY_LOOKUP;
 	q->ctl = c;
 	rr->rrs = mlkup;
 	LIST_INSERT_HEAD(&q->rrlist, rr, qentry);

@@ -70,6 +70,7 @@ struct srv {
 struct mdns;
 typedef void (*lkup_A_hook) (struct mdns *, int event, char *name, struct in_addr address);
 typedef void (*lkup_PTR_hook) (struct mdns *, int event, char *name, char *ptr);
+typedef void (*lkup_HINFO_hook) (struct mdns *, int event, char *name, char *cpu, char *os);
 typedef void (*browse_hook) (struct mdns *, int event, char *name, char *app, char *proto);
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
@@ -87,6 +88,7 @@ struct mdns {
 	browse_hook	 bhk;
 	lkup_A_hook	 lhk_A;
 	lkup_PTR_hook	 lhk_PTR;
+	lkup_HINFO_hook	 lhk_HINFO;
 /* 	resolve_hook	 rhk; */
 	void		*udata;
 };
@@ -99,6 +101,7 @@ void	mdns_close(struct mdns *);
 void	mdns_set_browse_hook(struct mdns *, browse_hook);
 void	mdns_set_lkup_A_hook(struct mdns *, lkup_A_hook);
 void	mdns_set_lkup_PTR_hook(struct mdns *, lkup_PTR_hook);
+void	mdns_set_lkup_HINFO_hook(struct mdns *, lkup_HINFO_hook);
 void	mdns_set_udata(struct mdns *, void *);
 int	mdns_lkup_A(struct mdns *, const char *);
 int	mdns_lkup_PTR(struct mdns *m, const char *);

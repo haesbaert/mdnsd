@@ -79,6 +79,12 @@ mdns_set_lkup_PTR_hook(struct mdns *m, lkup_PTR_hook lhk)
 }
 
 void
+mdns_set_lkup_HINFO_hook(struct mdns *m, lkup_HINFO_hook hhk)
+{
+	m->lhk_HINFO = hhk;
+}
+
+void
 mdns_set_browse_hook(struct mdns *m, browse_hook bhk)
 {
 	m->bhk = bhk;
@@ -239,6 +245,7 @@ mdns_read(struct mdns *m)
 int
 mdns_handle_lkup(struct mdns *m, struct rr *rr, int ev)
 {
+	struct hinfo *h;
 	switch (rr->rrs.type) {
 	case T_A:
 		if (m->lhk_A == NULL)
@@ -250,11 +257,12 @@ mdns_handle_lkup(struct mdns *m, struct rr *rr, int ev)
 			return (0);
 		m->lhk_PTR(m, ev, rr->rrs.dname, rr->rdata.PTR);
 		break;
-/* 	case T_HINFO: */
-/* 		if (m->lhk_HINFO == NULL) */
-/* 			return (0); */
-/* 		m->lhk_HINFO(m, ev, mlkup.dname, (struct hinfo *) mlkup->rdata); */
-/* 		break; */
+	case T_HINFO:
+		if (m->lhk_HINFO == NULL)
+			return (0);
+		h = &rr->rdata.HINFO;
+		m->lhk_HINFO(m, ev, rr->rrs.dname, h->cpu, h->os);
+		break;
 	default:
 		return (-1);
 	}

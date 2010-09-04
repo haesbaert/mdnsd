@@ -42,6 +42,7 @@ __dead void	usage(void);
 void		bhook(char *, char *, char *, int, void *);
 void		my_lkup_A_hook(struct mdns *, int, char *, struct in_addr);
 void		my_lkup_PTR_hook(struct mdns *, int, char *, char *);
+void		my_lkup_HINFO_hook(struct mdns *, int, char *, char *, char *);
 void		my_browse_hook(struct mdns *, int, char *, char *, char *);
 
 struct parse_result	*res;
@@ -69,6 +70,7 @@ main(int argc, char *argv[])
 	
 	mdns_set_lkup_A_hook(&mdns, my_lkup_A_hook);
 	mdns_set_lkup_PTR_hook(&mdns, my_lkup_PTR_hook);
+	mdns_set_lkup_HINFO_hook(&mdns, my_lkup_HINFO_hook);
 	mdns_set_browse_hook(&mdns, my_browse_hook);
 
 	/* process user request */
@@ -84,6 +86,10 @@ main(int argc, char *argv[])
 
 		if (res->flags & F_HINFO)
 			if (mdns_lkup_HINFO(&mdns, res->hostname) == -1)
+				err(1, "mdns_lkup_A");
+		
+		if (res->flags & F_PTR)
+			if (mdns_lkup_PTR(&mdns, res->hostname) == -1)
 				err(1, "mdns_lkup_A");
 		break;
 	case RLOOKUP:
@@ -108,6 +114,8 @@ main(int argc, char *argv[])
 			err(1, "mdns_read");
 		if (n == 0)
 			errx(1, "Server closed socket");
+		if (res->action == LOOKUP && res->flags == 0)
+			exit(0);
 	}
 }
 
@@ -126,7 +134,7 @@ my_lkup_A_hook(struct mdns *m, int ev, char *host, struct in_addr a)
 		break;	/* NOTREACHED */
 	}
 	
-	exit(0);
+	res->flags &= ~F_A;
 }
 
 void
@@ -144,8 +152,26 @@ my_lkup_PTR_hook(struct mdns *m, int ev, char *name, char *ptr)
 		break;	/* NOTREACHED */
 	}
 	
-	exit(0);
+	res->flags &= ~F_PTR;
+}
 
+void
+my_lkup_HINFO_hook(struct mdns *m, int ev, char *name, char *cpu, char *os)
+{
+	switch (ev) {
+	case LOOKUP_SUCCESS:
+		printf("Cpu: %s\n", cpu);
+		printf("Os: %s\n", os);
+		break;
+	case LOOKUP_FAILURE:
+		printf("HINFO not found\n");
+		break;
+	default:
+		errx(1, "Unhandled event");
+		break;	/* NOTREACHED */
+	}
+	
+	res->flags &= ~F_HINFO;
 }
 
 void

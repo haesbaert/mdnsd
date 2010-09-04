@@ -30,6 +30,7 @@
 #define F_HINFO		2
 #define F_SRV		4
 #define F_TXT		8
+#define F_PTR		16
 
 /* BRFLAGS */
 #define F_RESOLV	1

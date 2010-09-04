@@ -102,7 +102,7 @@ struct question {
 };
 
 enum query_style {
-	QUERY_LKUP,
+	QUERY_LOOKUP,
 	QUERY_BROWSE,
 };
 

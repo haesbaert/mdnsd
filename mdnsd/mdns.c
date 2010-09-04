@@ -781,7 +781,7 @@ question_remove(struct rrset *rrs)
 /* 		} */
 /* 		/\* notify controller *\/ */
 /* 		switch (q->style) { */
-/* 		case QUERY_LKUP: */
+/* 		case QUERY_LOOKUP: */
 /* 			msgtype = IMSG_CTL_LOOKUP; */
 /* 			break; */
 /* 		case QUERY_BROWSE: */
@@ -895,7 +895,7 @@ rr_notify_in(struct rr *rr)
 				 * Notify controller with full RR.
 				 */
 				switch (q->style) {
-				case QUERY_LKUP:
+				case QUERY_LOOKUP:
 					msgtype = IMSG_CTL_LOOKUP;
 					break;
 				case QUERY_BROWSE:
@@ -908,7 +908,7 @@ rr_notify_in(struct rr *rr)
 				if (control_send_rr(c, rr, msgtype) == -1)
 					log_warnx("control_send_rr error");
 				rraux->answered = 1;
-				if (q->style == QUERY_LKUP) {
+				if (q->style == QUERY_LOOKUP) {
 					query_remove(q);
 					break;
 				}
@@ -939,7 +939,7 @@ rr_notify_in(struct rr *rr)
 /* 		 *\/ */
 /* 		LIST_FOREACH(q, &c->qlist, entry) { */
 /* 			/\* Lookup only wants in events *\/ */
-/* 			if (q->style == QUERY_LKUP && in == 0) */
+/* 			if (q->style == QUERY_LOOKUP && in == 0) */
 /* 				continue; */
 /* 			LIST_FOREACH(rraux, &q->rrlist, qentry) { */
 /* 				if (rraux->answered || */
@@ -949,7 +949,7 @@ rr_notify_in(struct rr *rr)
 /* 				 * Notify controller with full RR. */
 /* 				 *\/ */
 /* 				switch (q->style) { */
-/* 				case QUERY_LKUP: */
+/* 				case QUERY_LOOKUP: */
 /* 					msgtype = IMSG_CTL_LOOKUP; */
 /* 					break; */
 /* 				case QUERY_BROWSE: */
@@ -1005,7 +1005,7 @@ query_fsm(int unused, short event, void *v_query)
 		 * If we're in our third call we're still alive,
 		 * consider a failure.
 		 */
-		if (q->style == QUERY_LKUP && q->count > 2) {
+		if (q->style == QUERY_LOOKUP && q->count > 2) {
 			control_send_rr(q->ctl, rr, IMSG_CTL_LOOKUP_FAILURE);
 			query_remove(q);
 			return;
