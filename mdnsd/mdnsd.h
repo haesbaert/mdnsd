@@ -107,11 +107,12 @@ enum query_style {
 };
 
 struct query {
-	LIST_ENTRY(query)	entry;
-	LIST_HEAD(, rr)		rrlist;
-	enum query_style	style;
-	struct event		timer;
-	u_int			count;
+	LIST_ENTRY(query)	 entry;
+	LIST_HEAD(, rr)		 rrlist;
+	struct ctl_conn		*ctl;
+	enum query_style	 style;
+	struct event		 timer;
+	u_int			 count;
 };
 
 /* struct query { */
@@ -268,8 +269,8 @@ void		 query_init(void);
 void   		 query_fsm(int, short, void *);
 /* struct query *	 query_place(enum query_style, struct rrset *); */
 struct query *	 query_lookup(struct rrset *);
-int		 query_answerctl(struct ctl_conn *, struct rr *, int);
-int		 query_notify(struct rr *, int);
+void		 query_remove(struct query *);
+/* int		 query_notify(struct rr *, int); */
 void		 query_remove(struct query *);
 struct question *question_add(struct rrset *);
 void		 question_remove(struct rrset *);
@@ -277,10 +278,10 @@ void		 cache_init(void);
 int		 cache_process(struct rr *);
 struct rr	*cache_lookup(struct rrset *);
 int		 rrset_cmp(struct rrset *a, struct rrset *b);
-
+int		 rr_notify_in(struct rr *);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
-int	control_notify_rr(struct ctl_conn *, struct rr *, int);
+				    int     control_send_rr(struct ctl_conn *, struct rr *, int);
 
 #endif /* _MDNSD_H_ */

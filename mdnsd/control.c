@@ -84,7 +84,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	rr = cache_lookup(&mlkup);
 	/* cache hit */
 	if (rr != NULL) {
-		if (query_answerctl(c, rr, IMSG_CTL_LOOKUP) == -1)
+		if (control_send_rr(c, rr, IMSG_CTL_LOOKUP) == -1)
 			log_warnx("query_answer error");
 		return;
 	}
@@ -102,6 +102,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		fatal("calloc");
 	LIST_INIT(&q->rrlist);
 	q->style = QUERY_LKUP;
+	q->ctl = c;
 	rr->rrs = mlkup;
 	LIST_INSERT_HEAD(&q->rrlist, rr, qentry);
 	LIST_INSERT_HEAD(&c->qlist, q, entry);
@@ -150,8 +151,8 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 
 	rr = cache_lookup(&mlkup);
 	while (rr != NULL) {
-		if (query_answerctl(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
-			log_warnx("query_answerctl error");
+		if (control_send_rr(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
+			log_warnx("control_send_rr error");
 		rr = LIST_NEXT(rr, centry);
 	}
 
@@ -167,6 +168,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		fatal("calloc");
 	LIST_INIT(&q->rrlist);
 	q->style = QUERY_BROWSE;
+	q->ctl = c;
 	rr->rrs = mlkup;
 	LIST_INSERT_HEAD(&q->rrlist, rr, qentry);
 	LIST_INSERT_HEAD(&c->qlist, q, entry);
@@ -335,7 +337,6 @@ control_close(int fd)
 {
 	struct ctl_conn	*c;
 	struct query	*q;
-	struct rr	*rr;
 
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_close: fd %d: not found", fd);
@@ -346,17 +347,19 @@ control_close(int fd)
 
 	event_del(&c->iev.ev);
 	close(c->iev.ibuf.fd);
-	while ((q = (LIST_FIRST(&c->qlist))) != NULL) {
-		while ((rr = (LIST_FIRST(&q->rrlist))) != NULL) {
-			question_remove(&rr->rrs);
-			LIST_REMOVE(rr, qentry);
-			free(rr);
-		}
-		if (evtimer_pending(&q->timer, NULL))
-			evtimer_del(&q->timer);
-		LIST_REMOVE(q, entry);
-		free(q);
-	}
+	while ((q = (LIST_FIRST(&c->qlist))) != NULL)
+		query_remove(q);
+/* 	while ((q = (LIST_FIRST(&c->qlist))) != NULL) { */
+/* 		while ((rr = (LIST_FIRST(&q->rrlist))) != NULL) { */
+/* 			question_remove(&rr->rrs); */
+/* 			LIST_REMOVE(rr, qentry); */
+/* 			free(rr); */
+/* 		} */
+/* 		if (evtimer_pending(&q->timer, NULL)) */
+/* 			evtimer_del(&q->timer); */
+/* 		LIST_REMOVE(q, entry); */
+/* 		free(q); */
+/* 	} */
 	free(c);
 }
 
@@ -430,4 +433,13 @@ session_socket_blockmode(int fd, enum blockmodes bm)
 
 	if ((flags = fcntl(fd, F_SETFL, flags)) == -1)
 		fatal("fcntl F_SETFL");
+}
+
+int
+control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
+{
+	log_debug("control_send_rr (%s) %s", rr_type_name(rr->rrs.type),
+	    rr->rrs.dname);
+	
+	return (mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr)));
 }

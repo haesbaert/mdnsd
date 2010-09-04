@@ -106,15 +106,13 @@ mdnsd_sig_handler(int sig, short event, void *arg)
 
 	switch (sig) {
 	case SIGTERM:
+	case SIGINT:
 		mdnsd_shutdown();
 		break;		/* NOTREACHED */
 	case SIGHUP:
 		log_debug("got SIGHUP");
 		/* reconfigure */
 		/* ... */
-		break;
-	case SIGINT:
-		log_debug("got SIGINT");
 		break;
 	default:
 		fatalx("unexpected signal");
@@ -369,13 +367,3 @@ peersuser(int fd)
 	return (euid == 0);
 }
 
-/* TODO: Move this to lib someday */
-void
-reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
-{
-	const u_char *uaddr = (const u_char *)addr;
-
-	(void) snprintf(str, MAXHOSTNAMELEN, "%u.%u.%u.%u.in-addr.arpa",
-	    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
-	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
-}

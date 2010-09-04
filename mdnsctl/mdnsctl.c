@@ -38,8 +38,10 @@
 #include "mdns.h"
 #include "parser.h"
 
-__dead void		 usage(void);
-static void		 bhook(char *, char *, char *, int, void *);
+__dead void	usage(void);
+void		bhook(char *, char *, char *, int, void *);
+void		my_lkup_A_hook(struct mdns *, int, char *, struct in_addr);
+void		my_browse_hook(struct mdns *, int, char *, char *, char *);
 
 struct parse_result	*res;
 
@@ -55,17 +57,18 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	int			 brsock, r = 0, done = 0;
-	struct mdns_browse	 mb;
-	struct in_addr		 addr;
-	struct hinfo		 hi;
-	char			 hostname[MAXHOSTNAMELEN];
-	char			 txt[MAX_CHARSTR];
+	int		sockfd;
+	struct mdns	mdns;
 	/* parse options */
 	if ((res = parse(argc - 1, argv + 1)) == NULL)
 		exit(1);
+	
+	if ((sockfd = mdns_open(&mdns)) == -1)
+		err(1, "mdns_open");
+	
+	mdns_set_lkup_A_hook(&mdns, my_lkup_A_hook);
+	mdns_set_browse_hook(&mdns, my_browse_hook);
 
-	done = 0;
 	/* process user request */
 	switch (res->action) {
 	case NONE:
@@ -73,132 +76,66 @@ main(int argc, char *argv[])
 		/* not reached */
 		break;
 	case LOOKUP:
-		if (res->flags & F_A || !res->flags) {
-			r = mdns_lkup(res->hostname, &addr);
-			if (r == 0)
-				printf("Address not found.\n");
-			else if(r == 1)
-				printf("Address: %s\n", inet_ntoa(addr));
-			else
-				err(1, "mdns_lkup");
-		}
+		if (res->flags & F_A || !res->flags)
+			if (mdns_lkup_A(&mdns, res->hostname) == -1)
+				err(1, "mdns_lkup_A");
 
-		if (res->flags & F_HINFO) {
-			r = mdns_lkup_hinfo(res->hostname, &hi);
-			if (r == 0)
-				printf("Hinfo not found.\n");
-			else if (r == 1) {
-				printf("Cpu: %s\n", hi.cpu);
-				printf("Os: %s\n",  hi.os);
-			}
-			else
-				err(1, "mdns_lkup_hinfo");
-		}
+		if (res->flags & F_HINFO)
+			if (mdns_lkup_HINFO(&mdns, res->hostname) == -1)
+				err(1, "mdns_lkup_A");
 
-		if (res->flags & F_SRV) {
-/*			r = mdns_lkup_srv(res->hostname, &srv); */
-/*			if (r == 0) */
-/*				printf("SRV not found.\n"); */
-/*			else if (r == 1) { */
-/*				printf("Name: %s\n", srv.dname); */
-/*				printf("Port: %u\n", srv.port); */
-/*				printf("Priority: %u\n", srv.priority); */
-/*				printf("Weight: %u\n", srv.weight); */
-/*			} */
-/*			else */
-/*				err(1, "mdns_lkup_srv"); */
-			errx(1, "fix me");
-		}
-
-		if (res->flags & F_TXT) {
-			r = mdns_lkup_txt(res->hostname, txt, sizeof(txt));
-			if (r == 0)
-				printf("TXT not found.\n");
-			else if (r == 1) {
-				printf("TXT: %s\n", txt);
-			}
-			else
-				err(1, "mdns_lkup_txt");
-		}
-
-		break;
-	case RLOOKUP:
-		r = mdns_lkup_addr(&res->addr, hostname,
-		    sizeof(hostname));
-		switch (r) {
-		case 0:
-			printf("Name not found.\n");
-			exit(1);
-			break;	/* NOTREACHED */
-		case 1:
-			printf("Hostname: %s\n", hostname);
-			exit(0);
-			break;	/* NOTREACHED */
-		default:
-			err(1, "mdns_lkup_addr");
-			break;
-		}
 		break;
 	case BROWSE_PROTO:
-		if ((brsock = mdns_browse_open(&mb, bhook, &mb)) == -1)
-			err(1, "mdns_browse_open");
-		/* res->app and res->proto will be NULL if argument is "all" */
-		if (mdns_browse_add(&mb, res->app, res->proto) == -1)
+		if (mdns_browse_add(&mdns, res->app, res->proto) == -1)
 			err(1, "mdns_browse_add");
-		if (r == -1)
-			err(1, "select");
-		for (; ;) {
-			r = mdns_browse_read(&mb);
-			if (r == -1) {
-				mdns_browse_close(&mb);
-				errx(1, "mdns_browse_read");
-			}
-			else if (r == 0) {
-				mdns_browse_close(&mb);
-				errx(1, "Server closed socket");
-			}
-		}
+		
+		break;		/* NOTREACHED */
+	default:
+		errx(1, "Unknown action");
 		break;		/* NOTREACHED */
 	}
 
-	return (0);		/* NOTREACHED */
+	for (; ;) {
+		ssize_t n;
+		
+		n = mdns_read(&mdns);
+		if (n == -1)
+			err(1, "mdns_read");
+		if (n == 0)
+			errx(1, "Server closed socket");
+	}
 }
 
-static void
-bhook(char *name, char *app, char *proto, int ev, void *v_mb)
+void
+my_lkup_A_hook(struct mdns *m, int ev, char *host, struct in_addr a)
 {
-	struct mdns_browse	*mb;
-	char			 c;
-
-	mb = v_mb;
-	c = ev == SERVICE_UP ? '+' : '-';
-	
-	if (name == NULL) {
-		if (ev == SERVICE_UP)
-			if (mdns_browse_add(mb, app, proto) == -1)
-				err(1, "mdns_browse_add");
-	}
-	else {
-		printf("%c%c%c %-48s %-20s %-3s\n", c, c, c, name, app, proto);
-		if (res->flags & F_RESOLV && ev == SERVICE_UP) {
-			struct mdns_service	ms;
-			int			r;
-
-			r = mdns_service_resolv(name, app, proto, &ms);
-			if (r == -1)
-				err(1, "mdns_service_resolv");
-			else if (r == 0)
-				warnx("Can't find service %s", name);
-			else {
-				printf("  Name: %s\n", ms.dname);
-				printf("  Priority: %u\n", ms.priority);
-				printf("  Weight: %u\n", ms.weight);
-				printf("  Port: %u\n", ms.port);
-				printf("  Address: %s\n", inet_ntoa(ms.addr));
-				printf("  Txt: %s\n", ms.txt);
-			}
-		}
+	switch (ev) {
+	case LOOKUP_SUCCESS:
+		printf("Address: %s\n", inet_ntoa(a));
+		break;
+	case LOOKUP_FAILURE:
+		printf("Address not found\n");
+		break;
+	default:
+		errx(1, "Unhandled event");
+		break;	/* NOTREACHED */
 	}
 	
-	fflush(stdout);
+	exit(0);
+}
+
+void
+my_browse_hook(struct mdns *m, int ev, char *name, char *app, char *proto)
+{
+	switch (ev) {
+	case SERVICE_UP:
+		printf("+++ %-48s %-20s %-3s\n", name, app, proto);
+		break;
+	case SERVICE_DOWN:
+		printf("--- %-48s %-20s %-3s\n", name, app, proto);
+		break;
+	default:
+		errx(1, "Unhandled event");
+		break;
+	}
 }

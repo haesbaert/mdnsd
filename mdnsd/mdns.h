@@ -30,50 +30,49 @@
 #include <event.h>
 #include <string.h>
 
-#define MDNSD_SOCKET		"/var/run/mdnsd.sock"
-#define MDNS_TIMEOUT		3
-#define MAX_CHARSTR		256	/* we swap the length byter per the null byte */
-
-typedef void (*browse_hook) (char *, char *, char *, int, void *);
+#define MAX_CHARSTR	256	/* we swap the length byter per the null byte */
+#define MDNSD_SOCKET    "/var/run/mdnsd.sock"
 
 enum imsg_type {
 	IMSG_NONE,
 	IMSG_CTL_END,
 	IMSG_CTL_LOOKUP,
+	IMSG_CTL_LOOKUP_FAILURE,
 	IMSG_CTL_BROWSE_ADD,
 	IMSG_CTL_BROWSE_DEL,
 };
 
-enum browse_events {
+enum client_events {
+	LOOKUP_SUCCESS,
+	LOOKUP_FAILURE,
 	SERVICE_DOWN,
 	SERVICE_UP,
 };
 
-struct mdns_browse {
-	struct imsgbuf	 ibuf;
-	browse_hook	 bhk;
-	void		*udata;
-};
-
 struct rrset {
-	char		dname[MAXHOSTNAMELEN];
-	u_int16_t	type;
-	u_int16_t	class;
+	char            dname[MAXHOSTNAMELEN];
+	u_int16_t       type;
+	u_int16_t       class;
 };
 
-/* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
 struct hinfo {
-	char	cpu[MAX_CHARSTR];
-	char	os[MAX_CHARSTR];
+	char    cpu[MAX_CHARSTR];
+	char    os[MAX_CHARSTR];
 };
 
 struct srv {
-	char		dname[MAXHOSTNAMELEN];
-	u_int16_t	priority;
-	u_int16_t	weight;
-	u_int16_t	port;
+	char            dname[MAXHOSTNAMELEN];
+	u_int16_t       priority;
+	u_int16_t       weight;
+	u_int16_t       port;
 };
 
+struct mdns;
+typedef void (*lkup_A_hook) (struct mdns *, int event, char *name, struct in_addr address);
+typedef void (*lkup_PTR_hook) (struct mdns *, int event, char *name, char *ptr);
+typedef void (*browse_hook) (struct mdns *, int event, char *name, char *app, char *proto);
+
+/* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
 struct mdns_service {
 	char		dname[MAXHOSTNAMELEN];
 	u_int16_t	priority;
@@ -83,20 +82,29 @@ struct mdns_service {
 	struct in_addr  addr;
 };
 
-int	mdns_browse_open(struct mdns_browse *, browse_hook, void *);
-void	mdns_browse_close(struct mdns_browse *);
-int	mdns_browse_add(struct mdns_browse *, const char *, const char *);
-int	mdns_browse_del(struct mdns_browse *, const char *, const char *);
-ssize_t	mdns_browse_read(struct mdns_browse *);
-char *	mdns_browse_evstr(int);
+struct mdns {
+	struct imsgbuf	 ibuf;
+	browse_hook	 bhk;
+	lkup_A_hook	 lhk_A;
+	lkup_PTR_hook	 lhk_PTR;
+/* 	resolve_hook	 rhk; */
+	void		*udata;
+};
 
-int	mdns_lkup(const char *, struct in_addr *);
-int	mdns_lkup_hinfo(const char *, struct hinfo *);
-int	mdns_lkup_addr(struct in_addr *, char *, size_t);
-int	mdns_lkup_srv(const char *, struct srv *);
-int	mdns_lkup_txt(const char *, char *, size_t);
+int	mdns_browse_add(struct mdns *, const char *, const char *);
+int	mdns_browse_del(struct mdns *, const char *, const char *);
+int	mdns_open(struct mdns *);
+ssize_t mdns_read(struct mdns *);
+void	mdns_close(struct mdns *);
+void	mdns_set_browse_hook(struct mdns *, browse_hook);
+void	mdns_set_lkup_A_hook(struct mdns *, lkup_A_hook);
+void	mdns_set_lkup_PTR_hook(struct mdns *, lkup_PTR_hook);
+void	mdns_set_udata(struct mdns *, void *);
+int	mdns_lkup_A(struct mdns *, const char *);
+int	mdns_lkup_PTR(struct mdns *m, const char *);
+int	mdns_lkup_HINFO(struct mdns *, const char *);
+int	mdns_lkup_rev(struct mdns *, struct in_addr);
 
-int	mdns_service_resolv(char *, char *, char *, struct mdns_service *);
-
+void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 
 #endif	/* _MDNS_H_ */

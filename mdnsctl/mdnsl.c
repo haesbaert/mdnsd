@@ -21,6 +21,8 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 
+#include <arpa/inet.h>
+
 #include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
@@ -29,177 +31,139 @@
 
 #include <imsg.h>
 
+#include "../mdnsd/mdnsd.h"
 #include "mdns.h"
 
-static void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 static int	mdns_connect(void);
-static int	mdns_lkup_do(const char *, u_int16_t, void *, size_t);
-static int	mdns_browse_adddel(struct mdns_browse *, const char *,
-    const char *, int);
-static int	ibuf_read_imsg(struct imsgbuf *, struct imsg *);
+static int 	mdns_lkup_do(struct mdns *, const char [MAXHOSTNAMELEN],
+    u_int16_t, u_int16_t);
 static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
 static int	splitdname(char [MAXHOSTNAMELEN], char [MAXHOSTNAMELEN],
     char [MAXLABEL], char [4], int *);
 
-int
-mdns_lkup(const char *hostname, struct in_addr *addr)
-{
-	return (mdns_lkup_do(hostname, T_A, addr, sizeof(*addr)));
-}
+static int	mdns_browse_adddel(struct mdns *, const char *,
+    const char *, int);
+int mdns_handle_lkup(struct mdns *, struct rr *, int);
+static int mdns_handle_browse(struct mdns *, struct rr *, int);
 
 int
-mdns_lkup_hinfo(const char *hostname, struct hinfo *h)
-{
-	return (mdns_lkup_do(hostname, T_HINFO, h, sizeof(*h)));
-}
-
-int
-mdns_lkup_addr(struct in_addr *addr, char *hostname, size_t len)
-{
-	char	name[MAXHOSTNAMELEN];
-	char	res[MAXHOSTNAMELEN];
-	int	r;
-
-	reversstr(name, addr);
-	name[sizeof(name) - 1] = '\0';
-	r = mdns_lkup_do(name, T_PTR, res, sizeof(res));
-	if (r == 1)
-		strlcpy(hostname, res, len);
-
-	return (r);
-}
-
-int
-mdns_lkup_srv(const char *hostname, struct srv *srv)
-{
-	return (mdns_lkup_do(hostname, T_SRV, srv, sizeof(*srv)));
-}
-
-int
-mdns_lkup_txt(const char *hostname, char *txt, size_t len)
-{
-	char	res[MAXHOSTNAMELEN];
-	int	r;
-
-	r = mdns_lkup_do(hostname, T_TXT, res, sizeof(res));
-	if (r == 1)
-		strlcpy(txt, res, len);
-
-	return (r);
-}
-
-int
-mdns_service_resolv(char *name, char *app, char *proto, struct mdns_service *ms)
-{
-	char		srvname[MAXHOSTNAMELEN];
-	struct srv	srv;
-	int		r;
-
-	r = snprintf(srvname, sizeof(srvname), "%s._%s._%s.local",
-	    name, app, proto);
-	if (r == -1)
-		return (-1);
-	else if (r >= (int)sizeof(srvname)) {
-		errno = ENAMETOOLONG;
-		return (-1);
-	}
-	bzero(ms, sizeof(*ms));
-	bzero(&srv, sizeof(srv));
-	if (mdns_lkup_srv(srvname, &srv) != 1)
-		return (-1);
-	ms->priority = srv.priority;
-	ms->weight   = srv.weight;
-	ms->port     = srv.port;
-	strlcpy(ms->dname, srv.dname, sizeof(ms->dname));
-	if (mdns_lkup_txt(srvname, ms->txt, sizeof(ms->txt)) != 1)
-		return (-1);
-	if (mdns_lkup(ms->dname, &ms->addr) != 1)
-		return (-1);
-
-	return (1);
-}
-
-int
-mdns_browse_open(struct mdns_browse *mb, browse_hook bhk, void *udata)
+mdns_open(struct mdns *m)
 {
 	int sockfd;
-
+	
+	bzero(m, sizeof(*m));
 	if ((sockfd = mdns_connect()) == -1)
 		return (-1);
-	imsg_init(&mb->ibuf, sockfd);
-	mb->bhk = bhk;
-	mb->udata = udata;
+	imsg_init(&m->ibuf, sockfd);
+	
 	return (sockfd);
 }
 
 void
-mdns_browse_close(struct mdns_browse *mb)
+mdns_close(struct mdns *m)
 {
-	imsg_clear(&mb->ibuf);
+	imsg_clear(&m->ibuf);
+}
+
+void
+mdns_set_lkup_A_hook(struct mdns *m, lkup_A_hook lhk)
+{
+	m->lhk_A = lhk;
+}
+
+void
+mdns_set_lkup_PTR_hook(struct mdns *m, lkup_PTR_hook lhk)
+{
+	m->lhk_PTR = lhk;
+}
+
+void
+mdns_set_browse_hook(struct mdns *m, browse_hook bhk)
+{
+	m->bhk = bhk;
+}
+
+/* void */
+/* mdns_set_resolve_hook(struct mdns *m, resolve_hook rhk) */
+/* { */
+/* 	m->rhk = rhk; */
+/* } */
+
+void
+mdns_set_udata(struct mdns *m, void *udata)
+{
+	m->udata = udata;
 }
 
 int
-mdns_browse_add(struct mdns_browse *mb, const char *app, const char *proto)
+mdns_lkup_A(struct mdns *m, const char *host)
 {
-	return (mdns_browse_adddel(mb, app, proto, IMSG_CTL_BROWSE_ADD));
+	return (mdns_lkup_do(m, host, T_A, C_IN));
 }
 
 int
-mdns_browse_del(struct mdns_browse *mb, const char *app, const char *proto)
+mdns_lkup_PTR(struct mdns *m, const char *ptr)
 {
-	return (mdns_browse_adddel(mb, app, proto, IMSG_CTL_BROWSE_DEL));
+	return (mdns_lkup_do(m, ptr, T_PTR, C_IN));
 }
 
-ssize_t
-mdns_browse_read(struct mdns_browse *mb)
+int
+mdns_lkup_rev(struct mdns *m, struct in_addr addr)
 {
-	int		ev, r, hasname;
-	ssize_t		n;
-	struct imsg	imsg;
-	char		name[MAXHOSTNAMELEN], app[MAXLABEL], proto[4];
+/* 	char	*addrstr; */
+	char	name[MAXHOSTNAMELEN];
+/* 	char	res[MAXHOSTNAMELEN]; */
+/* 	int	r; */
 
-	n = imsg_read(&mb->ibuf);
-
-	if (n == -1 || n == 0)
-		return (n);
-
-	while ((r = imsg_get(&mb->ibuf, &imsg)) > 0) {
-		if (imsg.hdr.type != IMSG_CTL_BROWSE_ADD &&
-		    imsg.hdr.type != IMSG_CTL_BROWSE_DEL)
-			return (-1);
-		if ((imsg.hdr.len - IMSG_HEADER_SIZE) != MAXHOSTNAMELEN)
-			return (-1);
-		ev = imsg.hdr.type == IMSG_CTL_BROWSE_ADD ?
-		    SERVICE_UP : SERVICE_DOWN;
-		if (splitdname(imsg.data, name, app, proto, &hasname) == 0) {
-			if (hasname)
-				mb->bhk(name, app, proto, ev, mb->udata);
-			else
-				mb->bhk(NULL, app, proto, ev, mb->udata);
-		}
-
-		imsg_free(&imsg);
-	}
-
-	if (r == -1)
-		return (-1);
-
-	return (n);
+/* 	if ((addrstr = inet_ntoa(addr)) == NULL) */
+/* 		return (-1); */
+	reversstr(name, &addr);
+	name[sizeof(name) - 1] = '\0';
+	
+	return (mdns_lkup_PTR(m, name));
 }
 
-char *
-mdns_browse_evstr(int ev)
+int
+mdns_lkup_HINFO(struct mdns *m, const char *host)
 {
-	if (ev == SERVICE_UP)
-		return ("SERVICE_UP");
-	else if(ev == SERVICE_DOWN)
-		return ("SERVICE_DOWN");
-	return ("UNKNOWN");
+	return (mdns_lkup_do(m, host, T_HINFO, C_IN));
 }
 
 static int
-mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto,
+mdns_lkup_do(struct mdns *m, const char name[MAXHOSTNAMELEN], u_int16_t type,
+    u_int16_t class)
+{
+	struct rrset rrs;
+	
+	bzero(&rrs, sizeof(rrs));
+	rrs.type  = type;
+	rrs.class = class;
+	if (strlcpy(rrs.dname, name, sizeof(rrs.dname)) >= sizeof(rrs.dname)) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_LOOKUP,
+	    &rrs, sizeof(rrs)) == -1)
+		return (-1); /* XXX: set errno */
+	
+	return (0);
+}
+
+int
+mdns_browse_add(struct mdns *m, const char *app, const char *proto)
+{
+	return (mdns_browse_adddel(m, app, proto, IMSG_CTL_BROWSE_ADD));
+}
+
+int
+mdns_browse_del(struct mdns *m, const char *app, const char *proto)
+{
+	return (mdns_browse_adddel(m, app, proto, IMSG_CTL_BROWSE_DEL));
+}
+
+static int
+mdns_browse_adddel(struct mdns *m, const char *app, const char *proto,
     int msgtype)
 {
 	struct rrset mlkup;
@@ -222,9 +186,107 @@ mdns_browse_adddel(struct mdns_browse *mb, const char *app, const char *proto,
 	}
 	mlkup.type  = T_PTR;
 	mlkup.class = C_IN;
-	if (ibuf_send_imsg(&mb->ibuf, msgtype,
+	
+	if (ibuf_send_imsg(&m->ibuf, msgtype,
 	    &mlkup, sizeof(mlkup)) == -1)
 		return (-1); /* XXX: set errno */
+
+	return (0);
+}
+
+ssize_t
+mdns_read(struct mdns *m)
+{
+	int		ev, r;
+	ssize_t		n;
+	struct imsg	imsg;
+	struct rr	rr;
+
+	n = imsg_read(&m->ibuf);
+
+	if (n == -1 || n == 0)
+		return (n);
+
+	while ((r = imsg_get(&m->ibuf, &imsg)) > 0) {
+		switch (imsg.hdr.type) {
+		case IMSG_CTL_LOOKUP: /* FALLTHROUGH */
+		case IMSG_CTL_LOOKUP_FAILURE:
+			ev = imsg.hdr.type == IMSG_CTL_LOOKUP  ?
+			    LOOKUP_SUCCESS : LOOKUP_FAILURE;
+			if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(rr))
+				return (-1);
+			memcpy(&rr, imsg.data, sizeof(rr));
+			r = mdns_handle_lkup(m, &rr, ev);
+			break;
+		case IMSG_CTL_BROWSE_ADD:
+		case IMSG_CTL_BROWSE_DEL:
+			if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(rr))
+				return (-1);
+			ev = imsg.hdr.type == IMSG_CTL_BROWSE_ADD  ?
+			    SERVICE_UP : SERVICE_DOWN;
+			memcpy(&rr, imsg.data, sizeof(rr));
+			r = mdns_handle_browse(m, &rr, ev);
+			
+			break;
+		default:
+			return (-1);
+		}
+		
+		imsg_free(&imsg);
+	}
+
+	if (r == -1)
+		return (-1);
+
+	return (n);
+}
+
+int
+mdns_handle_lkup(struct mdns *m, struct rr *rr, int ev)
+{
+	switch (rr->rrs.type) {
+	case T_A:
+		if (m->lhk_A == NULL)
+			return (0);
+		m->lhk_A(m, ev, rr->rrs.dname, rr->rdata.A);
+		break;
+	case T_PTR:
+		if (m->lhk_PTR == NULL)
+			return (0);
+		m->lhk_PTR(m, ev, rr->rrs.dname, rr->rdata.PTR);
+		break;
+/* 	case T_HINFO: */
+/* 		if (m->lhk_HINFO == NULL) */
+/* 			return (0); */
+/* 		m->lhk_HINFO(m, ev, mlkup.dname, (struct hinfo *) mlkup->rdata); */
+/* 		break; */
+	default:
+		return (-1);
+	}
+
+	return (0);
+}
+
+static int
+mdns_handle_browse(struct mdns *m, struct rr *rr, int ev)
+{
+	char	name[MAXHOSTNAMELEN];
+	char	app[MAXLABEL];
+	char	proto[4];
+	int	hasname;
+	
+	if (rr->rrs.type != T_PTR)
+		return (-1);
+	
+	if (m->bhk == NULL)
+		return (0);
+	
+	if (splitdname(rr->rdata.PTR, name, app, proto, &hasname) == 0) {
+		if (hasname)
+			m->bhk(m, ev, name, app, proto);
+		else
+			m->bhk(m, ev, NULL, app, proto);
+	}
 
 	return (0);
 }
@@ -278,115 +340,6 @@ ibuf_send_imsg(struct imsgbuf *ibuf, u_int32_t type,
 	return (0);
 }
 
-static int
-ibuf_read_imsg(struct imsgbuf *ibuf, struct imsg *imsg)
-{
-	ssize_t		 n;
-	struct timeval	 tv;
-	int		 r;
-	fd_set		 rset;
-
-	if ((n = imsg_get(ibuf, imsg)) == -1)
-		return (-1);
-	if (n == 0) {
-		FD_ZERO(&rset);
-		FD_SET(ibuf->fd, &rset);
-		timerclear(&tv);
-		tv.tv_sec = MDNS_TIMEOUT;
-
-		r = select(ibuf->fd + 1, &rset, NULL, NULL, &tv);
-
-		if (r == -1)
-			return (-1);
-		else if (r == 0) {
-			errno = ETIMEDOUT;
-			return (-1);
-		}
-		if ((n = imsg_read(ibuf)) == -1)
-			return (-1);
-	}
-
-	if ((n = imsg_get(ibuf, imsg)) <= 0)
-		return (-1);
-
-	return (0);
-}
-
-static void
-reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
-{
-	const u_char *uaddr = (const u_char *)addr;
-
-	(void) snprintf(str, MAXHOSTNAMELEN, "%u.%u.%u.%u.in-addr.arpa",
-	    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
-	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
-}
-
-static int
-mdns_lkup_do(const char *name, u_int16_t type, void *data, size_t len)
-{
-	struct imsg	imsg;
-	struct rrset	mlkup;
-	struct imsgbuf	ibuf;
-	int		err, sockfd;
-
-	switch (type) {
-	case T_A:		/* FALLTHROUGH */
-	case T_HINFO:		/* FALLTHROUGH */
-	case T_PTR:		/* FALLTHROUGH */
-	case T_SRV:		/* FALLTHROUGH */
-	case T_TXT:		/* FALLTHROUGH */
-		break;
-	default:
-		errno = EINVAL;
-		return (-1);
-	}
-
-	if (strlen(name) > MAXHOSTNAMELEN) {
-		errno = ENAMETOOLONG;
-		return (-1);
-	}
-
-	if ((sockfd = (mdns_connect())) == -1)
-		return (-1);
-
-	imsg_init(&ibuf, sockfd);
-
-	bzero(&mlkup, sizeof(mlkup));
-	strlcpy(mlkup.dname, name, sizeof(mlkup.dname));
-	mlkup.type  = type;
-	mlkup.class = C_IN;
-	if (ibuf_send_imsg(&ibuf, IMSG_CTL_LOOKUP,
-	    &mlkup, sizeof(mlkup)) == -1) {
-		imsg_clear(&ibuf);
-		return (-1); /* XXX: set errno */
-	}
-	if (ibuf_read_imsg(&ibuf, &imsg) == -1) {
-		err = errno;
-		imsg_clear(&ibuf);
-		if (err == ETIMEDOUT)
-			return (0);
-		return (-1);
-	}
-	if (imsg.hdr.type != IMSG_CTL_LOOKUP) {
-		errno = EMSGSIZE; /* think of a better errno */
-		imsg_clear(&ibuf);
-		imsg_free(&imsg);
-		return (-1);
-	}
-	if (imsg.hdr.len - IMSG_HEADER_SIZE != len) {
-		errno = EMSGSIZE;
-		imsg_clear(&ibuf);
-		imsg_free(&imsg);
-		return (-1);
-	}
-
-	memcpy(data, imsg.data, len);
-	imsg_free(&imsg);
-	imsg_clear(&ibuf);
-	return (1);
-}
-
 /* XXX: Too ugly, code me again with love */
 static int
 splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
@@ -436,4 +389,14 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	start = p;
 
 	return (0);
+}
+
+void
+reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
+{
+	const u_char *uaddr = (const u_char *)addr;
+
+	(void) snprintf(str, MAXHOSTNAMELEN, "%u.%u.%u.%u.in-addr.arpa",
+	    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
+	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
 }

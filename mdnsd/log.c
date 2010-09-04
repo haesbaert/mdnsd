@@ -264,3 +264,16 @@ log_debug_rr(struct rr *rr)
 	}
 	log_debug("<--");
 }
+
+char *
+rrs_str(struct rrset *rrs)
+{
+	static char buf[512];
+	
+	snprintf(buf, sizeof(buf), "%s (%s)", rrs->dname,
+	    rr_type_name(rrs->type));
+	buf[sizeof(buf) - 1] = '\0';
+	
+	return (buf);
+}
+	
