@@ -49,8 +49,8 @@
 #define UNIRESP_MSK	0x8000
 #define NAMECOMP_MSK	0xc000
 #define NAMEADDR_MSK	~0xc000
-#define MAX_LABELS	128
-#define MAX_PACKET	10000
+#define MAXLABELS	128
+#define MAXPACKET	10000
 #define HDR_LEN		12
 #define MINQRY_LEN	6 /* 4 (qtype + qclass) +1 (null) + 1 (label len) */
 /* Defer truncated packets from 400ms-500ms */
@@ -69,7 +69,7 @@ ssize_t		 serialize_question(struct question *, u_int8_t *, u_int16_t);
 ssize_t		 serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 ssize_t		 serialize_rdata(struct rr *, u_int8_t *, u_int16_t);
 int		 rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
-ssize_t		 charstr(char [MAX_CHARSTR], u_int8_t *, u_int16_t);
+ssize_t		 charstr(char [MAXCHARSTR], u_int8_t *, u_int16_t);
 void		 header_htons(HEADER *);
 void		 header_ntohs(HEADER *);
 int		 pktcomp_add(char [MAXHOSTNAMELEN], u_int16_t);
@@ -137,7 +137,7 @@ recv_packet(int fd, short event, void *bula)
 	struct cmsghdr		*cmsg;
 	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
-	static u_int8_t		 buf[MAX_PACKET];
+	static u_int8_t		 buf[MAXPACKET];
 	struct rr		*rr;
 	struct pkt		*pkt;
 	struct timeval 		 tv;
@@ -154,7 +154,7 @@ recv_packet(int fd, short event, void *bula)
 	pbuf = buf;
 
 	iov.iov_base = buf;
-	iov.iov_len = MAX_PACKET;
+	iov.iov_len = MAXPACKET;
 	msg.msg_name = &ipsrc;
 	msg.msg_namelen = sizeof(ipsrc);
 	msg.msg_iov = &iov;
@@ -439,7 +439,7 @@ int
 pkt_send_if(struct pkt *pkt, struct iface *iface)
 {
 	struct sockaddr_in	 dst;
-	static u_int8_t		 buf[MAX_PACKET];
+	static u_int8_t		 buf[MAXPACKET];
 	struct question		*qst;
 	struct rr		*rr;
 	HEADER			*h;
@@ -450,7 +450,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 	dst.sin_port   = htons(MDNS_PORT);
 	dst.sin_family = AF_INET;
 	dst.sin_len    = sizeof(struct sockaddr_in);
-	if (iface->mtu > MAX_PACKET) {
+	if (iface->mtu > MAXPACKET) {
 		log_warnx("pkt_send_if: insane mtu");
 		return (-1);
 	}
@@ -833,12 +833,12 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	u_int8_t lablen;
 	int jumped = 0;
 	u_int16_t oldlen = len;
-	u_char label[MAXLABEL + 1];
+	u_char label[MAXLABELLEN];
 
 	/* be extra safe */
 	bzero(dname, MAXHOSTNAMELEN);
 
-	for (i = 0; i < MAX_LABELS; i++) {
+	for (i = 0; i < MAXLABELS; i++) {
 		/* check if head is a pointer */
 		if (*buf & 0xc0) {
 			u_int16_t us;
@@ -859,7 +859,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 			break;
 
 		if (lablen > (MAXHOSTNAMELEN - strlen(dname)) ||
-		    lablen > MAXLABEL) {
+		    lablen > MAXLABELLEN - 1) {
 			log_warnx("label won't fit");
 			return (-1);
 		}
@@ -882,7 +882,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 			len -= lablen;
 	}
 
-	if (i == MAX_LABELS) {
+	if (i == MAXLABELS) {
 		log_warnx("max labels reached");
 		return (-1);
 	}
@@ -1326,7 +1326,7 @@ pktcomp_lookup(char dname[MAXHOSTNAMELEN])
 
 /* Util */
 ssize_t
-charstr(char dest[MAX_CHARSTR], u_int8_t *buf, u_int16_t len)
+charstr(char dest[MAXCHARSTR], u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t tocpy;
 

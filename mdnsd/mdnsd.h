@@ -40,7 +40,7 @@
 #define INTERVAL_PROBETIME	250000
 #define RANDOM_PROBETIME	arc4random_uniform(250000)
 #define FIRST_QUERYTIME		(arc4random_uniform(120000) + 20000)
-#define MAX_QUERYTIME		(60 * 60) /* one hour */
+#define MAXQUERYTIME		(60 * 60) /* one hour */
 
 #define ANSWERS(q, rr)							\
 	((((q)->rrs.type == T_ANY) || ((q)->rrs.type == (rr)->rrs.type)) && \
@@ -69,7 +69,7 @@ struct rr {
 		char		CNAME[MAXHOSTNAMELEN];
 		char		PTR[MAXHOSTNAMELEN];
 		char		NS[MAXHOSTNAMELEN];
-		char		TXT[MAX_CHARSTR];
+		char		TXT[MAXCHARSTR];
 		struct srv	SRV;
 		struct hinfo	HINFO;
 
@@ -104,6 +104,7 @@ struct question {
 enum query_style {
 	QUERY_LOOKUP,
 	QUERY_BROWSE,
+	QUERY_RESOLVE,
 };
 
 struct query {
@@ -259,28 +260,31 @@ int	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, int, void *, size_t);
 
 /* mdns.c */
-void		 publish_init(void);
-void		 publish_allrr(struct iface *);
-int		 publish_insert(struct iface *, struct rr *);
-int		 publish_delete(struct iface *, struct rr *);
-struct rr *	 publish_lookupall(struct rrset *);
-void		 publish_fsm(int, short, void *_pub);
-void		 query_init(void);
-void   		 query_fsm(int, short, void *);
-struct query *	 query_lookup(struct rrset *);
-void		 query_remove(struct query *);
-void		 query_remove(struct query *);
-struct question *question_add(struct rrset *);
-void		 question_remove(struct rrset *);
-void		 cache_init(void);
-int		 cache_process(struct rr *);
-struct rr	*cache_lookup(struct rrset *);
-int		 rrset_cmp(struct rrset *a, struct rrset *b);
-int		 rr_notify_in(struct rr *);
-int		 rr_notify_out(struct rr *);
+void			 publish_init(void);
+void			 publish_allrr(struct iface *);
+int			 publish_insert(struct iface *, struct rr *);
+int			 publish_delete(struct iface *, struct rr *);
+struct rr *		 publish_lookupall(struct rrset *);
+void			 publish_fsm(int, short, void *_pub);
+void			 query_init(void);
+void			 query_fsm(int, short, void *);
+struct query *		 query_lookup(struct rrset *);
+void			 query_remove(struct query *);
+void			 query_remove(struct query *);
+struct question		*question_add(struct rrset *);
+void			 question_remove(struct rrset *);
+void			 cache_init(void);
+int			 cache_process(struct rr *);
+struct rr		*cache_lookup(struct rrset *);
+int			 rrset_cmp(struct rrset *, struct rrset *);
+int			 rr_notify_in(struct rr *);
+int			 rr_notify_out(struct rr *);
+struct mdns_service *	 query_to_ms(struct query *, int *);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
-				    int     control_send_rr(struct ctl_conn *, struct rr *, int);
+int     control_send_rr(struct ctl_conn *, struct rr *, int);
+int	control_send_ms(struct ctl_conn *, struct mdns_service *, int);
+				    
 
 #endif /* _MDNSD_H_ */

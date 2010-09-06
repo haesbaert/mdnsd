@@ -44,6 +44,7 @@ void		 control_close(int);
 void		 control_lookup(struct ctl_conn *, struct imsg *);
 void		 control_browse_add(struct ctl_conn *, struct imsg *);
 void		 control_browse_del(struct ctl_conn *, struct imsg *);
+void		 control_resolve(struct ctl_conn *, struct imsg *);
 
 void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
@@ -222,6 +223,157 @@ control_browse_del(struct ctl_conn *c, struct imsg *imsg)
 /* 		control_remq(c, q); */
 }	
 
+void
+control_resolve(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct mdns_service	 ms;
+	char			 msg[MAXHOSTNAMELEN];
+	struct rrset		 rrs;
+	struct rr		*srv, *txt, *a, *rr;
+	struct rr		*srv_cache, *txt_cache, *a_cache;
+	struct query		*q;
+	struct timeval		 tv;
+	
+	srv = txt = a = rr = NULL;
+	srv_cache = txt_cache = a_cache = NULL;
+	q = NULL;
+
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
+		log_warnx("control_resolve: Invalid msg len");
+		return;
+	}
+
+	memcpy(msg, imsg->data, sizeof(msg));
+	msg[sizeof(msg) - 1] = '\0';
+	
+	/* Check if control has this query already, if so don't do anything */
+/* 	LIST_FOREACH(q, &c->qlist, entry) { */
+/* 		if (q->style != QUERY_RESOLVE) */
+/* 			continue; */
+/* 		/\* TODO: use query_to_ms *\/ */
+/* 		LIST_FOREACH(rr, &q->rrlist, qentry) { */
+/* 			/\* compare the SRV only *\/ */
+/* 			if (rr->rrs.type != T_SRV) */
+/* 				continue; */
+/* 			if (strcmp(msg, rr->rrs.dname) == 0) { */
+/* 				log_debug("control already resolving %s", */
+/* 				    rr->rrs.dname); */
+/* 				return; */
+/* 			} */
+/* 		} */
+/* 	} */
+	
+	log_debug("Resolve %s", msg);
+	if (strlcpy(rrs.dname, msg, sizeof(rrs.dname)) >= sizeof(rrs.dname)) {
+		log_warnx("control_resolve: msg too long, dropping");
+		return;
+	}
+
+	/*
+	 * Check what we have in cache.
+	 */
+	rrs.class = C_IN;
+	rrs.type = T_SRV;
+	srv_cache = cache_lookup(&rrs);
+	rrs.type = T_TXT;
+	txt_cache = cache_lookup(&rrs);
+	
+	/*
+	 * Cool, we have the SRV, see if we have the address.
+	 */
+	if (srv_cache != NULL) {
+		strlcpy(rrs.dname, srv_cache->rdata.SRV.dname, sizeof(rrs.dname));
+		rrs.type  = T_A;
+		rrs.class = C_IN;
+		a_cache = cache_lookup(&rrs);
+	}
+
+	/*
+	 * Now place a query for the records we don't have.
+	 */
+	log_debug("srv %p txt %p a %p", srv, txt, a);
+	if (srv)
+		log_debug_rr(srv);
+	if (txt)
+		log_debug_rr(txt);
+	if (a)
+		log_debug_rr(a);
+	
+	/*
+	 * If all records are in cache, send ms and return.
+	 */
+	if (srv_cache != NULL && txt_cache != NULL && a_cache != NULL) {
+		bzero(&ms, sizeof(ms));
+		strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
+		strlcpy(ms.txt, txt->rdata.TXT, sizeof(ms.txt));
+		ms.priority = srv->rdata.SRV.priority;
+		ms.weight = srv->rdata.SRV.weight;
+		ms.port = srv->rdata.SRV.port;
+		ms.addr = a->rdata.A;
+		control_send_ms(c, &ms, IMSG_CTL_RESOLVE);
+		return;
+	}
+
+	/*
+	 * If we got here we need to make a query.
+	 */
+	if ((q = calloc(1, sizeof(*q))) == NULL)
+		fatal("calloc");
+	LIST_INSERT_HEAD(&c->qlist, q, entry);
+	LIST_INIT(&q->rrlist);
+	q->style = QUERY_RESOLVE;
+	q->ctl = c;
+	timerclear(&tv);
+	tv.tv_usec = FIRST_QUERYTIME;
+	evtimer_set(&q->timer, query_fsm, q);
+	evtimer_add(&q->timer, &tv);
+	
+	strlcpy(rrs.dname, msg, sizeof(rrs.dname));
+	if ((srv = calloc(1, sizeof(*srv))) == NULL)
+		fatal("calloc");
+	if (srv_cache != NULL) {
+		memcpy(srv, srv_cache, sizeof(*srv));
+		srv->answered = 1;
+	} else {
+		rrs.type = T_SRV;
+		srv->rrs = rrs;
+	}
+	LIST_INSERT_HEAD(&q->rrlist, srv, qentry);
+	
+	if ((txt = calloc(1, sizeof(*txt))) == NULL)
+		fatal("calloc");
+	if (txt_cache != NULL) {
+		memcpy(txt, txt_cache, sizeof(*txt));
+		txt->answered = 1;
+	} else {
+		rrs.type = T_TXT;
+		txt->rrs = rrs;
+	}
+	LIST_INSERT_HEAD(&q->rrlist, txt, qentry);
+	/*
+	 * The T_A record we want is the dname of the T_SRV
+	 */
+	if (srv_cache != NULL && a_cache == NULL) {
+		if ((a = calloc(1, sizeof(*a))) == NULL)
+			fatal("calloc");
+		a->rrs.type  = T_A;
+		a->rrs.class = C_IN;
+		strlcpy(a->rrs.dname, srv->rdata.SRV.dname,
+		    sizeof(a->rrs.dname));
+		LIST_INSERT_HEAD(&q->rrlist, a, qentry);
+	}
+
+	
+	LIST_FOREACH(rr, &q->rrlist, qentry) {
+		if (question_add(&rr->rrs) == NULL) {
+			log_warnx("control_resolve: question_add error");
+			query_remove(q);
+			return;
+			/* TODO: we may leak memory in srv, a or txt */
+		}
+	}
+}
+	
 int
 control_init(void)
 {
@@ -412,6 +564,9 @@ control_dispatch_imsg(int fd, short event, void *bula)
 		case IMSG_CTL_BROWSE_DEL:
 			control_browse_del(c, &imsg);
 			break;
+		case IMSG_CTL_RESOLVE:
+			control_resolve(c, &imsg);
+			break;
 		default:
 			log_debug("control_dispatch_imsg: "
 			    "error handling imsg %d", imsg.hdr.type);
@@ -447,4 +602,12 @@ control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 	    rr->rrs.dname);
 	
 	return (mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr)));
+}
+
+int
+control_send_ms(struct ctl_conn *c, struct mdns_service *ms, int msgtype)
+{
+	log_debug("control_send_ms");
+
+	return (mdnsd_imsg_compose_ctl(c, msgtype, ms, sizeof(*ms)));
 }

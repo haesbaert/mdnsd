@@ -44,8 +44,9 @@ static int	splitdname(char [MAXHOSTNAMELEN], char [MAXHOSTNAMELEN],
 
 static int	mdns_browse_adddel(struct mdns *, const char *,
     const char *, int);
-int mdns_handle_lookup(struct mdns *, struct rr *, int);
+static int mdns_handle_lookup(struct mdns *, struct rr *, int);
 static int mdns_handle_browse(struct mdns *, struct rr *, int);
+static int mdns_handle_resolve(struct mdns *, struct mdns_service *, int);
 
 int
 mdns_open(struct mdns *m)
@@ -90,11 +91,11 @@ mdns_set_browse_hook(struct mdns *m, browse_hook bhk)
 	m->bhk = bhk;
 }
 
-/* void */
-/* mdns_set_resolve_hook(struct mdns *m, resolve_hook rhk) */
-/* { */
-/* 	m->rhk = rhk; */
-/* } */
+void
+mdns_set_resolve_hook(struct mdns *m, resolve_hook rhk)
+{
+	m->rhk = rhk;
+}
 
 void
 mdns_set_udata(struct mdns *m, void *udata)
@@ -195,13 +196,40 @@ mdns_browse_adddel(struct mdns *m, const char *app, const char *proto,
 	return (0);
 }
 
+int
+mdns_resolve(struct mdns *m, const char *name, const char *app,
+    const char *proto)
+{
+	char buf[MAXHOSTNAMELEN];
+	
+	if (strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0) {
+		errno = EINVAL;
+		return (-1);
+	}
+	
+	if (snprintf(buf, sizeof(buf), "%s._%s._%s.local",
+	    name, app, proto) >= (int) sizeof(buf)) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
+	
+	buf[sizeof(buf) - 1] = '\0';
+
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_RESOLVE,
+	    buf, sizeof(buf)) == -1)
+		return (-1); /* XXX: set errno */
+
+	return (0);
+}
+
 ssize_t
 mdns_read(struct mdns *m)
 {
-	int		ev, r;
-	ssize_t		n;
-	struct imsg	imsg;
-	struct rr	rr;
+	int			ev, r;
+	ssize_t			n;
+	struct imsg		imsg;
+	struct rr		rr;
+	struct mdns_service	ms;
 
 	n = imsg_read(&m->ibuf);
 
@@ -212,10 +240,10 @@ mdns_read(struct mdns *m)
 		switch (imsg.hdr.type) {
 		case IMSG_CTL_LOOKUP: /* FALLTHROUGH */
 		case IMSG_CTL_LOOKUP_FAILURE:
-			ev = imsg.hdr.type == IMSG_CTL_LOOKUP  ?
-			    LOOKUP_SUCCESS : LOOKUP_FAILURE;
 			if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(rr))
 				return (-1);
+			ev = imsg.hdr.type == IMSG_CTL_LOOKUP  ?
+			    LOOKUP_SUCCESS : LOOKUP_FAILURE;
 			memcpy(&rr, imsg.data, sizeof(rr));
 			r = mdns_handle_lookup(m, &rr, ev);
 			break;
@@ -227,7 +255,15 @@ mdns_read(struct mdns *m)
 			    SERVICE_UP : SERVICE_DOWN;
 			memcpy(&rr, imsg.data, sizeof(rr));
 			r = mdns_handle_browse(m, &rr, ev);
-			
+			break;
+		case IMSG_CTL_RESOLVE:
+		case IMSG_CTL_RESOLVE_FAILURE:
+			if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(ms))
+				return (-1);
+			ev = imsg.hdr.type == IMSG_CTL_RESOLVE  ?
+			    RESOLVE_SUCCESS : RESOLVE_FAILURE;
+			memcpy(&ms, imsg.data, sizeof(ms));
+			r = mdns_handle_resolve(m, &ms, ev);
 			break;
 		default:
 			return (-1);
@@ -242,7 +278,7 @@ mdns_read(struct mdns *m)
 	return (n);
 }
 
-int
+static int
 mdns_handle_lookup(struct mdns *m, struct rr *rr, int ev)
 {
 	struct hinfo *h;
@@ -274,8 +310,8 @@ static int
 mdns_handle_browse(struct mdns *m, struct rr *rr, int ev)
 {
 	char	name[MAXHOSTNAMELEN];
-	char	app[MAXLABEL];
-	char	proto[4];
+	char	app[MAXLABELLEN];
+	char	proto[MAXPROTOLEN];
 	int	hasname;
 	
 	if (rr->rrs.type != T_PTR)
@@ -291,6 +327,17 @@ mdns_handle_browse(struct mdns *m, struct rr *rr, int ev)
 			m->bhk(m, ev, NULL, app, proto);
 	}
 
+	return (0);
+}
+
+static int
+mdns_handle_resolve(struct mdns *m, struct mdns_service *ms, int ev)
+{
+	if (m->rhk == NULL)
+		return (0);
+	
+	m->rhk(m, ev, ms);
+	
 	return (0);
 }
 
@@ -352,7 +399,7 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	char *p, *start;
 
 	*hasname = 1;
-/*	ubuntu810desktop [00:0c:29:4d:22:ce]._workstation._tcp.local */
+/*	 ubuntu810desktop [00:0c:29:4d:22:ce]._workstation._tcp.local */
 /*	_workstation._tcp.local */
 	/* work on a copy */
 	strlcpy(namecp, fname, sizeof(namecp));

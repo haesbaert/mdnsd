@@ -39,11 +39,13 @@
 #include "parser.h"
 
 __dead void	usage(void);
-void		bhook(char *, char *, char *, int, void *);
-void		my_lookup_A_hook(struct mdns *, int, char *, struct in_addr);
-void		my_lookup_PTR_hook(struct mdns *, int, char *, char *);
-void		my_lookup_HINFO_hook(struct mdns *, int, char *, char *, char *);
-void		my_browse_hook(struct mdns *, int, char *, char *, char *);
+void		my_lookup_A_hook(struct mdns *, int, const char *, struct in_addr);
+void		my_lookup_PTR_hook(struct mdns *, int, const char *, const char *);
+void		my_lookup_HINFO_hook(struct mdns *, int, const char *,
+    const char *, const char *);
+void		my_browse_hook(struct mdns *, int, const char *, const char *,
+    const char *);
+void		my_resolve_hook(struct mdns *, int, struct mdns_service *);
 
 struct parse_result	*res;
 
@@ -72,6 +74,7 @@ main(int argc, char *argv[])
 	mdns_set_lookup_PTR_hook(&mdns, my_lookup_PTR_hook);
 	mdns_set_lookup_HINFO_hook(&mdns, my_lookup_HINFO_hook);
 	mdns_set_browse_hook(&mdns, my_browse_hook);
+	mdns_set_resolve_hook(&mdns, my_resolve_hook);
 
 	/* process user request */
 	switch (res->action) {
@@ -120,7 +123,7 @@ main(int argc, char *argv[])
 }
 
 void
-my_lookup_A_hook(struct mdns *m, int ev, char *host, struct in_addr a)
+my_lookup_A_hook(struct mdns *m, int ev, const char *host, struct in_addr a)
 {
 	switch (ev) {
 	case LOOKUP_SUCCESS:
@@ -138,7 +141,7 @@ my_lookup_A_hook(struct mdns *m, int ev, char *host, struct in_addr a)
 }
 
 void
-my_lookup_PTR_hook(struct mdns *m, int ev, char *name, char *ptr)
+my_lookup_PTR_hook(struct mdns *m, int ev, const char *name, const char *ptr)
 {
 	switch (ev) {
 	case LOOKUP_SUCCESS:
@@ -156,7 +159,8 @@ my_lookup_PTR_hook(struct mdns *m, int ev, char *name, char *ptr)
 }
 
 void
-my_lookup_HINFO_hook(struct mdns *m, int ev, char *name, char *cpu, char *os)
+my_lookup_HINFO_hook(struct mdns *m, int ev, const char *name, const char *cpu,
+    const char *os)
 {
 	switch (ev) {
 	case LOOKUP_SUCCESS:
@@ -175,14 +179,42 @@ my_lookup_HINFO_hook(struct mdns *m, int ev, char *name, char *cpu, char *os)
 }
 
 void
-my_browse_hook(struct mdns *m, int ev, char *name, char *app, char *proto)
+my_browse_hook(struct mdns *m, int ev, const char *name, const char *app,
+    const char *proto)
 {
 	switch (ev) {
 	case SERVICE_UP:
+		if (res->flags & F_RESOLV) {
+			if (mdns_resolve(m, name, app, proto) == -1)
+				err(1, "mdns_resolve");
+		}
 		printf("+++ %-48s %-20s %-3s\n", name, app, proto);
 		break;
 	case SERVICE_DOWN:
 		printf("--- %-48s %-20s %-3s\n", name, app, proto);
+		break;
+	default:
+		errx(1, "Unhandled event");
+		break;
+	}
+}
+
+void
+my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
+{
+	switch (ev) {
+	case RESOLVE_FAILURE:
+		fprintf(stderr, "Can't resolve %s", ms->name);
+		fflush(stderr);
+		break;		/* NOTREACHED */
+	case RESOLVE_SUCCESS:
+		printf("+++ %-48s %-20s %-3s\n", ms->name, ms->app, ms->proto);
+		printf(" Name: %s\n", ms->name);
+		printf(" Priority: %u\n", ms->priority);
+		printf(" Weight: %u\n", ms->weight);
+		printf(" Port: %u\n", ms->port);
+		printf(" Address: %s\n", inet_ntoa(ms->addr));
+		printf(" Txt: %s\n", ms->txt);
 		break;
 	default:
 		errx(1, "Unhandled event");

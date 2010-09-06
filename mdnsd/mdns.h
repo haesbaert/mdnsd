@@ -30,7 +30,9 @@
 #include <event.h>
 #include <string.h>
 
-#define MAX_CHARSTR	256	/* we swap the length byter per the null byte */
+#define MAXCHARSTR	MAXHOSTNAMELEN
+#define MAXLABELLEN	64
+#define MAXPROTOLEN	4
 #define MDNSD_SOCKET    "/var/run/mdnsd.sock"
 
 enum imsg_type {
@@ -40,6 +42,8 @@ enum imsg_type {
 	IMSG_CTL_LOOKUP_FAILURE,
 	IMSG_CTL_BROWSE_ADD,
 	IMSG_CTL_BROWSE_DEL,
+	IMSG_CTL_RESOLVE,
+	IMSG_CTL_RESOLVE_FAILURE,
 };
 
 enum client_events {
@@ -47,6 +51,8 @@ enum client_events {
 	LOOKUP_FAILURE,
 	SERVICE_DOWN,
 	SERVICE_UP,
+	RESOLVE_SUCCESS,
+	RESOLVE_FAILURE,
 };
 
 struct rrset {
@@ -56,8 +62,8 @@ struct rrset {
 };
 
 struct hinfo {
-	char    cpu[MAX_CHARSTR];
-	char    os[MAX_CHARSTR];
+	char    cpu[MAXCHARSTR];
+	char    os[MAXCHARSTR];
 };
 
 struct srv {
@@ -68,43 +74,53 @@ struct srv {
 };
 
 struct mdns;
-typedef void (*lookup_A_hook) (struct mdns *, int event, char *name, struct in_addr address);
-typedef void (*lookup_PTR_hook) (struct mdns *, int event, char *name, char *ptr);
-typedef void (*lookup_HINFO_hook) (struct mdns *, int event, char *name, char *cpu, char *os);
-typedef void (*browse_hook) (struct mdns *, int event, char *name, char *app, char *proto);
+struct mdns_service;
+typedef void (*browse_hook) (struct mdns *, int event, const char *name,
+    const char *app, const char *proto);
+typedef void (*resolve_hook) (struct mdns *, int event, struct mdns_service *);
+typedef void (*lookup_A_hook) (struct mdns *, int event, const char *name,
+    struct in_addr address);
+typedef void (*lookup_PTR_hook) (struct mdns *, int event, const char *name,
+    const char *ptr);
+typedef void (*lookup_HINFO_hook) (struct mdns *, int event, const char *name,
+    const char *cpu, const char *os);
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
 struct mdns_service {
-	char		dname[MAXHOSTNAMELEN];
-	u_int16_t	priority;
-	u_int16_t	weight;
-	u_int16_t	port;
-	char		txt[MAX_CHARSTR];
-	struct in_addr  addr;
+	char		 app[MAXLABELLEN];
+	char		 proto[MAXPROTOLEN];
+	char		 name[MAXHOSTNAMELEN];
+	u_int16_t	 priority;
+	u_int16_t	 weight;
+	u_int16_t	 port;
+	char		 txt[MAXCHARSTR];
+	struct in_addr	 addr;
 };
 
 struct mdns {
-	struct imsgbuf	 ibuf;
-	browse_hook	 bhk;
-	lookup_A_hook	 lhk_A;
-	lookup_PTR_hook	 lhk_PTR;
+	struct imsgbuf		 ibuf;
+	browse_hook		 bhk;
+	lookup_A_hook		 lhk_A;
+	lookup_PTR_hook		 lhk_PTR;
 	lookup_HINFO_hook	 lhk_HINFO;
-/* 	resolve_hook	 rhk; */
-	void		*udata;
+	resolve_hook		 rhk;
+	void			*udata;
 };
 
 int	mdns_browse_add(struct mdns *, const char *, const char *);
 int	mdns_browse_del(struct mdns *, const char *, const char *);
+int	mdns_resolve(struct mdns *, const char *, const char *, const char *);
 int	mdns_open(struct mdns *);
 ssize_t mdns_read(struct mdns *);
 void	mdns_close(struct mdns *);
 void	mdns_set_browse_hook(struct mdns *, browse_hook);
+void	mdns_set_resolve_hook(struct mdns *m, resolve_hook);
 void	mdns_set_lookup_A_hook(struct mdns *, lookup_A_hook);
 void	mdns_set_lookup_PTR_hook(struct mdns *, lookup_PTR_hook);
 void	mdns_set_lookup_HINFO_hook(struct mdns *, lookup_HINFO_hook);
 void	mdns_set_udata(struct mdns *, void *);
 int	mdns_lookup_A(struct mdns *, const char *);
-int	mdns_lookup_PTR(struct mdns *m, const char *);
+int	mdns_lookup_PTR(struct mdns *, const char *);
 int	mdns_lookup_HINFO(struct mdns *, const char *);
 int	mdns_lookup_rev(struct mdns *, struct in_addr *);
 

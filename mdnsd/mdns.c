@@ -426,6 +426,7 @@ cache_process(struct rr *rr)
 struct rr *
 cache_lookup(struct rrset *rrs)
 {
+	log_debug("cache_lookup %s", rrs_str(rrs));
 	return (rrt_lookup(&cache_tree, rrs));
 }
 
@@ -726,6 +727,7 @@ query_remove(struct query *q)
 	while ((rr = (LIST_FIRST(&q->rrlist))) != NULL) {
 		question_remove(&rr->rrs);
 		LIST_REMOVE(rr, qentry);
+		log_debug("question_remove %s", rrs_str(&rr->rrs));
 		free(rr);
 	}
 	if (evtimer_pending(&q->timer, NULL))
@@ -736,13 +738,14 @@ query_remove(struct query *q)
 void
 query_fsm(int unused, short event, void *v_query)
 {
-	struct pkt	 pkt;
-	struct query	*q;
-	struct question	*qst;
-	struct rr	*rr, *rraux;
-	long		 tosleep;
-	struct timespec	 tnow, tdiff;
-	struct timeval	 tv;
+	struct pkt		 pkt;
+	struct query		*q;
+	struct question		*qst;
+	struct mdns_service	*ms;
+	struct rr		*rr, *rraux;
+	long			 tosleep;
+	struct timespec		 tnow, tdiff;
+	struct timeval		 tv;
 
 	q = v_query;
 	pkt_init(&pkt);
@@ -750,34 +753,57 @@ query_fsm(int unused, short event, void *v_query)
 	
 	/* This will send at seconds 0, 1, 2, 4, 8, 16... */
 	tosleep = (2 << q->count) - (1 << q->count);
-	if (tosleep > MAX_QUERYTIME)
-		tosleep = MAX_QUERYTIME;
+	if (tosleep > MAXQUERYTIME)
+		tosleep = MAXQUERYTIME;
 	timerclear(&tv);
 	tv.tv_sec = tosleep;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &tnow) == -1)
 		fatal("clock_gettime");
 	
+	if (q->style == QUERY_RESOLVE) {
+		log_debug("query_fsm: query_resolve");
+	}
+	
+	/*
+	 * If we're in our third call and we're still alive,
+	 * consider a failure.
+	 */
+	if (q->style == QUERY_LOOKUP && q->count == 2) {
+		control_send_rr(q->ctl, LIST_FIRST(&q->rrlist),
+		    IMSG_CTL_LOOKUP_FAILURE);
+		query_remove(q);
+		return;
+	}
+	
+	if (q->style == QUERY_RESOLVE && q->count == 3) {
+		if ((ms = query_to_ms(q, NULL)) == NULL) {
+			query_remove(q);
+			return;
+		}
+		log_debug("query_resolve failed");
+		control_send_ms(q->ctl, ms, IMSG_CTL_RESOLVE_FAILURE);
+		query_remove(q);
+		free(ms);
+		return;
+	}
+
 	LIST_FOREACH(rr, &q->rrlist, qentry) {
+		if (q->style != QUERY_BROWSE && rr->answered) {
+			log_debug("question for %s supressed, have answer",
+			    rrs_str(&rr->rrs));
+			continue;
+		}
 		if ((qst = question_lookup(&rr->rrs)) == NULL) {
 			log_warnx("Can't find question in query_fsm");
 			/* XXX: we leak memory */
 			return;
 		}
-		/*
-		 * If we're in our third call we're still alive,
-		 * consider a failure.
-		 */
-		if (q->style == QUERY_LOOKUP && q->count == 2) {
-			control_send_rr(q->ctl, rr, IMSG_CTL_LOOKUP_FAILURE);
-			query_remove(q);
-			return;
-		}
-
+		
 		timespecsub(&tnow, &qst->ts, &tdiff);
 		/* Only 1 time a second per question  */
 		if (qst->sent > 0 && tdiff.tv_sec < 1) {
-			log_debug("query for %s supressed, just sent",
+			log_debug("question for %s supressed, just sent",
 			    rrs_str(&rr->rrs));
 			continue;
 		}
@@ -816,26 +842,26 @@ question_cmp(struct question *a, struct question *b)
 int
 rr_notify_in(struct rr *rr)
 {
-	struct ctl_conn *c;
-	struct query	*q, *nextq;
-	struct question *qst;
-	struct rr	*rraux;
-	int		 msgtype;
+	struct ctl_conn		*c;
+	struct query		*q, *nextq;
+	struct question		*qst;
+	struct rr		*rraux;
+	struct mdns_service	*ms;
+	struct rrset		 rrs;
+	int			 msgtype, ms_done;
 	
 	if ((qst = question_lookup(&rr->rrs)) == NULL)
 		return (0);
 	
 	TAILQ_FOREACH(c, &ctl_conns, entry) {
 		for (q = LIST_FIRST(&c->qlist); q != NULL; q = nextq) {
-			/* We may delete queries... */
 			nextq = LIST_NEXT(q, entry);
 			LIST_FOREACH(rraux, &q->rrlist, qentry) {
 				/*
 				 * Check if controller is interested
 				 * only if question wasn't answered.
 				 */
-				if ((q->style == QUERY_LOOKUP &&
-				    rraux->answered) ||
+				if (rraux->answered ||
 				    rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
 					continue;
 				/*
@@ -848,13 +874,35 @@ rr_notify_in(struct rr *rr)
 				case QUERY_BROWSE:
 					msgtype = IMSG_CTL_BROWSE_ADD;
 					break;
+				case QUERY_RESOLVE:
+					msgtype = IMSG_CTL_BROWSE_ADD;
+					break;
 				default:
 					log_warnx("Unknown query style");
 					return (-1);
 				}
+				rraux->answered = 1;
+				if (q->style == QUERY_RESOLVE) {
+					ms = query_to_ms(q, &ms_done);
+					if (ms == NULL) {
+						query_remove(q);
+						break;
+					}
+					/* Still more stuff to come */
+					if (!ms_done) {
+						free(ms);
+						continue;
+					}
+					if (control_send_ms(c, ms, msgtype)
+					    == -1)
+						log_warnx("control_send_ms error");
+					free(ms);
+					query_remove(q);
+					break;
+				}
 				if (control_send_rr(c, rr, msgtype) == -1)
 					log_warnx("control_send_rr error");
-				rraux->answered = 1;
+				
 				if (q->style == QUERY_LOOKUP) {
 					query_remove(q);
 					break;
@@ -862,7 +910,7 @@ rr_notify_in(struct rr *rr)
 			}
 		}
 	}
-
+	
 	return (0);
 }
 
@@ -895,5 +943,47 @@ rr_notify_out(struct rr *rr)
 	}
 
 	return (0);
+}
+
+struct mdns_service *
+query_to_ms(struct query *q, int *done)
+{
+	struct mdns_service *ms;
+	struct rr *rr, *srv, *txt, *a;
+	
+	rr = srv = txt = a = NULL;
+	LIST_FOREACH(rr, &q->rrlist, qentry) {
+		if (rr->rrs.type == T_SRV)
+			srv = rr;
+		if (rr->rrs.type == T_TXT)
+			txt = rr;
+		if (rr->rrs.type == T_A)
+			a = rr;
+	}
+	if (srv == NULL || txt == NULL) {
+		log_warnx("query_to_ms: Invalid resolving query");
+		return (NULL);
+	}
+	if ((ms = calloc(1, sizeof(*ms))) == NULL)
+		fatal("calloc");
+	
+	if (done != NULL) {
+		if (srv->answered && txt->answered && a && a->answered)
+			*done = 1;
+		else
+			*done = 0;
+	}
+
+	strlcpy(ms->name, srv->rrs.dname, sizeof(ms->name));
+	if (txt->answered)
+		strlcpy(ms->txt, txt->rdata.TXT, sizeof(ms->txt));
+	if (srv->answered) {
+		ms->priority = srv->rdata.SRV.priority;
+		ms->weight = srv->rdata.SRV.weight;
+		ms->port = srv->rdata.SRV.port;
+	}
+	ms->addr = a->rdata.A;
+	
+	return (ms);
 }
 
