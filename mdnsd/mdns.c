@@ -721,14 +721,14 @@ question_remove(struct rrset *rrs)
 void
 query_remove(struct query *q)
 {
-	struct rr	*rr;
-
+	struct rrset *rrs;
+	
 	LIST_REMOVE(q, entry);
-	while ((rr = (LIST_FIRST(&q->rrlist))) != NULL) {
-		question_remove(&rr->rrs);
-		LIST_REMOVE(rr, qentry);
-		log_debug("question_remove %s", rrs_str(&rr->rrs));
-		free(rr);
+	while ((rrs = (LIST_FIRST(&q->rrslist))) != NULL) {
+		question_remove(rrs);
+		LIST_REMOVE(rrs, entry);
+		log_debug("question_remove %s", rrs_str(rrs));
+		free(rrs);
 	}
 	if (evtimer_pending(&q->timer, NULL))
 		evtimer_del(&q->timer);
@@ -739,13 +739,14 @@ void
 query_fsm(int unused, short event, void *v_query)
 {
 	struct pkt		 pkt;
+	struct mdns_service	 nullms;
 	struct query		*q;
 	struct question		*qst;
-	struct mdns_service	*ms;
-	struct rr		*rr, *rraux;
-	long			 tosleep;
+	struct rr		*rraux, nullrr;
+	struct rrset		*rrs;
 	struct timespec		 tnow, tdiff;
 	struct timeval		 tv;
+	long			 tosleep;
 
 	q = v_query;
 	pkt_init(&pkt);
@@ -761,41 +762,40 @@ query_fsm(int unused, short event, void *v_query)
 	if (clock_gettime(CLOCK_MONOTONIC, &tnow) == -1)
 		fatal("clock_gettime");
 	
-	if (q->style == QUERY_RESOLVE) {
-		log_debug("query_fsm: query_resolve");
-	}
+	log_debug("query_fsm");
 	
 	/*
 	 * If we're in our third call and we're still alive,
 	 * consider a failure.
 	 */
 	if (q->style == QUERY_LOOKUP && q->count == 2) {
-		control_send_rr(q->ctl, LIST_FIRST(&q->rrlist),
+		rrs = LIST_FIRST(&q->rrslist);
+		bzero(&nullrr, sizeof(nullrr));
+		nullrr.rrs = *rrs;
+		control_send_rr(q->ctl, &nullrr,
 		    IMSG_CTL_LOOKUP_FAILURE);
 		query_remove(q);
 		return;
 	}
 	
 	if (q->style == QUERY_RESOLVE && q->count == 3) {
-		if ((ms = query_to_ms(q, NULL)) == NULL) {
-			query_remove(q);
-			return;
-		}
 		log_debug("query_resolve failed");
-		control_send_ms(q->ctl, ms, IMSG_CTL_RESOLVE_FAILURE);
+		bzero(&nullms, sizeof(nullms));
+		strlcpy(nullms.name, q->ms_srv->dname, sizeof(nullms.name));
+		control_send_ms(q->ctl, &nullms, IMSG_CTL_RESOLVE_FAILURE);
 		query_remove(q);
-		free(ms);
 		return;
 	}
 
-	LIST_FOREACH(rr, &q->rrlist, qentry) {
-		if (q->style != QUERY_BROWSE && rr->answered) {
+	LIST_FOREACH(rrs, &q->rrslist, entry) {
+		if (q->style == QUERY_RESOLVE && cache_lookup(rrs)) {
 			log_debug("question for %s supressed, have answer",
-			    rrs_str(&rr->rrs));
+			    rrs_str(rrs));
 			continue;
 		}
-		if ((qst = question_lookup(&rr->rrs)) == NULL) {
-			log_warnx("Can't find question in query_fsm");
+		if ((qst = question_lookup(rrs)) == NULL) {
+			log_warnx("Can't find question in query_fsm for %s",
+			    rrs_str(rrs));
 			/* XXX: we leak memory */
 			return;
 		}
@@ -804,7 +804,7 @@ query_fsm(int unused, short event, void *v_query)
 		/* Only 1 time a second per question  */
 		if (qst->sent > 0 && tdiff.tv_sec < 1) {
 			log_debug("question for %s supressed, just sent",
-			    rrs_str(&rr->rrs));
+			    rrs_str(rrs));
 			continue;
 		}
 		
@@ -813,7 +813,7 @@ query_fsm(int unused, short event, void *v_query)
 		qst->ts = tnow;
 		if (q->style == QUERY_BROWSE) {
 			/* Known Answer Supression */
-			for (rraux = cache_lookup(&qst->rrs);
+			for (rraux = cache_lookup(rrs);
 			     rraux != NULL;
 			     rraux = LIST_NEXT(rraux, centry)) {
 				/* Don't include rr if it's too old */
@@ -843,70 +843,51 @@ int
 rr_notify_in(struct rr *rr)
 {
 	struct ctl_conn		*c;
-	struct query		*q, *nextq;
+	struct query		*q, *nq;
 	struct question		*qst;
-	struct rr		*rraux;
-	struct mdns_service	*ms;
-	struct rrset		 rrs;
-	int			 msgtype, ms_done;
+	struct rrset		*rrs;
+	int			 query_done;
 	
 	if ((qst = question_lookup(&rr->rrs)) == NULL)
 		return (0);
 	
 	TAILQ_FOREACH(c, &ctl_conns, entry) {
-		for (q = LIST_FIRST(&c->qlist); q != NULL; q = nextq) {
-			nextq = LIST_NEXT(q, entry);
-			LIST_FOREACH(rraux, &q->rrlist, qentry) {
-				/*
-				 * Check if controller is interested
-				 * only if question wasn't answered.
-				 */
-				if (rraux->answered ||
-				    rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
+		for (q = LIST_FIRST(&c->qlist); q != NULL; q = nq) {
+			nq = LIST_NEXT(q, entry);
+			query_done = 0;
+			LIST_FOREACH(rrs, &q->rrslist, entry) {
+				
+				if (rrset_cmp(rrs, &rr->rrs) != 0)
 					continue;
 				/*
 				 * Notify controller with full RR.
 				 */
 				switch (q->style) {
 				case QUERY_LOOKUP:
-					msgtype = IMSG_CTL_LOOKUP;
+					if (control_send_rr(c, rr,
+					    IMSG_CTL_LOOKUP) == -1)
+					query_remove(q);
+					query_done = 1;
 					break;
 				case QUERY_BROWSE:
-					msgtype = IMSG_CTL_BROWSE_ADD;
+					if (control_send_rr(c, rr,
+					    IMSG_CTL_BROWSE_ADD) == -1)
+						log_warnx("control_send_rr error");
 					break;
 				case QUERY_RESOLVE:
-					msgtype = IMSG_CTL_BROWSE_ADD;
+					if (control_try_answer_ms(c,
+					    q->ms_srv->dname) == 1) {
+						query_remove(q);
+						query_done = 1;
+					}
 					break;
 				default:
 					log_warnx("Unknown query style");
 					return (-1);
 				}
-				rraux->answered = 1;
-				if (q->style == QUERY_RESOLVE) {
-					ms = query_to_ms(q, &ms_done);
-					if (ms == NULL) {
-						query_remove(q);
-						break;
-					}
-					/* Still more stuff to come */
-					if (!ms_done) {
-						free(ms);
-						continue;
-					}
-					if (control_send_ms(c, ms, msgtype)
-					    == -1)
-						log_warnx("control_send_ms error");
-					free(ms);
-					query_remove(q);
-					break;
-				}
-				if (control_send_rr(c, rr, msgtype) == -1)
-					log_warnx("control_send_rr error");
 				
-				if (q->style == QUERY_LOOKUP) {
-					query_remove(q);
+				if (query_done)
 					break;
-				}
 			}
 		}
 	}
@@ -914,13 +895,85 @@ rr_notify_in(struct rr *rr)
 	return (0);
 }
 
+/* int */
+/* rr_notify_in(struct rr *rr) */
+/* { */
+/* 	struct ctl_conn		*c; */
+/* 	struct query		*q, *nextq; */
+/* 	struct question		*qst; */
+/* 	struct rr		*rr_cache; */
+/* 	struct mdns_service	*ms; */
+/* 	struct rrset		*rrs; */
+/* 	int			 msgtype, ms_done; */
+	
+/* 	if ((qst = question_lookup(&rr->rrs)) == NULL) */
+/* 		return (0); */
+	
+/* 	TAILQ_FOREACH(c, &ctl_conns, entry) { */
+/* 		for (q = LIST_FIRST(&c->qlist); q != NULL; q = nextq) { */
+/* 			nextq = LIST_NEXT(q, entry); */
+/* 			LIST_FOREACH(rrs, &q->rrslist, entry) { */
+				
+/* 				if (rrset_cmp(rrs, &rr->rrs) != 0) */
+/* 					continue; */
+/* 				/\* */
+/* 				 * Notify controller with full RR. */
+/* 				 *\/ */
+/* 				switch (q->style) { */
+/* 				case QUERY_LOOKUP: */
+/* 					msgtype = IMSG_CTL_LOOKUP; */
+/* 					break; */
+/* 				case QUERY_BROWSE: */
+/* 					msgtype = IMSG_CTL_BROWSE_ADD; */
+/* 					break; */
+/* 				case QUERY_RESOLVE: */
+/* 					msgtype = IMSG_CTL_BROWSE_ADD; */
+/* 					break; */
+/* 				default: */
+/* 					log_warnx("Unknown query style"); */
+/* 					return (-1); */
+/* 				} */
+/* /\* 				if (q->style == QUERY_RESOLVE) { *\/ */
+/* /\* 					ms = query_to_ms(q, &ms_done); *\/ */
+/* /\* 					if (ms == NULL) { *\/ */
+/* /\* 						query_remove(q); *\/ */
+/* /\* 						break; *\/ */
+/* /\* 					} *\/ */
+/* /\* 					/\\* Still more stuff to come *\\/ *\/ */
+/* /\* 					if (!ms_done) { *\/ */
+/* /\* 						free(ms); *\/ */
+/* /\* 						continue; *\/ */
+/* /\* 					} *\/ */
+/* /\* 					if (control_send_ms(c, ms, msgtype) *\/ */
+/* /\* 					    == -1) *\/ */
+/* /\* 						log_warnx("control_send_ms error"); *\/ */
+/* /\* 					free(ms); *\/ */
+/* /\* 					query_remove(q); *\/ */
+/* /\* 					break; *\/ */
+/* /\* 				} *\/ */
+				
+/* /\* 				rr_cache = cache_lookup(rrs); *\/ */
+/* 				if (control_send_rr(c, rr, msgtype) == -1) */
+/* 					log_warnx("control_send_rr error"); */
+				
+/* 				if (q->style == QUERY_LOOKUP) { */
+/* 					query_remove(q); */
+/* 					break; */
+/* 				} */
+/* 			} */
+/* 		} */
+/* 	} */
+	
+/* 	return (0); */
+/* } */
+
 int
 rr_notify_out(struct rr *rr)
 {
 	struct ctl_conn *c;
 	struct query	*q;
 	struct question *qst;
-	struct rr	*rraux;
+	struct rrset	*rrs;
 
 	if ((qst = question_lookup(&rr->rrs)) == NULL)
 		return (0);
@@ -929,8 +982,8 @@ rr_notify_out(struct rr *rr)
 		LIST_FOREACH(q, &c->qlist, entry) {
 			if (q->style != QUERY_BROWSE)
 				continue;
-			LIST_FOREACH(rraux, &q->rrlist, qentry) {
-				if (rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
+			LIST_FOREACH(rrs, &q->rrslist, entry) {
+				if (rrset_cmp(rrs, &rr->rrs) != 0)
 					continue;
 				/*
 				 * Notify controller with full RR.
@@ -948,42 +1001,43 @@ rr_notify_out(struct rr *rr)
 struct mdns_service *
 query_to_ms(struct query *q, int *done)
 {
-	struct mdns_service *ms;
-	struct rr *rr, *srv, *txt, *a;
+/* 	struct mdns_service *ms; */
+/* 	struct rr *rr, *srv, *txt, *a; */
 	
-	rr = srv = txt = a = NULL;
-	LIST_FOREACH(rr, &q->rrlist, qentry) {
-		if (rr->rrs.type == T_SRV)
-			srv = rr;
-		if (rr->rrs.type == T_TXT)
-			txt = rr;
-		if (rr->rrs.type == T_A)
-			a = rr;
-	}
-	if (srv == NULL || txt == NULL) {
-		log_warnx("query_to_ms: Invalid resolving query");
-		return (NULL);
-	}
-	if ((ms = calloc(1, sizeof(*ms))) == NULL)
-		fatal("calloc");
+/* 	rr = srv = txt = a = NULL; */
+/* 	LIST_FOREACH(rr, &q->rrlist, qentry) { */
+/* 		if (rr->rrs.type == T_SRV) */
+/* 			srv = rr; */
+/* 		if (rr->rrs.type == T_TXT) */
+/* 			txt = rr; */
+/* 		if (rr->rrs.type == T_A) */
+/* 			a = rr; */
+/* 	} */
+/* 	if (srv == NULL || txt == NULL) { */
+/* 		log_warnx("query_to_ms: Invalid resolving query"); */
+/* 		return (NULL); */
+/* 	} */
+/* 	if ((ms = calloc(1, sizeof(*ms))) == NULL) */
+/* 		fatal("calloc"); */
 	
-	if (done != NULL) {
-		if (srv->answered && txt->answered && a && a->answered)
-			*done = 1;
-		else
-			*done = 0;
-	}
+/* 	if (done != NULL) { */
+/* 		if (srv->answered && txt->answered && a && a->answered) */
+/* 			*done = 1; */
+/* 		else */
+/* 			*done = 0; */
+/* 	} */
 
-	strlcpy(ms->name, srv->rrs.dname, sizeof(ms->name));
-	if (txt->answered)
-		strlcpy(ms->txt, txt->rdata.TXT, sizeof(ms->txt));
-	if (srv->answered) {
-		ms->priority = srv->rdata.SRV.priority;
-		ms->weight = srv->rdata.SRV.weight;
-		ms->port = srv->rdata.SRV.port;
-	}
-	ms->addr = a->rdata.A;
+/* 	strlcpy(ms->name, srv->rrs.dname, sizeof(ms->name)); */
+/* 	if (txt->answered) */
+/* 		strlcpy(ms->txt, txt->rdata.TXT, sizeof(ms->txt)); */
+/* 	if (srv->answered) { */
+/* 		ms->priority = srv->rdata.SRV.priority; */
+/* 		ms->weight = srv->rdata.SRV.weight; */
+/* 		ms->port = srv->rdata.SRV.port; */
+/* 	} */
+/* 	ms->addr = a->rdata.A; */
 	
-	return (ms);
+/* 	return (ms); */
+	return NULL;
 }
 

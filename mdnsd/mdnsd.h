@@ -60,7 +60,6 @@ RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_cmp);
 struct rr {
 	LIST_ENTRY(rr)		centry;	/* cache entry */
 	LIST_ENTRY(rr)		pentry;	/* packet entry */
-	LIST_ENTRY(rr)		qentry;	/* query entry */
 	struct rrset 		rrs;
 	int			cacheflush;
 	u_int32_t		ttl;
@@ -77,7 +76,6 @@ struct rr {
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
 	struct event	rev_timer;	/* cache revision timer */
 	struct timespec	age;
-	int		answered;
 };
 
 struct pkt {
@@ -109,20 +107,13 @@ enum query_style {
 
 struct query {
 	LIST_ENTRY(query)	 entry;
-	LIST_HEAD(, rr)		 rrlist;
+	LIST_HEAD(, rrset)	 rrslist;
 	struct ctl_conn		*ctl;
 	enum query_style	 style;
 	struct event		 timer;
 	u_int			 count;
+	struct rrset		*ms_srv; /* The SRV in QUERY_RESOLVE */
 };
-
-/* struct query { */
-/* 	int			active; */
-/* 	enum query_style	style; */
-/* 	u_int			sent; */
-/* 	struct question		qst; */
-/* 	struct event		timer; */
-/* }; */
 
 enum publish_state {
 	PUB_INITIAL,
@@ -285,6 +276,7 @@ struct mdns_service *	 query_to_ms(struct query *, int *);
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 int     control_send_rr(struct ctl_conn *, struct rr *, int);
 int	control_send_ms(struct ctl_conn *, struct mdns_service *, int);
+int     control_try_answer_ms(struct ctl_conn *, char[MAXHOSTNAMELEN]);
 				    
 
 #endif /* _MDNSD_H_ */

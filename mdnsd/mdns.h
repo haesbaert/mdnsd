@@ -56,6 +56,7 @@ enum client_events {
 };
 
 struct rrset {
+	LIST_ENTRY(rrset) entry;
 	char            dname[MAXHOSTNAMELEN];
 	u_int16_t       type;
 	u_int16_t       class;

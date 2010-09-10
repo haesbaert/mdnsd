@@ -25,6 +25,7 @@
 #include <arpa/inet.h>
 #include <arpa/nameser.h>
 
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -49,7 +50,7 @@ void		 control_resolve(struct ctl_conn *, struct imsg *);
 void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct rrset	 mlkup;
+	struct rrset	 mlkup, *rrs;
 	struct rr	*rr;
 	struct query 	*q;
 	struct timeval	 tv;
@@ -79,14 +80,16 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	}
 	
+	log_debug("hein ??");
+	
 	/* Check if control has this query already, if so don't do anything */
 	LIST_FOREACH(q, &c->qlist, entry) {
 		if (q->style != QUERY_LOOKUP)
 			continue;
-		LIST_FOREACH(rr, &q->rrlist, qentry)
-		    if (rrset_cmp(&rr->rrs, &mlkup) == 0) {
+		LIST_FOREACH(rrs, &q->rrslist, entry)
+		    if (rrset_cmp(rrs, &mlkup) == 0) {
 			    log_debug("control already querying for %s",
-				rrs_str(&rr->rrs));
+				rrs_str(rrs));
 			    return;
 		    }
 	}
@@ -103,21 +106,20 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	}
 
 	if (question_add(&mlkup) == NULL) {
-		log_warnx("Can't add question for %s (%s)", rr->rrs.dname,
-		    rr_type_name(rr->rrs.type));
+		log_warnx("Can't add question for %s (%s)", rrs_str(&mlkup));
 		return;
 	}
 	
 	/* cache miss */
 	if ((q = calloc(1, sizeof(*q))) == NULL)
 		fatal("calloc");
-	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+	if ((rrs = calloc(1, sizeof(*rrs))) == NULL)
 		fatal("calloc");
-	LIST_INIT(&q->rrlist);
+	LIST_INIT(&q->rrslist);
 	q->style = QUERY_LOOKUP;
 	q->ctl = c;
-	rr->rrs = mlkup;
-	LIST_INSERT_HEAD(&q->rrlist, rr, qentry);
+	*rrs = mlkup;
+	LIST_INSERT_HEAD(&q->rrslist, rrs, entry);
 	LIST_INSERT_HEAD(&c->qlist, q, entry);
 	timerclear(&tv);
 	tv.tv_usec = FIRST_QUERYTIME;
@@ -128,7 +130,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 void
 control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct rrset	 mlkup;
+	struct rrset	 mlkup, *rrs;
 	struct rr	*rr;
 	struct query 	*q;
 	struct timeval	 tv;
@@ -155,10 +157,10 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	LIST_FOREACH(q, &c->qlist, entry) {
 		if (q->style != QUERY_BROWSE)
 			continue;
-		LIST_FOREACH(rr, &q->rrlist, qentry)
-		    if (rrset_cmp(&rr->rrs, &mlkup) == 0) {
+		LIST_FOREACH(rrs, &q->rrslist, entry)
+		    if (rrset_cmp(rrs, &mlkup) == 0) {
 			    log_debug("control already querying for %s",
-				rrs_str(&rr->rrs));
+				rrs_str(rrs));
 			    return;
 		    }
 	}
@@ -174,20 +176,19 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	}
 
 	if (question_add(&mlkup) == NULL) {
-		log_warnx("Can't add question for %s (%s)", rr->rrs.dname,
-		    rr_type_name(rr->rrs.type));
+		log_warnx("Can't add question for %s", rrs_str(&mlkup));
 		return;
 	}
 	
 	if ((q = calloc(1, sizeof(*q))) == NULL)
 		fatal("calloc");
-	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+	if ((rrs = calloc(1, sizeof(*rrs))) == NULL)
 		fatal("calloc");
-	LIST_INIT(&q->rrlist);
+	LIST_INIT(&q->rrslist);
 	q->style = QUERY_BROWSE;
 	q->ctl = c;
-	rr->rrs = mlkup;
-	LIST_INSERT_HEAD(&q->rrlist, rr, qentry);
+	*rrs = mlkup;
+	LIST_INSERT_HEAD(&q->rrslist, rrs, entry);
 	LIST_INSERT_HEAD(&c->qlist, q, entry);
 	timerclear(&tv);
 	tv.tv_usec = FIRST_QUERYTIME;
@@ -226,18 +227,12 @@ control_browse_del(struct ctl_conn *c, struct imsg *imsg)
 void
 control_resolve(struct ctl_conn *c, struct imsg *imsg)
 {
-	struct mdns_service	 ms;
 	char			 msg[MAXHOSTNAMELEN];
-	struct rrset		 rrs;
-	struct rr		*srv, *txt, *a, *rr;
-	struct rr		*srv_cache, *txt_cache, *a_cache;
+	struct rrset		 *rrs_srv, *rrs_txt, *rrs_a, *rrs_aux;
+	struct rr		*srv_cache;
 	struct query		*q;
 	struct timeval		 tv;
 	
-	srv = txt = a = rr = NULL;
-	srv_cache = txt_cache = a_cache = NULL;
-	q = NULL;
-
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_resolve: Invalid msg len");
 		return;
@@ -264,63 +259,22 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 /* 	} */
 	
 	log_debug("Resolve %s", msg);
-	if (strlcpy(rrs.dname, msg, sizeof(rrs.dname)) >= sizeof(rrs.dname)) {
-		log_warnx("control_resolve: msg too long, dropping");
-		return;
-	}
-
-	/*
-	 * Check what we have in cache.
-	 */
-	rrs.class = C_IN;
-	rrs.type = T_SRV;
-	srv_cache = cache_lookup(&rrs);
-	rrs.type = T_TXT;
-	txt_cache = cache_lookup(&rrs);
 	
 	/*
-	 * Cool, we have the SRV, see if we have the address.
+	 * Try get answer with our cache entries
 	 */
-	if (srv_cache != NULL) {
-		strlcpy(rrs.dname, srv_cache->rdata.SRV.dname, sizeof(rrs.dname));
-		rrs.type  = T_A;
-		rrs.class = C_IN;
-		a_cache = cache_lookup(&rrs);
-	}
-
-	/*
-	 * Now place a query for the records we don't have.
-	 */
-	log_debug("srv %p txt %p a %p", srv, txt, a);
-	if (srv)
-		log_debug_rr(srv);
-	if (txt)
-		log_debug_rr(txt);
-	if (a)
-		log_debug_rr(a);
-	
-	/*
-	 * If all records are in cache, send ms and return.
-	 */
-	if (srv_cache != NULL && txt_cache != NULL && a_cache != NULL) {
-		bzero(&ms, sizeof(ms));
-		strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
-		strlcpy(ms.txt, txt->rdata.TXT, sizeof(ms.txt));
-		ms.priority = srv->rdata.SRV.priority;
-		ms.weight = srv->rdata.SRV.weight;
-		ms.port = srv->rdata.SRV.port;
-		ms.addr = a->rdata.A;
-		control_send_ms(c, &ms, IMSG_CTL_RESOLVE);
+	if (control_try_answer_ms(c, msg) == 1) {
+		log_debug("Resolve for %s all in cache", msg);
 		return;
 	}
-
+	
 	/*
 	 * If we got here we need to make a query.
 	 */
 	if ((q = calloc(1, sizeof(*q))) == NULL)
 		fatal("calloc");
 	LIST_INSERT_HEAD(&c->qlist, q, entry);
-	LIST_INIT(&q->rrlist);
+	LIST_INIT(&q->rrslist);
 	q->style = QUERY_RESOLVE;
 	q->ctl = c;
 	timerclear(&tv);
@@ -328,52 +282,45 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 	evtimer_set(&q->timer, query_fsm, q);
 	evtimer_add(&q->timer, &tv);
 	
-	strlcpy(rrs.dname, msg, sizeof(rrs.dname));
-	if ((srv = calloc(1, sizeof(*srv))) == NULL)
-		fatal("calloc");
-	if (srv_cache != NULL) {
-		memcpy(srv, srv_cache, sizeof(*srv));
-		srv->answered = 1;
-	} else {
-		rrs.type = T_SRV;
-		srv->rrs = rrs;
-	}
-	LIST_INSERT_HEAD(&q->rrlist, srv, qentry);
+	if ((rrs_srv = calloc(1, sizeof(*rrs_srv))) == NULL)
+		err(1, "calloc");
+	if ((rrs_txt = calloc(1, sizeof(*rrs_txt))) == NULL)
+		err(1, "calloc");
 	
-	if ((txt = calloc(1, sizeof(*txt))) == NULL)
-		fatal("calloc");
-	if (txt_cache != NULL) {
-		memcpy(txt, txt_cache, sizeof(*txt));
-		txt->answered = 1;
-	} else {
-		rrs.type = T_TXT;
-		txt->rrs = rrs;
+	if (strlcpy(rrs_srv->dname, msg, sizeof(rrs_srv->dname)) >=
+	    sizeof(rrs_srv->dname)) {
+		log_warnx("control_resolve: msg too long, dropping");
+		free(rrs_srv);
+		free(rrs_txt);
+		return;
 	}
-	LIST_INSERT_HEAD(&q->rrlist, txt, qentry);
-	/*
-	 * The T_A record we want is the dname of the T_SRV
-	 */
-	if (srv_cache != NULL && a_cache == NULL) {
-		if ((a = calloc(1, sizeof(*a))) == NULL)
-			fatal("calloc");
-		a->rrs.type  = T_A;
-		a->rrs.class = C_IN;
-		strlcpy(a->rrs.dname, srv->rdata.SRV.dname,
-		    sizeof(a->rrs.dname));
-		LIST_INSERT_HEAD(&q->rrlist, a, qentry);
+	rrs_srv->class = C_IN;
+	rrs_srv->type  = T_SRV;
+	strlcpy(rrs_txt->dname, msg, sizeof(rrs_txt->dname));
+	rrs_txt->class = C_IN;
+	rrs_txt->type = T_TXT;
+	q->ms_srv = rrs_srv;
+	LIST_INSERT_HEAD(&q->rrslist, rrs_srv, entry);
+	LIST_INSERT_HEAD(&q->rrslist, rrs_txt, entry);
+	if ((srv_cache = cache_lookup(rrs_srv)) != NULL) {
+		if ((rrs_a = calloc(1, sizeof(*rrs_a))) == NULL)
+			err(1, "calloc");
+		strlcpy(rrs_a->dname, srv_cache->rdata.SRV.dname,
+		    sizeof(rrs_a->dname));
+		rrs_a->class = C_IN;
+		rrs_a->type = T_A;
+		LIST_INSERT_HEAD(&q->rrslist, rrs_a, entry);
 	}
-
 	
-	LIST_FOREACH(rr, &q->rrlist, qentry) {
-		if (question_add(&rr->rrs) == NULL) {
+	LIST_FOREACH(rrs_aux, &q->rrslist, entry) {
+		if (question_add(rrs_aux) == NULL) {
 			log_warnx("control_resolve: question_add error");
 			query_remove(q);
 			return;
-			/* TODO: we may leak memory in srv, a or txt */
 		}
 	}
 }
-	
+
 int
 control_init(void)
 {
@@ -610,4 +557,41 @@ control_send_ms(struct ctl_conn *c, struct mdns_service *ms, int msgtype)
 	log_debug("control_send_ms");
 
 	return (mdnsd_imsg_compose_ctl(c, msgtype, ms, sizeof(*ms)));
+}
+
+/*
+ * 1 = Success, 0 = Fail
+ */
+int
+control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
+{
+	struct rr *srv, *txt, *a;
+	struct rrset rrs;
+	struct mdns_service ms;
+	
+	log_debug("control_try_answer_ms ");
+	strlcpy(rrs.dname, dname, sizeof(rrs.dname));
+	rrs.class = C_IN;
+	rrs.type = T_SRV;
+	if ((srv = cache_lookup(&rrs)) == NULL)
+		return (0);
+	rrs.type = T_TXT;
+	if ((txt = cache_lookup(&rrs)) == NULL)
+		return (0);
+	strlcpy(rrs.dname, srv->rdata.SRV.dname, sizeof(rrs.dname));
+	rrs.type = T_A;
+	if ((a = cache_lookup(&rrs)) == NULL)
+		return (0);
+	
+	bzero(&ms, sizeof(ms));
+	strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
+	strlcpy(ms.txt, txt->rdata.TXT, sizeof(ms.txt));
+	ms.priority = srv->rdata.SRV.priority;
+	ms.weight = srv->rdata.SRV.weight;
+	ms.port = srv->rdata.SRV.port;
+	ms.addr = a->rdata.A;
+	if (control_send_ms(c, &ms, IMSG_CTL_RESOLVE) == -1)
+		log_warnx("control_send_ms error");
+	
+	return (1);
 }

@@ -18,7 +18,7 @@
  * This file needs a refactoring, pkt_parse and serialize functions rely on
  * pktcomp being always accurate, most of functions here are not re-entrant and
  * depend on state that they shouldn't, like serialize_dname which must have the
- * current packet buffer as input. Also, name compression is uses a different
+ * current packet buffer as input. Also, name compression uses a different
  * logic when receiving/sending, they should be made equal.
  * I'll rewrite all of it when I have the time.
  */
