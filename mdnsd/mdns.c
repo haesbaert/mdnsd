@@ -724,7 +724,7 @@ query_remove(struct query *q)
 	struct rrset *rrs;
 	
 	LIST_REMOVE(q, entry);
-	while ((rrs = (LIST_FIRST(&q->rrslist))) != NULL) {
+	while ((rrs = LIST_FIRST(&q->rrslist)) != NULL) {
 		question_remove(rrs);
 		LIST_REMOVE(rrs, entry);
 		log_debug("question_remove %s", rrs_str(rrs));

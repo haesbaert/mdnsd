@@ -242,21 +242,15 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 	msg[sizeof(msg) - 1] = '\0';
 	
 	/* Check if control has this query already, if so don't do anything */
-/* 	LIST_FOREACH(q, &c->qlist, entry) { */
-/* 		if (q->style != QUERY_RESOLVE) */
-/* 			continue; */
-/* 		/\* TODO: use query_to_ms *\/ */
-/* 		LIST_FOREACH(rr, &q->rrlist, qentry) { */
-/* 			/\* compare the SRV only *\/ */
-/* 			if (rr->rrs.type != T_SRV) */
-/* 				continue; */
-/* 			if (strcmp(msg, rr->rrs.dname) == 0) { */
-/* 				log_debug("control already resolving %s", */
-/* 				    rr->rrs.dname); */
-/* 				return; */
-/* 			} */
-/* 		} */
-/* 	} */
+	LIST_FOREACH(q, &c->qlist, entry) {
+		if (q->style != QUERY_RESOLVE)
+			continue;
+		if (strcmp(msg, q->ms_srv->dname) == 0) {
+			log_debug("control already resolving %s",
+			    q->ms_srv->dname);
+			return;
+		}
+	}
 	
 	log_debug("Resolve %s", msg);
 	
@@ -462,7 +456,7 @@ control_close(int fd)
 
 	event_del(&c->iev.ev);
 	close(c->iev.ibuf.fd);
-	while ((q = (LIST_FIRST(&c->qlist))) != NULL)
+	while ((q = LIST_FIRST(&c->qlist)) != NULL)
 		query_remove(q);
 	free(c);
 }

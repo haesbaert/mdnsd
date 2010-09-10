@@ -83,7 +83,7 @@ main(int argc, char *argv[])
 		/* not reached */
 		break;
 	case LOOKUP:
-		if (res->flags & F_A || !res->flags)
+		if (res->flags & F_A || res->flags == 0)
 			if (mdns_lookup_A(&mdns, res->hostname) == -1)
 				err(1, "mdns_lookup_A");
 
@@ -100,6 +100,8 @@ main(int argc, char *argv[])
 			err(1, "mdns_lookup_A");
 		break;
 	case BROWSE_PROTO:
+		printf("res->app %s res->proto %s\n",
+		    res->app, res->proto);
 		if (mdns_browse_add(&mdns, res->app, res->proto) == -1)
 			err(1, "mdns_browse_add");
 		
@@ -184,14 +186,22 @@ my_browse_hook(struct mdns *m, int ev, const char *name, const char *app,
 {
 	switch (ev) {
 	case SERVICE_UP:
+		/* If no name, this is a service type */
+		if (name == NULL) {
+			if (mdns_browse_add(m, app, proto) == -1)
+				err(1, "mdns_browse_add");
+			return;
+		}
 		if (res->flags & F_RESOLV) {
 			if (mdns_resolve(m, name, app, proto) == -1)
 				err(1, "mdns_resolve");
+			return;
 		}
 		printf("+++ %-48s %-20s %-3s\n", name, app, proto);
 		break;
 	case SERVICE_DOWN:
-		printf("--- %-48s %-20s %-3s\n", name, app, proto);
+		if (name != NULL)
+			printf("--- %-48s %-20s %-3s\n", name, app, proto);
 		break;
 	default:
 		errx(1, "Unhandled event");
