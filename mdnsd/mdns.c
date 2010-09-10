@@ -746,7 +746,7 @@ query_fsm(int unused, short event, void *v_query)
 	struct rrset		*rrs;
 	struct timespec		 tnow;
 	struct timeval		 tv;
-	long			 tosleep;
+	time_t			 tosleep;
 
 	q = v_query;
 	pkt_init(&pkt);
