@@ -80,8 +80,6 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	}
 	
-	log_debug("hein ??");
-	
 	/* Check if control has this query already, if so don't do anything */
 	LIST_FOREACH(q, &c->qlist, entry) {
 		if (q->style != QUERY_LOOKUP)
