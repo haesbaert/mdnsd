@@ -96,7 +96,8 @@ struct question {
 	struct in_addr		src; /* If unicast response, src != 0 */
 	int			active;
 	u_int			sent;
-	struct timespec		ts;
+	struct timespec		lastsent;
+	struct timespec		sched;
 };
 
 enum query_style {

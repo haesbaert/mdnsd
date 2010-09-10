@@ -744,7 +744,7 @@ query_fsm(int unused, short event, void *v_query)
 	struct question		*qst;
 	struct rr		*rraux, nullrr;
 	struct rrset		*rrs;
-	struct timespec		 tnow, tdiff;
+	struct timespec		 tnow;
 	struct timeval		 tv;
 	long			 tosleep;
 
@@ -772,8 +772,7 @@ query_fsm(int unused, short event, void *v_query)
 		rrs = LIST_FIRST(&q->rrslist);
 		bzero(&nullrr, sizeof(nullrr));
 		nullrr.rrs = *rrs;
-		control_send_rr(q->ctl, &nullrr,
-		    IMSG_CTL_LOOKUP_FAILURE);
+		control_send_rr(q->ctl, &nullrr, IMSG_CTL_LOOKUP_FAILURE);
 		query_remove(q);
 		return;
 	}
@@ -800,17 +799,26 @@ query_fsm(int unused, short event, void *v_query)
 			return;
 		}
 		
-		timespecsub(&tnow, &qst->ts, &tdiff);
-		/* Only 1 time a second per question  */
-		if (qst->sent > 0 && tdiff.tv_sec < 1) {
-			log_debug("question for %s supressed, just sent",
+/* 		timespecsub(&tnow, &qst->lastsent, &tdiff); */
+/* 		/\* Only 1 time a second per question  *\/ */
+/* 		if (qst->sent > 0 && tdiff.tv_sec < 1) { */
+/* 			log_debug("question for %s supressed, just sent", */
+/* 			    rrs_str(rrs)); */
+/* 			continue; */
+/* 		} */
+		
+		/* Can't send question before schedule */
+		if (timespeccmp(&tnow, &qst->sched, <)) {
+			log_debug("question for %s before schedule",
 			    rrs_str(rrs));
 			continue;
 		}
 		
 		pkt_add_question(&pkt, qst);
 		qst->sent++;
-		qst->ts = tnow;
+		qst->lastsent = tnow;
+		qst->sched = tnow;
+		qst->sched.tv_sec += tosleep;
 		if (q->style == QUERY_BROWSE) {
 			/* Known Answer Supression */
 			for (rraux = cache_lookup(rrs);
