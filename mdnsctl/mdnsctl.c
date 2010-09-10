@@ -119,7 +119,9 @@ main(int argc, char *argv[])
 			err(1, "mdns_read");
 		if (n == 0)
 			errx(1, "Server closed socket");
-		if (res->action == LOOKUP && res->flags == 0)
+		if ((res->action == LOOKUP ||
+		    res->action == RLOOKUP)
+		    && res->flags == 0)
 			exit(0);
 	}
 }
