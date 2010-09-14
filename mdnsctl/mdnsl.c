@@ -337,6 +337,9 @@ mdns_handle_resolve(struct mdns *m, struct mdns_service *ms, int ev)
 	if (m->rhk == NULL)
 		return (0);
 	
+	if (splitdname(ms->name, ms->name, ms->app, ms->proto, NULL) == -1)
+		return (-1);
+
 	m->rhk(m, ev, ms);
 	
 	return (0);
@@ -394,7 +397,7 @@ ibuf_send_imsg(struct imsgbuf *ibuf, u_int32_t type,
 /* XXX: Too ugly, code me again with love */
 static int
 splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
-    char app[MAXLABEL], char proto[4], int *hasname)
+    char app[MAXLABEL], char proto[MAXPROTOLEN], int *hasname)
 {
 	char namecp[MAXHOSTNAMELEN];
 	char *p, *start;
@@ -417,7 +420,7 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	p = start = namecp;
 
 	/* if we have a name, copy */
-	if (hasname && *hasname == 1) {
+	if (hasname && *hasname == 1 && sname != NULL) {
 		if ((p = strstr(start, "._")) == NULL)
 			return (-1);
 		*p++ = 0;
@@ -438,7 +441,7 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	if ((p = strstr(start, ".")) == NULL)
 		return (-1);
 	*p++ = 0;
-	strlcpy(proto, start, 4);
+	strlcpy(proto, start, MAXPROTOLEN);
 	start = p;
 
 	return (0);
