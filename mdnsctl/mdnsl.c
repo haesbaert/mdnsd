@@ -320,12 +320,13 @@ mdns_handle_browse(struct mdns *m, struct rr *rr, int ev)
 	if (m->bhk == NULL)
 		return (0);
 	
-	if (splitdname(rr->rdata.PTR, name, app, proto, &hasname) == 0) {
-		if (hasname)
-			m->bhk(m, ev, name, app, proto);
-		else
-			m->bhk(m, ev, NULL, app, proto);
-	}
+	if (splitdname(rr->rdata.PTR, name, app, proto, &hasname) == -1)
+		return (-1);
+
+	if (hasname)
+		m->bhk(m, ev, name, app, proto);
+	else
+		m->bhk(m, ev, NULL, app, proto);
 
 	return (0);
 }
