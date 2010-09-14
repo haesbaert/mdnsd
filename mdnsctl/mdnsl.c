@@ -398,7 +398,8 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	char namecp[MAXHOSTNAMELEN];
 	char *p, *start;
 
-	*hasname = 1;
+	if (hasname != NULL)
+		*hasname = 1;
 /*	 ubuntu810desktop [00:0c:29:4d:22:ce]._workstation._tcp.local */
 /*	_workstation._tcp.local */
 	/* work on a copy */
@@ -408,13 +409,14 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	if ((p = strstr(namecp, "._")) != NULL) {
 		p += 2;
 		if ((p = strstr(p, "._")) == NULL)
-			*hasname = 0;
+			if (hasname != NULL)
+				*hasname = 0;
 	}
 
 	p = start = namecp;
 
 	/* if we have a name, copy */
-	if (*hasname) {
+	if (hasname && *hasname == 1) {
 		if ((p = strstr(start, "._")) == NULL)
 			return (-1);
 		*p++ = 0;
