@@ -284,6 +284,8 @@ recv_packet(int fd, short event, void *bula)
 		LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	}
 	
+	/* XXX: If we droped an RR our packet counts may be wrong. */
+	
 	if (len != 0) {
 		log_warnx("Couldn't read all packet, %u bytes left", len);
 		log_warnx("ancount %d, nscount %d, arcount %d",
@@ -306,7 +308,7 @@ recv_packet(int fd, short event, void *bula)
 	if (pkt->h.qr == MDNS_QUERY &&
 	    pkt->h.qdcount == 0 && pkt->h.arcount == 0 &&
 	    pkt->h.nscount == 0 && pkt->h.ancount > 0) {
-		struct pkt	*dpkt, *match = NULL;
+		struct pkt *dpkt, *match = NULL;
 		
 		TAILQ_FOREACH(dpkt, &deferred_queue, entry) {
 			/* XXX: Should we compare source port as well ? */
@@ -982,6 +984,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 			return (-1);
 		break;
 	case T_AAAA:
+	case T_NSEC:
 		break;
 	default:
 		log_debug("Unknown record type %u", rr->rrs.type);
