@@ -49,6 +49,13 @@
 
 #define RR_UNIQ(rr) (rr->cacheflush)
 
+struct rrset {
+	LIST_ENTRY(rrset) entry;
+	char            dname[MAXHOSTNAMELEN];
+	u_int16_t       type;
+	u_int16_t       class;
+};
+
 struct rrt_node {
 	RB_ENTRY(rrt_node)      entry;
 	struct rrset		rrs;
@@ -56,6 +63,18 @@ struct rrt_node {
 };
 RB_HEAD(rrt_tree, rrt_node);
 RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_cmp);
+
+struct hinfo {
+	char    cpu[MAXCHARSTR];
+	char    os[MAXCHARSTR];
+};
+
+struct srv {
+	char            dname[MAXHOSTNAMELEN];
+	u_int16_t       priority;
+	u_int16_t       weight;
+	u_int16_t       port;
+};
 
 struct rr {
 	LIST_ENTRY(rr)		centry;	/* cache entry */

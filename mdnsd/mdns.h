@@ -55,25 +55,6 @@ enum client_events {
 	RESOLVE_FAILURE,
 };
 
-struct rrset {
-	LIST_ENTRY(rrset) entry;
-	char            dname[MAXHOSTNAMELEN];
-	u_int16_t       type;
-	u_int16_t       class;
-};
-
-struct hinfo {
-	char    cpu[MAXCHARSTR];
-	char    os[MAXCHARSTR];
-};
-
-struct srv {
-	char            dname[MAXHOSTNAMELEN];
-	u_int16_t       priority;
-	u_int16_t       weight;
-	u_int16_t       port;
-};
-
 struct mdns;
 struct mdns_service;
 typedef void (*browse_hook) (struct mdns *, int event, const char *name,
