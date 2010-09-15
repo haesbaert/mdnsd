@@ -334,10 +334,13 @@ mdns_handle_browse(struct mdns *m, struct rr *rr, int ev)
 static int
 mdns_handle_resolve(struct mdns *m, struct mdns_service *ms, int ev)
 {
+	int hasname;
+
 	if (m->rhk == NULL)
 		return (0);
-	
-	if (splitdname(ms->name, ms->name, ms->app, ms->proto, NULL) == -1)
+	if (splitdname(ms->name, ms->name, ms->app, ms->proto, &hasname) == -1)
+		return (-1);
+	if (*hasname == 0)
 		return (-1);
 
 	m->rhk(m, ev, ms);
@@ -402,25 +405,23 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	char namecp[MAXHOSTNAMELEN];
 	char *p, *start;
 
-	if (hasname != NULL)
-		*hasname = 1;
+	*hasname = 1;
 /*	 ubuntu810desktop [00:0c:29:4d:22:ce]._workstation._tcp.local */
 /*	_workstation._tcp.local */
 	/* work on a copy */
 	strlcpy(namecp, fname, sizeof(namecp));
 
-	/* check if we have a name, or only and application protocol */
+	/* check if we have a name, or only an application protocol */
 	if ((p = strstr(namecp, "._")) != NULL) {
 		p += 2;
 		if ((p = strstr(p, "._")) == NULL)
-			if (hasname != NULL)
-				*hasname = 0;
+			*hasname = 0;
 	}
 
 	p = start = namecp;
 
 	/* if we have a name, copy */
-	if (hasname != NULL && *hasname == 1 && sname != NULL) {
+	if (*hasname == 1 && sname != NULL) {
 		if ((p = strstr(start, "._")) == NULL)
 			return (-1);
 		*p++ = 0;
