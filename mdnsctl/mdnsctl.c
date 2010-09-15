@@ -100,8 +100,6 @@ main(int argc, char *argv[])
 			err(1, "mdns_lookup_A");
 		break;
 	case BROWSE_PROTO:
-		printf("res->app %s res->proto %s\n",
-		    res->app, res->proto);
 		if (mdns_browse_add(&mdns, res->app, res->proto) == -1)
 			err(1, "mdns_browse_add");
 		

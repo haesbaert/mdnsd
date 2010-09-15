@@ -420,7 +420,7 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	p = start = namecp;
 
 	/* if we have a name, copy */
-	if (hasname && *hasname == 1 && sname != NULL) {
+	if (hasname != NULL && *hasname == 1 && sname != NULL) {
 		if ((p = strstr(start, "._")) == NULL)
 			return (-1);
 		*p++ = 0;
@@ -442,7 +442,6 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 		return (-1);
 	*p++ = 0;
 	strlcpy(proto, start, MAXPROTOLEN);
-	start = p;
 
 	return (0);
 }
