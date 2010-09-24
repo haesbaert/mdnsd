@@ -340,7 +340,7 @@ mdns_handle_resolve(struct mdns *m, struct mdns_service *ms, int ev)
 		return (0);
 	if (splitdname(ms->name, ms->name, ms->app, ms->proto, &hasname) == -1)
 		return (-1);
-	if (*hasname == 0)
+	if (hasname == 0)
 		return (-1);
 
 	m->rhk(m, ev, ms);
