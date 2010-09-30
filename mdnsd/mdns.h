@@ -69,14 +69,15 @@ typedef void (*lookup_HINFO_hook) (struct mdns *, int event, const char *name,
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
 struct mdns_service {
-	char		 app[MAXLABELLEN];
-	char		 proto[MAXPROTOLEN];
-	char		 name[MAXHOSTNAMELEN];
-	u_int16_t	 priority;
-	u_int16_t	 weight;
-	u_int16_t	 port;
-	char		 txt[MAXCHARSTR];
-	struct in_addr	 addr;
+	char		app[MAXLABELLEN];
+	char		proto[MAXPROTOLEN];
+	char		name[MAXHOSTNAMELEN];
+	char		hostname[MAXHOSTNAMELEN];
+	u_int16_t	priority;
+	u_int16_t	weight;
+	u_int16_t	port;
+	char		txt[MAXCHARSTR];
+	struct in_addr	addr;
 };
 
 struct mdns {

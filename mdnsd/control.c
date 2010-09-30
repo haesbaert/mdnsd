@@ -561,7 +561,7 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	struct rrset rrs;
 	struct mdns_service ms;
 	
-	log_debug("control_try_answer_ms ");
+	log_debug("control_try_answer_ms");
 	strlcpy(rrs.dname, dname, sizeof(rrs.dname));
 	rrs.class = C_IN;
 	rrs.type = T_SRV;
@@ -577,6 +577,7 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	
 	bzero(&ms, sizeof(ms));
 	strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
+	strlcpy(ms.hostname, rrs.dname, sizeof(ms.hostname));
 	strlcpy(ms.txt, txt->rdata.TXT, sizeof(ms.txt));
 	ms.priority = srv->rdata.SRV.priority;
 	ms.weight = srv->rdata.SRV.weight;
