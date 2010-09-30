@@ -799,14 +799,6 @@ query_fsm(int unused, short event, void *v_query)
 			return;
 		}
 		
-/* 		timespecsub(&tnow, &qst->lastsent, &tdiff); */
-/* 		/\* Only 1 time a second per question  *\/ */
-/* 		if (qst->sent > 0 && tdiff.tv_sec < 1) { */
-/* 			log_debug("question for %s supressed, just sent", */
-/* 			    rrs_str(rrs)); */
-/* 			continue; */
-/* 		} */
-		
 		/* Can't send question before schedule */
 		if (timespeccmp(&tnow, &qst->sched, <)) {
 			log_debug("question for %s before schedule",
