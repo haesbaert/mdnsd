@@ -128,10 +128,10 @@ void
 my_lookup_A_hook(struct mdns *m, int ev, const char *host, struct in_addr a)
 {
 	switch (ev) {
-	case LOOKUP_SUCCESS:
+	case MDNS_LOOKUP_SUCCESS:
 		printf("Address: %s\n", inet_ntoa(a));
 		break;
-	case LOOKUP_FAILURE:
+	case MDNS_LOOKUP_FAILURE:
 		printf("Address not found\n");
 		break;
 	default:
@@ -146,10 +146,10 @@ void
 my_lookup_PTR_hook(struct mdns *m, int ev, const char *name, const char *ptr)
 {
 	switch (ev) {
-	case LOOKUP_SUCCESS:
+	case MDNS_LOOKUP_SUCCESS:
 		printf("Hostname: %s\n", ptr);
 		break;
-	case LOOKUP_FAILURE:
+	case MDNS_LOOKUP_FAILURE:
 		printf("Hostname not found\n");
 		break;
 	default:
@@ -165,11 +165,11 @@ my_lookup_HINFO_hook(struct mdns *m, int ev, const char *name, const char *cpu,
     const char *os)
 {
 	switch (ev) {
-	case LOOKUP_SUCCESS:
+	case MDNS_LOOKUP_SUCCESS:
 		printf("Cpu: %s\n", cpu);
 		printf("Os: %s\n", os);
 		break;
-	case LOOKUP_FAILURE:
+	case MDNS_LOOKUP_FAILURE:
 		printf("HINFO not found\n");
 		break;
 	default:
@@ -185,7 +185,7 @@ my_browse_hook(struct mdns *m, int ev, const char *name, const char *app,
     const char *proto)
 {
 	switch (ev) {
-	case SERVICE_UP:
+	case MDNS_SERVICE_UP:
 		/* If no name, this is a service type */
 		if (name == NULL) {
 			if (mdns_browse_add(m, app, proto) == -1)
@@ -199,7 +199,7 @@ my_browse_hook(struct mdns *m, int ev, const char *name, const char *app,
 		}
 		printf("+++ %-48s %-20s %-3s\n", name, app, proto);
 		break;
-	case SERVICE_DOWN:
+	case MDNS_SERVICE_DOWN:
 		if (name != NULL)
 			printf("--- %-48s %-20s %-3s\n", name, app, proto);
 		break;
@@ -213,11 +213,11 @@ void
 my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
 {
 	switch (ev) {
-	case RESOLVE_FAILURE:
+	case MDNS_RESOLVE_FAILURE:
 		fprintf(stderr, "Can't resolve %s", ms->name);
 		fflush(stderr);
 		break;		/* NOTREACHED */
-	case RESOLVE_SUCCESS:
+	case MDNS_RESOLVE_SUCCESS:
 		printf("+++ %-48s %-20s %-3s\n", ms->name, ms->app, ms->proto);
 		printf(" Name: %s\n", ms->name);
 		printf(" Priority: %u\n", ms->priority);

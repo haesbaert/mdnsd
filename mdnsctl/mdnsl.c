@@ -243,7 +243,7 @@ mdns_read(struct mdns *m)
 			if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(rr))
 				return (-1);
 			ev = imsg.hdr.type == IMSG_CTL_LOOKUP  ?
-			    LOOKUP_SUCCESS : LOOKUP_FAILURE;
+			    MDNS_LOOKUP_SUCCESS : MDNS_LOOKUP_FAILURE;
 			memcpy(&rr, imsg.data, sizeof(rr));
 			r = mdns_handle_lookup(m, &rr, ev);
 			break;
@@ -252,7 +252,7 @@ mdns_read(struct mdns *m)
 			if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(rr))
 				return (-1);
 			ev = imsg.hdr.type == IMSG_CTL_BROWSE_ADD  ?
-			    SERVICE_UP : SERVICE_DOWN;
+			    MDNS_SERVICE_UP : MDNS_SERVICE_DOWN;
 			memcpy(&rr, imsg.data, sizeof(rr));
 			r = mdns_handle_browse(m, &rr, ev);
 			break;
@@ -261,7 +261,7 @@ mdns_read(struct mdns *m)
 			if ((imsg.hdr.len - IMSG_HEADER_SIZE) != sizeof(ms))
 				return (-1);
 			ev = imsg.hdr.type == IMSG_CTL_RESOLVE  ?
-			    RESOLVE_SUCCESS : RESOLVE_FAILURE;
+			    MDNS_RESOLVE_SUCCESS : MDNS_RESOLVE_FAILURE;
 			memcpy(&ms, imsg.data, sizeof(ms));
 			r = mdns_handle_resolve(m, &ms, ev);
 			break;
