@@ -353,16 +353,10 @@ mdns_connect(void)
 {
 	struct sockaddr_un	sun;
 	int			sockfd;
-/*	int			flags; */
 
 	bzero(&sun, sizeof(sun));
 	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
 		return (-1);
-	/* use nonblocking mode so we can use it with edge triggered syscalls */
-/*	if ((flags = fcntl(sockfd, F_GETFL, 0)) == -1) */
-/*		return (-1); */
-/*	if ((flags = fcntl(sockfd, F_SETFL, flags |= O_NONBLOCK)) == -1) */
-/*		return (-1); */
 	sun.sun_family = AF_UNIX;
 	strlcpy(sun.sun_path, MDNSD_SOCKET, sizeof(sun.sun_path));
 	if (connect(sockfd, (struct sockaddr *)&sun, sizeof(sun)) == -1) {
