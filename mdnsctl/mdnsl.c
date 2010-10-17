@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -221,28 +222,6 @@ mdns_resolve(struct mdns *m, const char *name, const char *app,
 	return (0);
 }
 
-int
-mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
-    const char *proto, u_int16_t port, const char *txt, struct in_addr *addr)
-{
-	if (strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0)
-		return (-1);
-	bzero(ms, sizeof(*ms));
-	if (strlcpy(ms->name, name, sizeof(ms->name)) >= sizeof(ms->name))
-		return (-1);
-	if (strlcpy(ms->app, app, sizeof(ms->app)) >= sizeof(ms->app))
-		return (-1);
-	if (strlcpy(ms->proto, proto, sizeof(ms->proto)) >= sizeof(ms->proto))
-		return (-1);
-	ms->port = port;
-	if (strlcpy(ms->txt, txt, sizeof(ms->txt)) >= sizeof(ms->txt))
-		return (-1);
-	if (addr != NULL)
-		ms->addr = *addr;
-	
-	return (0);
-}
-
 void
 mdns_group_init(struct mdns_group *mg)
 {
@@ -251,13 +230,35 @@ mdns_group_init(struct mdns_group *mg)
 }
 
 int
-mdns_group_add(struct mdns_group *mg, struct mdns_service *ms)
+mdns_group_add(struct mdns_group *mg, const char *name, const char *app,
+    const char *proto, u_int16_t port, const char *txt, struct in_addr *addr)
 {
-	if (strcmp(mg->name, ms->name) != 0)
+	struct mdns_service *ms;
+	
+	if (strcmp(mg->name, name) != 0)
 		return (-1);
+	if (strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0)
+		return (-1);
+	if ((ms = calloc(1, sizeof(*ms))) == NULL)
+		return (-1);
+	if (strlcpy(ms->name, name, sizeof(ms->name)) >= sizeof(ms->name))
+		goto error;
+	if (strlcpy(ms->app, app, sizeof(ms->app)) >= sizeof(ms->app))
+		goto error;
+	if (strlcpy(ms->proto, proto, sizeof(ms->proto)) >= sizeof(ms->proto))
+		goto error;
+	ms->port = port;
+	if (strlcpy(ms->txt, txt, sizeof(ms->txt)) >= sizeof(ms->txt))
+		goto error;
+	if (addr != NULL)
+		ms->addr = *addr;
+
 	TAILQ_INSERT_TAIL(&mg->services, ms, entry);
 	
 	return (0);
+error:
+	free(ms);
+	return (-1);
 }
 
 void
@@ -265,8 +266,10 @@ mdns_group_reset(struct mdns_group *mg)
 {
 	struct mdns_service *ms;
 	
-	while ((ms = TAILQ_FIRST(&mg->services)) != NULL)
+	while ((ms = TAILQ_FIRST(&mg->services)) != NULL) {
+		free(ms);
 		TAILQ_REMOVE(&mg->services, ms, entry);
+	}
 }
 
 int

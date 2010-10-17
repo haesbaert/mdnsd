@@ -115,12 +115,11 @@ int	mdns_lookup_A(struct mdns *, const char *);
 int	mdns_lookup_PTR(struct mdns *, const char *);
 int	mdns_lookup_HINFO(struct mdns *, const char *);
 int	mdns_lookup_rev(struct mdns *, struct in_addr *);
-int	mdns_service_init(struct mdns_service *, const char *, const char *,
-    const char *, u_int16_t, const char *, struct in_addr *);
 void	mdns_group_init(struct mdns_group *);
-int	mdns_group_add(struct mdns_group *, struct mdns_service *);
 void	mdns_group_reset(struct mdns_group *);
 int	mdns_group_commit(struct mdns *, struct mdns_group *);
+int	mdns_group_add(struct mdns_group *, const char *, const char *,
+    const char *, u_int16_t, const char *, struct in_addr *);
 
 void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 

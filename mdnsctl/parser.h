@@ -40,6 +40,7 @@ enum actions {
 	LOOKUP,
 	RLOOKUP,
 	BROWSE_PROTO,
+	PUBLISH
 };
 
 struct parse_result {
@@ -49,6 +50,8 @@ struct parse_result {
 	char		hostname[MAXHOSTNAMELEN];
 	const char	*proto;
 	const char	*app;
+	const char	*srvname;
+	const char	*txtstring;
 };
 
 struct parse_result	*parse(int, char *[]);

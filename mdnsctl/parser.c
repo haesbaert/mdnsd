@@ -40,7 +40,9 @@ enum token_type {
 	HOSTNAME,
 	PROTO,
 	APPPROTO,
-	BRFLAGS
+	BRFLAGS,
+	SRVNAME,
+	TXTSTRING
 };
 
 struct token {
@@ -55,12 +57,17 @@ static const struct token t_lookup[];
 static const struct token t_rlookup[];
 static const struct token t_browse_proto[];
 static const struct token t_browse_app[];
+static const struct token t_publish[];
+static const struct token t_publish_app[];
+static const struct token t_publish_app_proto[];
+static const struct token t_publish_app_proto_txt[];
 
 
 static const struct token t_main[] = {
 	{KEYWORD,	"lookup",	NONE,		t_lookup},
 	{KEYWORD,	"rlookup",	NONE,		t_rlookup},
 	{KEYWORD,	"browse",	NONE,		t_browse_app},
+	{KEYWORD,	"publish",	NONE,		t_publish},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -85,6 +92,27 @@ static const struct token t_browse_app[] = {
 static const struct token t_browse_proto[] = {
 	{ PROTO,	"tcp",		BROWSE_PROTO,	NULL},
 	{ PROTO,	"udp",		BROWSE_PROTO,	NULL},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_publish[] = {
+	{ SRVNAME,	"",		NONE,		t_publish_app},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_publish_app[] = {
+	{ APPPROTO,	"",		NONE,		t_publish_app_proto},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_publish_app_proto[] = {
+	{ PROTO,	"tcp",		NONE,		t_publish_app_proto_txt},
+	{ PROTO,	"udp",		NONE,		t_publish_app_proto_txt},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_publish_app_proto_txt[] = {
+	{ TXTSTRING,	"",		PUBLISH,	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -198,6 +226,25 @@ match_token(const char *word, const struct token *table)
 				if (t->value)
 					res.action = t->value;
 			}
+			break;
+		case SRVNAME:	/* match anything */
+			if (word != NULL) {
+				res.srvname = word;
+				match++;
+				t = &table[i];
+				if (t->value)
+					res.action = t->value;
+			}
+			break;
+		case TXTSTRING:
+			if (word != NULL) {
+				res.txtstring = word;
+				match++;
+				t = &table[i];
+				if (t->value)
+					res.action = t->value;
+			}
+			break;
 		case ENDTOKEN:
 			break;
 		}
@@ -246,6 +293,12 @@ show_valid_args(const struct token *table)
 			break;
 		case BRFLAGS:
 			fprintf(stderr, "  <-r>\n");
+			break;
+		case SRVNAME:
+			fprintf(stderr, "  <service name>\n");
+			break;
+		case TXTSTRING:
+			fprintf(stderr, "  <text string>\n");
 			break;
 		case ENDTOKEN:
 			break;

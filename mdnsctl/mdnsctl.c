@@ -61,8 +61,10 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	int		sockfd;
-	struct mdns	mdns;
+	int			sockfd;
+	struct mdns		mdns;
+	struct mdns_group	mg;
+	
 	/* parse options */
 	if ((res = parse(argc - 1, argv + 1)) == NULL)
 		exit(1);
@@ -102,8 +104,15 @@ main(int argc, char *argv[])
 	case BROWSE_PROTO:
 		if (mdns_browse_add(&mdns, res->app, res->proto) == -1)
 			err(1, "mdns_browse_add");
-		
 		break;		/* NOTREACHED */
+	case PUBLISH:
+		mdns_group_init(&mg);
+		printf("mdns_group_add(mg, %s, %s, %s, 0, %s, NULL)\n",
+		    res->srvname, res->app, res->proto, res->txtstring);
+		if (mdns_group_add(&mg, res->srvname, res->app,
+		    res->proto, 0, res->txtstring, NULL) == -1)
+			errx(1, "mdns_group_add");
+		break;
 	default:
 		errx(1, "Unknown action");
 		break;		/* NOTREACHED */
