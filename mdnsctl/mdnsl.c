@@ -269,6 +269,26 @@ mdns_group_reset(struct mdns_group *mg)
 		TAILQ_REMOVE(&mg->services, ms, entry);
 }
 
+int
+mdns_group_commit(struct mdns *m, struct mdns_group *mg)
+{
+	struct mdns_service *ms;
+	
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP,
+	    mg, sizeof(*mg)) == -1)
+		return (-1);
+	TAILQ_FOREACH(ms, &mg->services, entry) {
+		if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_SERVICE,
+		    ms, sizeof(*ms)) == -1)
+			return (-1);
+	}
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_END,
+	    mg, sizeof(*mg)) == -1)
+		return (-1);
+	
+	return (0);
+}
+
 ssize_t
 mdns_read(struct mdns *m)
 {

@@ -44,6 +44,9 @@ enum imsg_type {
 	IMSG_CTL_BROWSE_DEL,
 	IMSG_CTL_RESOLVE,
 	IMSG_CTL_RESOLVE_FAILURE,
+	IMSG_CTL_GROUP,
+	IMSG_CTL_GROUP_END,
+	IMSG_CTL_GROUP_SERVICE,
 };
 
 enum client_events {
@@ -117,6 +120,7 @@ int	mdns_service_init(struct mdns_service *, const char *, const char *,
 void	mdns_group_init(struct mdns_group *);
 int	mdns_group_add(struct mdns_group *, struct mdns_service *);
 void	mdns_group_reset(struct mdns_group *);
+int	mdns_group_commit(struct mdns *, struct mdns_group *);
 
 void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 
