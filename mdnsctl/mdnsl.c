@@ -42,8 +42,7 @@ static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
 static int	splitdname(char [MAXHOSTNAMELEN], char [MAXHOSTNAMELEN],
     char [MAXLABEL], char [4], int *);
 
-static int	mdns_browse_adddel(struct mdns *, const char *,
-    const char *, int);
+static int mdns_browse_adddel(struct mdns *, const char *, const char *, int);
 static int mdns_handle_lookup(struct mdns *, struct rr *, int);
 static int mdns_handle_browse(struct mdns *, struct rr *, int);
 static int mdns_handle_resolve(struct mdns *, struct mdns_service *, int);
@@ -220,6 +219,54 @@ mdns_resolve(struct mdns *m, const char *name, const char *app,
 		return (-1); /* XXX: set errno */
 
 	return (0);
+}
+
+int
+mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
+    const char *proto, u_int16_t port, const char *txt, struct in_addr *addr)
+{
+	if (strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0)
+		return (-1);
+	bzero(ms, sizeof(*ms));
+	if (strlcpy(ms->name, name, sizeof(ms->name)) >= sizeof(ms->name))
+		return (-1);
+	if (strlcpy(ms->app, app, sizeof(ms->app)) >= sizeof(ms->app))
+		return (-1);
+	if (strlcpy(ms->proto, proto, sizeof(ms->proto)) >= sizeof(ms->proto))
+		return (-1);
+	ms->port = port;
+	if (strlcpy(ms->txt, txt, sizeof(ms->txt)) >= sizeof(ms->txt))
+		return (-1);
+	if (addr != NULL)
+		ms->addr = *addr;
+	
+	return (0);
+}
+
+void
+mdns_group_init(struct mdns_group *mg)
+{
+	bzero(mg, sizeof(*mg));
+	TAILQ_INIT(&mg->services);
+}
+
+int
+mdns_group_add(struct mdns_group *mg, struct mdns_service *ms)
+{
+	if (strcmp(mg->name, ms->name) != 0)
+		return (-1);
+	TAILQ_INSERT_TAIL(&mg->services, ms, entry);
+	
+	return (0);
+}
+
+void
+mdns_group_reset(struct mdns_group *mg)
+{
+	struct mdns_service *ms;
+	
+	while ((ms = TAILQ_FIRST(&mg->services)) != NULL)
+		TAILQ_REMOVE(&mg->services, ms, entry);
 }
 
 ssize_t
