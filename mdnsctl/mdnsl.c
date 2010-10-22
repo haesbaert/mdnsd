@@ -222,73 +222,96 @@ mdns_resolve(struct mdns *m, const char *name, const char *app,
 	return (0);
 }
 
-void
-mdns_group_init(struct mdns_group *mg)
+/* NEW */
+int
+mdns_group_add(struct mdns *m, const char *group)
 {
-	bzero(mg, sizeof(*mg));
-	TAILQ_INIT(&mg->services);
+	char buf[MAXHOSTNAMELEN];
+
+	if (strlcpy(buf, group, sizeof(buf)) >= sizeof(buf))
+		return (-1);
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_ADD,
+	    buf, sizeof(buf)) == -1)
+		return (-1);
+
+	return (0);
 }
 
 int
-mdns_group_add(struct mdns_group *mg, const char *name, const char *app,
+mdns_group_del(struct mdns *m, const char *group)
+{
+	char buf[MAXHOSTNAMELEN];
+
+	if (strlcpy(buf, group, sizeof(buf)) >= sizeof(buf))
+		return (-1);
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_DEL,
+	    buf, sizeof(buf)) == -1)
+		return (-1);
+
+	return (0);
+}
+
+int
+mdns_group_add_service(struct mdns *m, const char *group,
+    struct mdns_service *ms)
+{
+	if (strcmp(ms->name, group) != 0)
+		return (-1);
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_ADD_SERVICE,
+	    ms, sizeof(*ms)) == -1)
+		return (-1);
+	
+	return (0);
+}
+
+int
+mdns_group_del_service(struct mdns *m, const char *group,
+    struct mdns_service *ms)
+{
+	if (strcmp(ms->name, group) != 0)
+		return (-1);
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_DEL_SERVICE,
+	    ms, sizeof(*ms)) == -1)
+		return (-1);
+	
+	return (0);
+}
+
+int
+mdns_group_commit(struct mdns *m, const char *group)
+{
+	char buf[MAXHOSTNAMELEN];
+
+	if (strlcpy(buf, group, sizeof(buf)) >= sizeof(buf))
+		return (-1);
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_COMMIT,
+	    buf, sizeof(buf)) == -1)
+		return (-1);
+
+	return (0);
+}
+
+/* OLD */
+int
+mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
     const char *proto, u_int16_t port, const char *txt, struct in_addr *addr)
 {
-	struct mdns_service *ms;
+	bzero(ms, sizeof(*ms));
 	
-	if (strcmp(mg->name, name) != 0)
-		return (-1);
 	if (strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0)
 		return (-1);
-	if ((ms = calloc(1, sizeof(*ms))) == NULL)
-		return (-1);
 	if (strlcpy(ms->name, name, sizeof(ms->name)) >= sizeof(ms->name))
-		goto error;
+		return (-1);
 	if (strlcpy(ms->app, app, sizeof(ms->app)) >= sizeof(ms->app))
-		goto error;
+		return (-1);
 	if (strlcpy(ms->proto, proto, sizeof(ms->proto)) >= sizeof(ms->proto))
-		goto error;
+		return (-1);
 	ms->port = port;
 	if (strlcpy(ms->txt, txt, sizeof(ms->txt)) >= sizeof(ms->txt))
-		goto error;
+		return (-1);
 	if (addr != NULL)
 		ms->addr = *addr;
 
-	TAILQ_INSERT_TAIL(&mg->services, ms, entry);
-	
-	return (0);
-error:
-	free(ms);
-	return (-1);
-}
-
-void
-mdns_group_reset(struct mdns_group *mg)
-{
-	struct mdns_service *ms;
-	
-	while ((ms = TAILQ_FIRST(&mg->services)) != NULL) {
-		free(ms);
-		TAILQ_REMOVE(&mg->services, ms, entry);
-	}
-}
-
-int
-mdns_group_commit(struct mdns *m, struct mdns_group *mg)
-{
-	struct mdns_service *ms;
-	
-	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP,
-	    mg, sizeof(*mg)) == -1)
-		return (-1);
-	TAILQ_FOREACH(ms, &mg->services, entry) {
-		if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_SERVICE,
-		    ms, sizeof(*ms)) == -1)
-			return (-1);
-	}
-	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_END,
-	    mg, sizeof(*mg)) == -1)
-		return (-1);
-	
 	return (0);
 }
 

@@ -44,9 +44,11 @@ enum imsg_type {
 	IMSG_CTL_BROWSE_DEL,
 	IMSG_CTL_RESOLVE,
 	IMSG_CTL_RESOLVE_FAILURE,
-	IMSG_CTL_GROUP,
-	IMSG_CTL_GROUP_END,
-	IMSG_CTL_GROUP_SERVICE,
+	IMSG_CTL_GROUP_ADD,
+	IMSG_CTL_GROUP_DEL,
+	IMSG_CTL_GROUP_ADD_SERVICE,
+	IMSG_CTL_GROUP_DEL_SERVICE,
+	IMSG_CTL_GROUP_COMMIT,
 };
 
 enum client_events {
@@ -115,11 +117,13 @@ int	mdns_lookup_A(struct mdns *, const char *);
 int	mdns_lookup_PTR(struct mdns *, const char *);
 int	mdns_lookup_HINFO(struct mdns *, const char *);
 int	mdns_lookup_rev(struct mdns *, struct in_addr *);
-void	mdns_group_init(struct mdns_group *);
-void	mdns_group_reset(struct mdns_group *);
-int	mdns_group_commit(struct mdns *, struct mdns_group *);
-int	mdns_group_add(struct mdns_group *, const char *, const char *,
+int	mdns_service_init(struct mdns_service *, const char *, const char *,
     const char *, u_int16_t, const char *, struct in_addr *);
+int	mdns_group_add(struct mdns *, const char *);
+int	mdns_group_del(struct mdns *, const char *);
+int	mdns_group_add_service(struct mdns *, const char *, struct mdns_service *);
+int	mdns_group_del_service(struct mdns *, const char *, struct mdns_service *);
+int	mdns_group_commit(struct mdns *, const char *);
 
 void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 
