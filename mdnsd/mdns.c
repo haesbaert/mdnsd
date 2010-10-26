@@ -44,6 +44,9 @@ int		 rrt_cmp(struct rrt_node *, struct rrt_node *);
 struct rr	*rrt_lookup(struct rrt_tree *, struct rrset *);
 struct rrt_node	*rrt_lookup_node(struct rrt_tree *, struct rrset *);
 
+int		 ms_to_probe(struct mdns_service *, struct pkt *, int);
+int		 ms_to_announce(struct mdns_service *, struct pkt *);
+
 RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_cmp);
 RB_HEAD(question_tree, question);
 RB_PROTOTYPE(question_tree, question, qst_entry, question_cmp);
@@ -220,12 +223,12 @@ publish_lookupall(struct rrset *rrs)
 void
 publish_fsm(int unused, short event, void *v_pub)
 {
-	struct publish	*pub = v_pub;
-	struct timeval	 tv;
-	struct rr	*rr;
-	struct question	*qst;
-	static u_long	 pubid;
-	
+	struct publish *pub = v_pub;
+	struct timeval tv;
+	struct rr *rr;
+	struct question *qst;
+	static u_long pubid;
+
 	timerclear(&tv);
 	switch (pub->state) {
 	case PUB_INITIAL:
@@ -240,13 +243,13 @@ publish_fsm(int unused, short event, void *v_pub)
 		/* Send only the first 2 question as QU */
 		if (pub->sent == 2)
 			LIST_FOREACH(qst, &pub->pkt.qlist, entry)
-				qst->src.s_addr = 0;
+			    qst->src.s_addr = 0;
 		/* enough probing, start announcing */
-		else if (pub->sent == 3) { 
+		else if (pub->sent == 3) {
 			/* cool, so now that we're done, remove it from
 			 * probing list, now the record is ours. */
-			pub->state    = PUB_ANNOUNCE;
-			pub->sent     = 0;
+			pub->state = PUB_ANNOUNCE;
+			pub->sent = 0;
 			pub->pkt.h.qr = MDNS_RESPONSE;
 			/* remove questions */
 			while ((qst = (LIST_FIRST(&pub->pkt.qlist))) != NULL) {
@@ -258,9 +261,7 @@ publish_fsm(int unused, short event, void *v_pub)
 			while ((rr = (LIST_FIRST(&pub->pkt.nslist))) != NULL) {
 				LIST_REMOVE(rr, pentry);
 				pub->pkt.h.nscount--;
-				if (pkt_add_anrr(&pub->pkt, rr) == -1)
-					log_debug("publish_fsm: "
-					    "pkt_add_anrr failed");
+				pkt_add_anrr(&pub->pkt, rr);
 			}
 			publish_fsm(unused, event, pub);
 			return;
@@ -819,9 +820,7 @@ query_fsm(int unused, short event, void *v_query)
 				/* Don't include rr if it's too old */
 				if (rr_ttl_left(rraux) < rraux->ttl / 2)
 					continue;
-				if (pkt_add_anrr(&pkt, rraux) == -1)
-					log_warnx("KNA error pkt_add_anrr: %s",
-					    rraux->rrs.dname);
+				pkt_add_anrr(&pkt, rraux);
 			}
 		}
 	}
@@ -1041,3 +1040,164 @@ query_to_ms(struct query *q, int *done)
 	return NULL;
 }
 
+/*
+ * Publish a set of services in a group, do it in parallel.
+ */
+/* PTR, SRV, TXT, */
+void
+group_fsm(int unused, short event, void *v_g)
+{
+	struct mdns_group	*g = v_g;
+	struct mdns_service	*ms;
+	struct pkt		 pkt;
+	struct timeval		 tv;
+	
+	timerclear(&tv);
+	
+	log_debug("group_fsm: group %s (%d)", g->group, g->state);
+	switch (g->state) {
+	case GRP_UNPUBLISHED:
+		g->state = GRP_PROBING;
+		/* FALLTHROUGH */
+	case GRP_PROBING:
+		LIST_FOREACH(ms, &g->mslist, entry) {
+			pkt_init(&pkt);
+			if (ms_to_probe(ms, &pkt, g->sent < 2) == -1) {
+				/* TODO send error */
+				log_warnx("ms_to_probe error");
+				return;
+			}
+			if (pkt_send_allif(&pkt) == -1)
+				log_warnx("can't send probe packet "
+				    "to all interfaces");
+			pkt_cleanup(&pkt); 
+			/* TODO send error */
+		}
+		/* Enough probing, start announcing */
+		if (++g->sent == 3) {
+			g->state = GRP_ANNOUNCING;
+			g->sent	 = 0;
+		}
+		evtimer_add(&g->timer, &tv);
+		break;
+	case GRP_ANNOUNCING:
+		LIST_FOREACH(ms, &g->mslist, entry) {
+			pkt_init(&pkt);
+			if (ms_to_announce(ms, &pkt) == -1) {
+				;/* TODO */
+			}
+			if (pkt_send_allif(&pkt) == -1)
+				log_warnx("can't send announce packet "
+				    "to all interfaces");
+			pkt_cleanup(&pkt);
+		}
+		if (++g->sent < 3) {
+			evtimer_add(&g->timer, &tv);
+			break;
+		}
+		/* All finished */
+		g->state = GRP_PUBLISHED;
+		/* TODO insert records in publish tree */
+		break;
+	case GRP_PUBLISHED:
+	default:
+		fatalx("Invalid group state");
+		break;
+	}
+}
+
+/*
+ * Make a probe packet from a service.
+ */
+int
+ms_to_probe(struct mdns_service *ms, struct pkt *pkt, int qu)
+{
+	struct question *qst;
+	struct srv srv;
+	struct rr *rr;
+	char buf[MAXHOSTNAMELEN];
+	
+	/*
+	 * Add questions
+	 */
+	pkt->h.qr = MDNS_QUERY;
+	if ((qst = calloc(1, sizeof(*qst))) == NULL)
+		fatal("calloc");
+	if (snprintf(qst->rrs.dname, sizeof(qst->rrs.dname),
+	    "%s._%s._%s.local",  ms->name, ms->proto, ms->app)
+	    >= (int)sizeof(qst->rrs.dname)) {
+		log_warnx("ms_to_probe: name too long");
+		free(qst);
+		return (-1);
+	}
+	qst->rrs.type  = T_ANY;
+	qst->rrs.class = C_IN;
+	/* Deal with unicast response */
+	if (qu)
+		qst->src.s_addr = 1;
+	pkt_add_question(pkt, qst);
+	
+	/*
+	 * TODO add T_A record, need to think on how to do it
+	 */
+	/* SRV */
+	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+		fatal("calloc");
+	bzero(&srv, sizeof(srv));
+	strlcpy(srv.dname, qst->rrs.dname, sizeof(srv.dname));
+	srv.priority = ms->priority;
+	srv.weight = ms->weight;
+	srv.port = ms->port;
+	(void)rr_set(rr, qst->rrs.dname, T_SRV, C_IN, TTL_SRV, 1,
+	    &srv, sizeof(srv));
+	pkt_add_nsrr(pkt, rr);
+	/* TXT */
+	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+		fatal("calloc");
+	(void)rr_set(rr, qst->rrs.dname, T_TXT, C_IN, TTL_TXT, 1,
+	    ms->txt, sizeof(ms->txt));
+	pkt_add_nsrr(pkt, rr);
+	/* PTR */
+	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+		fatal("calloc");
+	if (snprintf(buf, sizeof(buf), "%s._%s.local",
+	    ms->proto, ms->app)  >= (int)sizeof(buf)) {
+		log_warnx("ms_to_probe: buf too long");
+		free(rr);
+		return (-1);
+	}
+	(void)rr_set(rr, "_services._dns-sd._udp.local",
+	    T_PTR, C_IN, TTL_PTR, 0, buf, sizeof(buf));
+	pkt_add_nsrr(pkt, rr);
+	
+	return (0);
+}
+
+int
+ms_to_announce(struct mdns_service *ms, struct pkt *pkt)
+{
+	struct rr	*rr;
+	struct question *qst;
+	
+	/*
+	 * This may sound like a dirty hack but it isn't, it guarantees our
+	 * announce packets are equal to the probed one.
+	 */
+	if (ms_to_probe(ms, pkt, 0) == -1)
+		return (-1);
+	pkt->h.qr = MDNS_RESPONSE;
+	/* Remove questions */
+	while ((qst = (LIST_FIRST(&pkt->qlist))) != NULL) {
+		LIST_REMOVE(qst, entry);
+		pkt->h.qdcount--;
+		free(qst);
+	}
+	/* Move all ns records to answer records */
+	while ((rr = (LIST_FIRST(&pkt->nslist))) != NULL) {
+		LIST_REMOVE(rr, pentry);
+		pkt->h.nscount--;
+		pkt_add_anrr(pkt, rr);
+	}
+	
+	return (0);
+}

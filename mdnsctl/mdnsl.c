@@ -222,30 +222,33 @@ mdns_resolve(struct mdns *m, const char *name, const char *app,
 	return (0);
 }
 
-/* NEW */
 int
 mdns_group_add(struct mdns *m, const char *group)
 {
-	char buf[MAXHOSTNAMELEN];
+	struct mdns_group g;
 
-	if (strlcpy(buf, group, sizeof(buf)) >= sizeof(buf))
+	bzero(&g, sizeof(g));
+	if (strlcpy(g.group, group, sizeof(g.group))
+	    >= sizeof(g.group))
 		return (-1);
 	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_ADD,
-	    buf, sizeof(buf)) == -1)
+	    &g, sizeof(g)) == -1)
 		return (-1);
 
 	return (0);
 }
 
 int
-mdns_group_del(struct mdns *m, const char *group)
+mdns_group_reset(struct mdns *m, const char *group)
 {
-	char buf[MAXHOSTNAMELEN];
+	struct mdns_group g;
 
-	if (strlcpy(buf, group, sizeof(buf)) >= sizeof(buf))
+	bzero(&g, sizeof(g));
+	if (strlcpy(g.group, group, sizeof(g.group))
+	    >= sizeof(g.group))
 		return (-1);
-	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_DEL,
-	    buf, sizeof(buf)) == -1)
+	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_RESET,
+	    g.group, sizeof(g.group)) == -1)
 		return (-1);
 
 	return (0);
@@ -255,7 +258,7 @@ int
 mdns_group_add_service(struct mdns *m, const char *group,
     struct mdns_service *ms)
 {
-	if (strcmp(ms->name, group) != 0)
+	if (strcmp(group, ms->name) != 0)
 		return (-1);
 	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_ADD_SERVICE,
 	    ms, sizeof(*ms)) == -1)
@@ -265,33 +268,20 @@ mdns_group_add_service(struct mdns *m, const char *group,
 }
 
 int
-mdns_group_del_service(struct mdns *m, const char *group,
-    struct mdns_service *ms)
-{
-	if (strcmp(ms->name, group) != 0)
-		return (-1);
-	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_DEL_SERVICE,
-	    ms, sizeof(*ms)) == -1)
-		return (-1);
-	
-	return (0);
-}
-
-int
 mdns_group_commit(struct mdns *m, const char *group)
 {
-	char buf[MAXHOSTNAMELEN];
+	struct mdns_group msg;
 
-	if (strlcpy(buf, group, sizeof(buf)) >= sizeof(buf))
+	if (strlcpy(msg.group, group, sizeof(msg.group))
+	    >= sizeof(msg.group))
 		return (-1);
 	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_COMMIT,
-	    buf, sizeof(buf)) == -1)
+	    &msg, sizeof(msg)) == -1)
 		return (-1);
 
 	return (0);
 }
 
-/* OLD */
 int
 mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
     const char *proto, u_int16_t port, const char *txt, struct in_addr *addr)

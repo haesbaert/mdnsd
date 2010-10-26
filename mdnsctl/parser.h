@@ -44,14 +44,15 @@ enum actions {
 };
 
 struct parse_result {
-	struct in_addr	addr;
-	int		flags;
-	enum actions	action;
-	char		hostname[MAXHOSTNAMELEN];
+	struct in_addr	 addr;
+	int		 flags;
+	enum actions	 action;
+	char		 hostname[MAXHOSTNAMELEN];
 	const char	*proto;
 	const char	*app;
 	const char	*srvname;
 	const char	*txtstring;
+	u_int16_t	 port;
 };
 
 struct parse_result	*parse(int, char *[]);

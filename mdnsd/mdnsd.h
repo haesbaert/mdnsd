@@ -35,6 +35,9 @@
 #define MDNS_TTL		255
 #define MDNS_PORT		5353
 #define TTL_HNAME		120
+#define TTL_SRV			300 /* TODO check these */
+#define TTL_TXT			300 /* TODO cheke these */
+#define TTL_PTR			300 /* TODO cheke these */
 #define MDNS_QUERY		0
 #define MDNS_RESPONSE		1
 #define INTERVAL_PROBETIME	250000
@@ -148,7 +151,7 @@ struct publish {
 	struct iface	       *iface;
 	enum publish_state	state;
 	/* TODO: make sent unsigned */
-	int			sent;	/* how many send packets */
+	int			sent;	/* how many sent packets */
 	unsigned long		id;	/* unique id */
 };
 
@@ -260,10 +263,10 @@ int	  pkt_send_if(struct pkt *, struct iface *);
 int	  pkt_send_allif(struct pkt *);
 void	  pkt_init(struct pkt *);
 void	  pkt_cleanup(struct pkt *);
-int	  pkt_add_question(struct pkt *, struct question *);
-int	  pkt_add_anrr(struct pkt *, struct rr *);
-int	  pkt_add_nsrr(struct pkt *, struct rr *);
-int	  pkt_add_arrr(struct pkt *, struct rr *);
+void	  pkt_add_question(struct pkt *, struct question *);
+void	  pkt_add_anrr(struct pkt *, struct rr *);
+void	  pkt_add_nsrr(struct pkt *, struct rr *);
+void	  pkt_add_arrr(struct pkt *, struct rr *);
 int	  rr_rdata_cmp(struct rr *, struct rr *);
 u_int32_t rr_ttl_left(struct rr *);
 void	pktcomp_reset(int, u_int8_t *, u_int16_t);
@@ -291,6 +294,7 @@ int			 rrset_cmp(struct rrset *, struct rrset *);
 int			 rr_notify_in(struct rr *);
 int			 rr_notify_out(struct rr *);
 struct mdns_service *	 query_to_ms(struct query *, int *);
+void			 group_fsm(int, short, void *);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;

@@ -77,7 +77,8 @@ main(int argc, char *argv[])
 	mdns_set_lookup_HINFO_hook(&mdns, my_lookup_HINFO_hook);
 	mdns_set_browse_hook(&mdns, my_browse_hook);
 	mdns_set_resolve_hook(&mdns, my_resolve_hook);
-
+	/* TODO publish group hooks*/
+	
 	/* process user request */
 	switch (res->action) {
 	case NONE:
@@ -109,10 +110,12 @@ main(int argc, char *argv[])
 		if (mdns_group_add(&mdns, res->srvname) == -1)
 			err(1, "mdns_group_add");
 		if (mdns_service_init(&ms, res->srvname, res->app, res->proto,
-		    0, res->txtstring, NULL) == -1)
+		    res.port, res->txtstring, NULL) == -1)
 			errx(1, "mdns_service_init");
-/* 		printf("mdns_group_add(mg, %s, %s, %s, 0, %s, NULL)\n", */
-/* 		    res->srvname, res->app, res->proto, res->txtstring); */
+		if (mdns_group_add_service(&mdns, res->srvname, &ms) == -1)
+			errx(1, "mdns_group_add_service");
+		if (mdns_group_commit(&mdns, res->srvname) == -1)
+			errx(1, "mdns_group_commit");
 		break;
 	default:
 		errx(1, "Unknown action");

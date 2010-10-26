@@ -630,40 +630,32 @@ pkt_cleanup(struct pkt *pkt)
 }
 
 /* packet building */
-int
+void
 pkt_add_question(struct pkt *pkt, struct question *qst)
 {
 	LIST_INSERT_HEAD(&pkt->qlist, qst, entry);
 	pkt->h.qdcount++;
-
-	return (0);
 }
 
-int
+void
 pkt_add_anrr(struct pkt *pkt, struct rr *rr)
 {
 	LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
 	pkt->h.ancount++;
-
-	return (0);
 }
 
-int
+void
 pkt_add_nsrr(struct pkt *pkt, struct rr *rr)
 {
 	LIST_INSERT_HEAD(&pkt->nslist, rr, pentry);
 	pkt->h.nscount++;
-
-	return (0);
 }
 
-int
+void
 pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 {
 	LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	pkt->h.arcount++;
-
-	return (0);
 }
 
 int
@@ -1026,12 +1018,9 @@ pkt_handleq(struct pkt *pkt)
 		
 		rr = publish_lookupall(&qst->rrs);
 		if (rr != NULL && ANSWERS(qst, rr)) {
-			if (pkt_add_anrr(&sendpkt, rr) == -1)
-				log_warn("Can't answer question for"
-				    "%s %s",
-				    qst->rrs.dname, rr_type_name(qst->rrs.type));
+			pkt_add_anrr(&sendpkt, rr);
 			if (pkt_send_allif(&sendpkt) == -1)
-				log_debug("can't send packet to"
+				log_debug("Can't send packet to"
 				    "all interfaces");
 		}
 		
@@ -1091,7 +1080,7 @@ int
 rr_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
 	if (pkt_parse_dname(buf, len, dname) == -1) {
-		log_debug("Invalid record");
+		log_warnx("rr_parse_dname: pkt_parse_dname error");
 		return (-1);
 	}
 

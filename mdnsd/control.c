@@ -46,6 +46,10 @@ void		 control_lookup(struct ctl_conn *, struct imsg *);
 void		 control_browse_add(struct ctl_conn *, struct imsg *);
 void		 control_browse_del(struct ctl_conn *, struct imsg *);
 void		 control_resolve(struct ctl_conn *, struct imsg *);
+void		 control_group_add(struct ctl_conn *, struct imsg *);
+void		 control_group_reset(struct ctl_conn *, struct imsg *);
+void		 control_group_commit(struct ctl_conn *, struct imsg *);
+void		 control_group_add_service(struct ctl_conn *, struct imsg *);
 
 void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
@@ -313,6 +317,239 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 	}
 }
 
+void
+control_group_add(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct mdns_group	*g, msg;
+	
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
+		log_warnx("control_group_add: Invalid group len");
+		return;
+	}
+
+	memcpy(&msg, imsg->data, sizeof(msg));
+	msg.group[sizeof(msg.group) - 1] = '\0';
+	/*
+	 * Check if the user hasn't already added this group
+	 */
+	LIST_FOREACH(g, &c->glist, entry) {
+		/*
+		 * Just silently accept it, user add the group twice, so what.
+		 */
+		if (strcmp(g->group, msg.group) != 0)
+			return;
+	}
+	/*
+	 * Initialize group in temporary list, when user commits the group, we
+	 * will process it all.
+	 */
+	if ((g = calloc(1, sizeof(*g))) == NULL) {
+		log_warn("calloc");
+		return;
+	}
+	strlcpy(g->group, msg.group, sizeof(g->group));
+	g->state  = GRP_UNPUBLISHED;
+	g->c	  = c;
+	LIST_INIT(&g->mslist);
+	evtimer_set(&g->timer, group_fsm, g);
+	
+	LIST_INSERT_HEAD(&c->glist_commit, g, entry);
+}
+
+void
+control_group_reset(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct mdns_group	*g, msg;
+	struct mdns_service	*ms;
+	
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
+		log_warnx("control_group_reset: Invalid group len");
+		return;
+	}
+
+	memcpy(&msg, imsg->data, sizeof(msg));
+	msg.group[sizeof(msg.group) - 1] = '\0';
+	
+	/*
+	 * Clean to commit glist.
+	 */
+	LIST_FOREACH(g, &c->glist_commit, entry) {
+		if (strcmp(g->group, msg.group) != 0)
+			continue;
+		while ((ms = LIST_FIRST(&g->mslist)) != NULL) {
+			LIST_REMOVE(ms, entry);
+			free(ms);
+		}
+		LIST_REMOVE(g, entry);
+		free(g);
+	}
+	/*
+	 * Clean glist and unpublish records
+	 */
+	LIST_FOREACH(g, &c->glist, entry) {
+		if (strcmp(g->group, msg.group) != 0)
+			continue;
+		/* TODO unpublish it */
+		while ((ms = LIST_FIRST(&g->mslist)) != NULL) {
+			LIST_REMOVE(ms, entry);
+			free(ms);
+		}
+		LIST_REMOVE(g, entry);
+		free(g);
+		
+		return;
+	}
+	/*
+	 * A reset for a group that doesn't exist isn't an error.
+	 */
+}
+
+void
+control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct mdns_group *g = NULL;
+	struct mdns_service msg, *ms, *ams;
+	char *group;
+	
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
+		log_warnx("control_group_add_service: Invalid group len");
+		return;
+	}
+	memcpy(&msg, imsg->data, sizeof(msg));
+	msg.name[sizeof(msg.name) - 1] = '\0';
+	ms = &msg;
+	group = msg.name;
+	
+	/*
+	 * Find our group
+	 */
+	LIST_FOREACH(g, &c->glist_commit, entry) {
+		if (strcmp(g->group, group) == 0)
+			break;
+	}
+	/*
+	 * If group doesn't exist, the user will get an error on commit.
+	 */
+	if (g == NULL) {
+		log_warnx("control_add_service on uncreated group");
+		return;
+	}
+	/*
+	 * Find if this is a duplicated service, if it's substitute.
+	 */
+	LIST_FOREACH(ams, &g->mslist, entry) {
+		if (strcmp(ams->name, ms->name) != 0)
+			continue;
+		if (strcmp(ams->app, ms->app) != 0)
+			continue;
+		if (strcmp(ams->proto, ms->proto) != 0)
+			continue;
+		/*
+		 * Whoops, already have it, overwrite.
+		 */
+		memcpy(ams, ms, sizeof(ams));
+		return;
+	}
+	/*
+	 * This is a new service, add.
+	 */
+	if ((ams = calloc(1, sizeof(*ams))) == NULL) {
+		log_warn("calloc");
+		return;
+	}
+	memcpy(ams, ms, sizeof(ams));
+	LIST_INSERT_HEAD(&g->mslist, ams, entry);
+}
+
+void
+control_group_commit(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct ctl_conn		*ac;
+	struct mdns_group	*gc, *g, msg;
+	struct timeval		 tv;
+	
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
+		log_warnx("control_group_commit: Invalid group len");
+		return;
+	}
+	memcpy(&msg, imsg->data, sizeof(msg));
+	msg.group[sizeof(msg.group) - 1] = '\0';
+	
+	gc = g = NULL;
+	LIST_FOREACH(gc, &c->glist_commit, entry) {
+		if (strcmp(gc->group, msg.group) != 0)
+			continue;
+		break;
+	}
+	/* Not found */
+	if (gc == NULL) {
+		mdnsd_imsg_compose_ctl(c, IMSG_CTL_GROUP_ERR_NOT_FOUND,
+		    &msg, sizeof(msg));
+		return;
+	}
+	/*
+	 * We now know that cg points to a new group, we must now check it
+	 * against groups owned by other controllers. We don't do it in the same
+	 * loop cause we will issue a COLLISION error instead of a DOUBLE_ADD,
+	 * the later is necessary so that the user can issue a reset and try the
+	 * same name.
+	 */
+	TAILQ_FOREACH(ac, &ctl_conns, entry) {
+		LIST_FOREACH(g, &ac->glist, entry) {
+			if (strcmp(g->group, gc->group) != 0)
+				continue;
+			/*
+			 * Whoops, group exists. if it's ours send a DOUBLE_ADD
+			 * error, otherwise issue a normal collision.
+			 */
+			if (c == ac)
+				mdnsd_imsg_compose_ctl(c,
+				    IMSG_CTL_GROUP_ERR_DOUBLE_ADD,
+				    &msg, sizeof(msg));
+			else
+				mdnsd_imsg_compose_ctl(c,
+				    IMSG_CTL_GROUP_ERR_COLLISION,
+				    &msg, sizeof(msg));
+			return;
+		}
+		/*
+		 * Also check the other commit groups, skip us.
+		 */
+		if (ac == c)
+			continue;
+		LIST_FOREACH(g, &ac->glist_commit, entry) {
+			if (strcmp(g->group, gc->group) != 0)
+				continue;
+			/*
+			 * Whoops, group exists. if it's ours send a DOUBLE_ADD
+			 * error, otherwise issue a normal collision.
+			 */
+			if (c == ac)
+				mdnsd_imsg_compose_ctl(c,
+				    IMSG_CTL_GROUP_ERR_DOUBLE_ADD,
+				    &msg, sizeof(msg));
+			else
+				mdnsd_imsg_compose_ctl(c,
+				    IMSG_CTL_GROUP_ERR_COLLISION,
+				    &msg, sizeof(msg));
+			return;
+		}
+	}		
+	/*
+	 * If we got here, the world is a nice place and we can go on.
+	 */
+	g = gc;
+	/* Move our group to the actual group list */
+	LIST_REMOVE(gc, entry);
+	LIST_INSERT_HEAD(&c->glist, gc, entry);
+	/*
+	 * gc was initialized in control_group_add, just let the ball roll.
+	 */
+	timerclear(&tv);
+	tv.tv_usec = RANDOM_PROBETIME;
+	evtimer_add(&gc->timer, &tv);
+}
+
 int
 control_init(void)
 {
@@ -405,13 +642,15 @@ control_accept(int listenfd, short event, void *bula)
 	}
 	
 	LIST_INIT(&c->qlist);
+	LIST_INIT(&c->glist);
+	LIST_INIT(&c->glist_commit);
 	imsg_init(&c->iev.ibuf, connfd);
 	c->iev.handler = control_dispatch_imsg;
 	c->iev.events = EV_READ;
 	event_set(&c->iev.ev, c->iev.ibuf.fd, c->iev.events,
 	    c->iev.handler, &c->iev);
 	event_add(&c->iev.ev, NULL);
-
+	
 	TAILQ_INSERT_TAIL(&ctl_conns, c, entry);
 }
 
@@ -442,8 +681,10 @@ control_connbypid(pid_t pid)
 void
 control_close(int fd)
 {
-	struct ctl_conn	*c;
-	struct query	*q;
+	struct ctl_conn		*c;
+	struct query		*q;
+	struct mdns_group	*g;
+	struct mdns_service	*ms;
 
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_close: fd %d: not found", fd);
@@ -456,6 +697,14 @@ control_close(int fd)
 	close(c->iev.ibuf.fd);
 	while ((q = LIST_FIRST(&c->qlist)) != NULL)
 		query_remove(q);
+	while ((g = LIST_FIRST(&c->glist)) != NULL) {
+		while ((ms = LIST_FIRST(&g->mslist)) != NULL) {
+			LIST_REMOVE(ms, entry);
+			free(ms);
+		}
+		LIST_REMOVE(g, entry);
+		free(g);
+	}
 	free(c);
 }
 
@@ -505,6 +754,18 @@ control_dispatch_imsg(int fd, short event, void *bula)
 			break;
 		case IMSG_CTL_RESOLVE:
 			control_resolve(c, &imsg);
+			break;
+		case IMSG_CTL_GROUP_ADD:
+			control_group_add(c, &imsg);
+			break;
+		case IMSG_CTL_GROUP_RESET:
+			control_group_reset(c, &imsg);
+			break;
+		case IMSG_CTL_GROUP_COMMIT:
+			control_group_commit(c, &imsg);
+			break;
+		case IMSG_CTL_GROUP_ADD_SERVICE:
+			control_group_add_service(c, &imsg);
 			break;
 		default:
 			log_debug("control_dispatch_imsg: "

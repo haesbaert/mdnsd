@@ -48,6 +48,8 @@ struct ctl_conn {
 	TAILQ_ENTRY(ctl_conn)	entry;
 	struct imsgev		iev;
 	LIST_HEAD(, query)	qlist;
+	LIST_HEAD(, mdns_group)	glist;
+	LIST_HEAD(, mdns_group)	glist_commit;
 };
 
 int	control_init(void);

@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -42,7 +43,8 @@ enum token_type {
 	APPPROTO,
 	BRFLAGS,
 	SRVNAME,
-	TXTSTRING
+	TXTSTRING,
+	PORT
 };
 
 struct token {
@@ -60,8 +62,8 @@ static const struct token t_browse_app[];
 static const struct token t_publish[];
 static const struct token t_publish_app[];
 static const struct token t_publish_app_proto[];
-static const struct token t_publish_app_proto_txt[];
-
+static const struct token t_publish_app_proto_port[];
+static const struct token t_publish_app_proto_port_txt[];
 
 static const struct token t_main[] = {
 	{KEYWORD,	"lookup",	NONE,		t_lookup},
@@ -106,12 +108,17 @@ static const struct token t_publish_app[] = {
 };
 
 static const struct token t_publish_app_proto[] = {
-	{ PROTO,	"tcp",		NONE,		t_publish_app_proto_txt},
-	{ PROTO,	"udp",		NONE,		t_publish_app_proto_txt},
+	{ PROTO,	"tcp",		NONE,		t_publish_app_proto_port_txt},
+	{ PROTO,	"udp",		NONE,		t_publish_app_proto_port_txt},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
-static const struct token t_publish_app_proto_txt[] = {
+static const struct token t_publish_app_proto_port[] = {
+	{ PORT,		"",		NONE,		NULL},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_publish_app_proto_port_txt[] = {
 	{ TXTSTRING,	"",		PUBLISH,	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
@@ -154,6 +161,7 @@ const struct token *
 match_token(const char *word, const struct token *table)
 {
 	u_int			 i, match;
+	const char		*errstr;
 	const struct token	*t = NULL;
 
 	match = 0;
@@ -245,6 +253,18 @@ match_token(const char *word, const struct token *table)
 					res.action = t->value;
 			}
 			break;
+		case PORT:
+			if (word != NULL) {
+				res.port = strtonum(word, 1, UINT16_MAX,
+				    &errstr);
+				if (errstr)
+					errx(1, "strtonum: %s", errstr);
+				match++;
+				t = &table[i];
+				if (t->value)
+					res.action = t->value;
+			}
+			break;
 		case ENDTOKEN:
 			break;
 		}
@@ -299,6 +319,9 @@ show_valid_args(const struct token *table)
 			break;
 		case TXTSTRING:
 			fprintf(stderr, "  <text string>\n");
+			break;
+		case PORT:
+			fprintf(stderr, "  <port>\n");
 			break;
 		case ENDTOKEN:
 			break;

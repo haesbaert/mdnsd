@@ -45,10 +45,12 @@ enum imsg_type {
 	IMSG_CTL_RESOLVE,
 	IMSG_CTL_RESOLVE_FAILURE,
 	IMSG_CTL_GROUP_ADD,
-	IMSG_CTL_GROUP_DEL,
+	IMSG_CTL_GROUP_RESET,
 	IMSG_CTL_GROUP_ADD_SERVICE,
-	IMSG_CTL_GROUP_DEL_SERVICE,
 	IMSG_CTL_GROUP_COMMIT,
+	IMSG_CTL_GROUP_ERR_COLLISION,
+	IMSG_CTL_GROUP_ERR_NOT_FOUND,
+	IMSG_CTL_GROUP_ERR_DOUBLE_ADD,
 };
 
 enum client_events {
@@ -74,6 +76,7 @@ typedef void (*lookup_HINFO_hook) (struct mdns *, int event, const char *name,
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
 struct mdns_service {
+	LIST_ENTRY(mdns_service) entry;
 	char		app[MAXLABELLEN];
 	char		proto[MAXPROTOLEN];
 	char		name[MAXHOSTNAMELEN];
@@ -83,14 +86,26 @@ struct mdns_service {
 	u_int16_t	port;
 	char		txt[MAXCHARSTR];
 	struct in_addr	addr;
-	TAILQ_ENTRY(mdns_service) entry;
+};
+
+enum group_state {
+	GRP_UNPUBLISHED,
+	GRP_PROBING,
+	GRP_ANNOUNCING,
+	GRP_REMOVING,
+	GRP_PUBLISHED
 };
 
 struct mdns_group {
-	char name[MAXHOSTNAMELEN];
-	TAILQ_HEAD(, mdns_service) services;
+	LIST_ENTRY(mdns_group) entry;
+	LIST_HEAD(, mdns_service) mslist;
+	char			 group[MAXHOSTNAMELEN];
+	struct event		 timer;
+	struct ctl_conn		*c;
+	enum group_state	 state;
+	u_int			 sent;
 };
-	
+
 struct mdns {
 	struct imsgbuf		 ibuf;
 	browse_hook		 bhk;
@@ -120,9 +135,8 @@ int	mdns_lookup_rev(struct mdns *, struct in_addr *);
 int	mdns_service_init(struct mdns_service *, const char *, const char *,
     const char *, u_int16_t, const char *, struct in_addr *);
 int	mdns_group_add(struct mdns *, const char *);
-int	mdns_group_del(struct mdns *, const char *);
+int	mdns_group_reset(struct mdns *, const char *);
 int	mdns_group_add_service(struct mdns *, const char *, struct mdns_service *);
-int	mdns_group_del_service(struct mdns *, const char *, struct mdns_service *);
 int	mdns_group_commit(struct mdns *, const char *);
 
 void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
