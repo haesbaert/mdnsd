@@ -1141,7 +1141,7 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	ssize_t		 n;
 	u_int16_t	 rdlen = 0, *prdlen;
 	u_int8_t	 cpulen, oslen;
-
+	
 	switch (rr->rrs.type) {
 	case T_HINFO:
 		cpulen = strlen(rr->rdata.HINFO.cpu);
@@ -1165,10 +1165,13 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		len  -= oslen;
 		break;
 	case T_PTR:
+	case T_TXT:
+		/* XXX will fuck up strict aligned archs */
 		prdlen = (u_int16_t *) pbuf;
 		/* jump over rdlen */
 		pbuf += INT16SZ;
 		len  -= INT16SZ;
+		/* NOTE rr->rdata.PTR == rr->rdata.TXT */
 		if ((n = serialize_dname(pbuf, len,
 		    rr->rdata.PTR)) == -1)
 			return (-1);
@@ -1179,13 +1182,37 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		break;
 	case T_A:
 		rdlen = INT32SZ;
-		if (len < (rdlen + 2)) /* +2 is rdlen itself */
+		if (len < (rdlen + INT16SZ)) /* INT16SZ is rdlen itself */
 			return (-1);
 		PUTSHORT(rdlen, pbuf);
 		len -= 2;
 		memcpy(pbuf, &rr->rdata, rdlen);
 		pbuf += rdlen;
 		len  -= rdlen;
+		break;
+	case T_SRV:
+		/* XXX will fuck up strict aligned archs */
+		prdlen = (u_int16_t *) pbuf;
+		/* jump over rdlen */
+		if (len < INT16SZ)
+			return (-1);
+		pbuf += INT16SZ;
+		len  -= INT16SZ;
+		if (len < INT16SZ * 3)
+			return (-1);
+		PUTSHORT(rr->rdata.SRV.priority, pbuf);
+		len -= INT16SZ;
+		PUTSHORT(rr->rdata.SRV.weight, pbuf);
+		len -= INT16SZ;
+		PUTSHORT(rr->rdata.SRV.port, pbuf);
+		len -= INT16SZ;
+		if ((n = serialize_dname(pbuf, len,
+		    rr->rdata.SRV.dname)) == -1)
+			return (-1);
+		rdlen = n;
+		pbuf += rdlen;
+		len  -= rdlen;
+		*prdlen = htons(rdlen);
 		break;
 	default:
 		log_warnx("serialize_rdata: Don't know how to serialize %s (%d)",
