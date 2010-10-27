@@ -159,12 +159,11 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	LIST_FOREACH(q, &c->qlist, entry) {
 		if (q->style != QUERY_BROWSE)
 			continue;
-		LIST_FOREACH(rrs, &q->rrslist, entry)
-		    if (rrset_cmp(rrs, &mlkup) == 0) {
-			    log_debug("control already querying for %s",
-				rrs_str(rrs));
-			    return;
-		    }
+		if (rrset_cmp(q->br_ptr, &mlkup) == 0) {
+			log_warnx("control already querying for %s",
+			    rrs_str(q->br_ptr));
+			return;
+		}
 	}
 	
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
@@ -186,10 +185,11 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		fatal("calloc");
 	if ((rrs = calloc(1, sizeof(*rrs))) == NULL)
 		fatal("calloc");
-	LIST_INIT(&q->rrslist);
-	q->style = QUERY_BROWSE;
-	q->ctl = c;
 	*rrs = mlkup;
+	LIST_INIT(&q->rrslist);
+	q->style  = QUERY_BROWSE;
+	q->ctl	  = c;
+	q->br_ptr = rrs;
 	LIST_INSERT_HEAD(&q->rrslist, rrs, entry);
 	LIST_INSERT_HEAD(&c->qlist, q, entry);
 	timerclear(&tv);
@@ -201,29 +201,37 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 void
 control_browse_del(struct ctl_conn *c, struct imsg *imsg)
 {
-/* 	struct rrset	 mlkup; */
-/* 	struct query 	*q; */
+	struct rrset	 mlkup;
+	struct query 	*q;
 
-/* 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup)) */
-/* 		return; */
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
+		return;
 
-/* 	memcpy(&mlkup, imsg->data, sizeof(mlkup)); */
-/* 	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0'; /\* assure clients were nice *\/ */
+	memcpy(&mlkup, imsg->data, sizeof(mlkup));
+	mlkup.dname[MAXHOSTNAMELEN - 1] = '\0'; /* assure clients were nice */
 
-/* 	if (mlkup.type != T_PTR) { */
-/* 		log_warnx("Browse type %d not supported/implemented", */
-/* 		    mlkup.type); */
-/* 		return; */
-/* 	} */
+	if (mlkup.type != T_PTR) {
+		log_warnx("Browse type %d not supported/implemented",
+		    mlkup.type);
+		return;
+	}
 
-/* 	if (mlkup.class != C_IN) { */
-/* 		log_warnx("Browse class %d not supported/implemented", */
-/* 		    mlkup.class); */
-/* 		return; */
-/* 	} */
-/* 	q = query_lookup(&mlkup); */
-/* 	if (q != NULL) */
-/* 		control_remq(c, q); */
+	if (mlkup.class != C_IN) {
+		log_warnx("Browse class %d not supported/implemented",
+		    mlkup.class);
+		return;
+	}
+	
+	LIST_FOREACH(q, &c->qlist, entry) {
+		if (q->style != QUERY_BROWSE)
+			continue;
+		if (rrset_cmp(q->br_ptr, &mlkup) != 0)
+			continue;
+		query_remove(q);
+		return;
+	}
+	
+	log_warnx("Trying to remove non existant query");
 }	
 
 void

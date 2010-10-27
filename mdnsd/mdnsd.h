@@ -136,6 +136,7 @@ struct query {
 	struct event		 timer;
 	u_int			 count;
 	struct rrset		*ms_srv; /* The SRV in QUERY_RESOLVE */
+	struct rrset		*br_ptr;
 };
 
 enum publish_state {
