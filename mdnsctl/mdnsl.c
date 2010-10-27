@@ -43,7 +43,7 @@ static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
 static int	splitdname(char [MAXHOSTNAMELEN], char [MAXHOSTNAMELEN],
     char [MAXLABEL], char [4], int *);
 
-static int mdns_browse_adddel(struct mdns *, const char *, const char *, int);
+static int mdns_browse_adddel(struct mdns *, const char *, const char *, u_int);
 static int mdns_handle_lookup(struct mdns *, struct rr *, int);
 static int mdns_handle_browse(struct mdns *, struct rr *, int);
 static int mdns_handle_resolve(struct mdns *, struct mdns_service *, int);
@@ -166,7 +166,7 @@ mdns_browse_del(struct mdns *m, const char *app, const char *proto)
 
 static int
 mdns_browse_adddel(struct mdns *m, const char *app, const char *proto,
-    int msgtype)
+    u_int msgtype)
 {
 	struct rrset mlkup;
 
@@ -179,7 +179,7 @@ mdns_browse_adddel(struct mdns *m, const char *app, const char *proto,
 
 	/* browsing for service types */
 	if (app == NULL && proto == NULL)
-		strlcpy(mlkup.dname, "_services._dns-sd._udp.local",
+		(void)strlcpy(mlkup.dname, "_services._dns-sd._udp.local",
 		    sizeof(mlkup.dname));
 	else if (snprintf(mlkup.dname, sizeof(mlkup.dname),
 	    "_%s._%s.local", app, proto) >= (int) sizeof(mlkup.dname)) {
@@ -308,7 +308,8 @@ mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
 ssize_t
 mdns_read(struct mdns *m)
 {
-	int			ev, r;
+	int			ev;
+	size_t			r;
 	ssize_t			n;
 	struct imsg		imsg;
 	struct rr		rr;
@@ -354,9 +355,6 @@ mdns_read(struct mdns *m)
 		
 		imsg_free(&imsg);
 	}
-
-	if (r == -1)
-		return (-1);
 
 	return (n);
 }
@@ -441,7 +439,8 @@ mdns_connect(void)
 	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
 		return (-1);
 	sun.sun_family = AF_UNIX;
-	strlcpy(sun.sun_path, MDNSD_SOCKET, sizeof(sun.sun_path));
+	(void)strlcpy(sun.sun_path, MDNSD_SOCKET,
+	    sizeof(sun.sun_path));
 	if (connect(sockfd, (struct sockaddr *)&sun, sizeof(sun)) == -1) {
 		if (errno == ENOENT)
 			errno = ECONNREFUSED;
@@ -486,7 +485,7 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 /*	 ubuntu810desktop [00:0c:29:4d:22:ce]._workstation._tcp.local */
 /*	_workstation._tcp.local */
 	/* work on a copy */
-	strlcpy(namecp, fname, sizeof(namecp));
+	(void)strlcpy(namecp, fname, sizeof(namecp));
 
 	/* check if we have a name, or only an application protocol */
 	if ((p = strstr(namecp, "._")) != NULL) {
@@ -503,7 +502,7 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 			return (-1);
 		*p++ = 0;
 		p++;
-		strlcpy(sname, start, MAXHOSTNAMELEN);
+		(void)strlcpy(sname, start, MAXHOSTNAMELEN);
 		start = p;
 	}
 	else
@@ -513,13 +512,13 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 		return (-1);
 	*p++ = 0;
 	p++;
-	strlcpy(app, start, MAXLABEL);
+	(void)strlcpy(app, start, MAXLABEL);
 	start = p;
 
 	if ((p = strstr(start, ".")) == NULL)
 		return (-1);
 	*p++ = 0;
-	strlcpy(proto, start, MAXPROTOLEN);
+	(void)strlcpy(proto, start, MAXPROTOLEN);
 
 	return (0);
 }
