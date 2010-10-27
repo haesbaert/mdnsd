@@ -108,14 +108,14 @@ static const struct token t_publish_app[] = {
 };
 
 static const struct token t_publish_app_proto[] = {
-	{ PROTO,	"tcp",		NONE,		t_publish_app_proto_port_txt},
-	{ PROTO,	"udp",		NONE,		t_publish_app_proto_port_txt},
+	{ PROTO,	"tcp",		NONE,		t_publish_app_proto_port},
+	{ PROTO,	"udp",		NONE,		t_publish_app_proto_port},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
 static const struct token t_publish_app_proto_port[] = {
-	{ PORT,		"",		NONE,		NULL},
-	{ ENDTOKEN,	"",		NONE,		NULL}
+	{ PORT,		"",		NONE,		t_publish_app_proto_port_txt},
+	{ ENDTOKEN,	"",		NONE,		t_publish_app_proto_port_txt}
 };
 
 static const struct token t_publish_app_proto_port_txt[] = {

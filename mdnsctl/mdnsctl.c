@@ -110,7 +110,7 @@ main(int argc, char *argv[])
 		if (mdns_group_add(&mdns, res->srvname) == -1)
 			err(1, "mdns_group_add");
 		if (mdns_service_init(&ms, res->srvname, res->app, res->proto,
-		    res.port, res->txtstring, NULL) == -1)
+		    res->port, res->txtstring, NULL) == -1)
 			errx(1, "mdns_service_init");
 		if (mdns_group_add_service(&mdns, res->srvname, &ms) == -1)
 			errx(1, "mdns_group_add_service");
