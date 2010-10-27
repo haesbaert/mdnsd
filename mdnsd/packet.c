@@ -1137,9 +1137,9 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 ssize_t
 serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 {
-	u_int8_t	*pbuf = buf;
+	u_int8_t	*prdlen, *pbuf = buf;
 	ssize_t		 n;
-	u_int16_t	 rdlen = 0, *prdlen;
+	u_int16_t	 rdlen = 0;
 	u_int8_t	 cpulen, oslen;
 	
 	switch (rr->rrs.type) {
@@ -1166,8 +1166,7 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		break;
 	case T_PTR:
 	case T_TXT:
-		/* XXX will fuck up strict aligned archs */
-		prdlen = (u_int16_t *) pbuf;
+		prdlen = pbuf;
 		/* jump over rdlen */
 		pbuf += INT16SZ;
 		len  -= INT16SZ;
@@ -1178,7 +1177,8 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		rdlen = n;
 		pbuf += rdlen;
 		len  -= rdlen;
-		*prdlen = htons(rdlen);
+		rdlen = htons(rdlen);
+		PUTSHORT(rdlen, prdlen);
 		break;
 	case T_A:
 		rdlen = INT32SZ;
@@ -1191,8 +1191,7 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		len  -= rdlen;
 		break;
 	case T_SRV:
-		/* XXX will fuck up strict aligned archs */
-		prdlen = (u_int16_t *) pbuf;
+		prdlen = pbuf;
 		/* jump over rdlen */
 		if (len < INT16SZ)
 			return (-1);
@@ -1212,7 +1211,8 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		rdlen = n;
 		pbuf += rdlen;
 		len  -= rdlen;
-		*prdlen = htons(rdlen);
+		rdlen = htons(rdlen);
+		PUTSHORT(rdlen, prdlen);
 		break;
 	default:
 		log_warnx("serialize_rdata: Don't know how to serialize %s (%d)",
