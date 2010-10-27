@@ -457,7 +457,7 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 		log_warn("calloc");
 		return;
 	}
-	memcpy(ams, ms, sizeof(ams));
+	memcpy(ams, ms, sizeof(*ams));
 	LIST_INSERT_HEAD(&g->mslist, ams, entry);
 }
 
