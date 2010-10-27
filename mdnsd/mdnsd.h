@@ -293,7 +293,6 @@ struct rr		*cache_lookup(struct rrset *);
 int			 rrset_cmp(struct rrset *, struct rrset *);
 int			 rr_notify_in(struct rr *);
 int			 rr_notify_out(struct rr *);
-struct mdns_service *	 query_to_ms(struct query *, int *);
 void			 group_fsm(int, short, void *);
 
 /* control.c */

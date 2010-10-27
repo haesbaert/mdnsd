@@ -894,78 +894,6 @@ rr_notify_in(struct rr *rr)
 	return (0);
 }
 
-/* int */
-/* rr_notify_in(struct rr *rr) */
-/* { */
-/* 	struct ctl_conn		*c; */
-/* 	struct query		*q, *nextq; */
-/* 	struct question		*qst; */
-/* 	struct rr		*rr_cache; */
-/* 	struct mdns_service	*ms; */
-/* 	struct rrset		*rrs; */
-/* 	int			 msgtype, ms_done; */
-	
-/* 	if ((qst = question_lookup(&rr->rrs)) == NULL) */
-/* 		return (0); */
-	
-/* 	TAILQ_FOREACH(c, &ctl_conns, entry) { */
-/* 		for (q = LIST_FIRST(&c->qlist); q != NULL; q = nextq) { */
-/* 			nextq = LIST_NEXT(q, entry); */
-/* 			LIST_FOREACH(rrs, &q->rrslist, entry) { */
-				
-/* 				if (rrset_cmp(rrs, &rr->rrs) != 0) */
-/* 					continue; */
-/* 				/\* */
-/* 				 * Notify controller with full RR. */
-/* 				 *\/ */
-/* 				switch (q->style) { */
-/* 				case QUERY_LOOKUP: */
-/* 					msgtype = IMSG_CTL_LOOKUP; */
-/* 					break; */
-/* 				case QUERY_BROWSE: */
-/* 					msgtype = IMSG_CTL_BROWSE_ADD; */
-/* 					break; */
-/* 				case QUERY_RESOLVE: */
-/* 					msgtype = IMSG_CTL_BROWSE_ADD; */
-/* 					break; */
-/* 				default: */
-/* 					log_warnx("Unknown query style"); */
-/* 					return (-1); */
-/* 				} */
-/* /\* 				if (q->style == QUERY_RESOLVE) { *\/ */
-/* /\* 					ms = query_to_ms(q, &ms_done); *\/ */
-/* /\* 					if (ms == NULL) { *\/ */
-/* /\* 						query_remove(q); *\/ */
-/* /\* 						break; *\/ */
-/* /\* 					} *\/ */
-/* /\* 					/\\* Still more stuff to come *\\/ *\/ */
-/* /\* 					if (!ms_done) { *\/ */
-/* /\* 						free(ms); *\/ */
-/* /\* 						continue; *\/ */
-/* /\* 					} *\/ */
-/* /\* 					if (control_send_ms(c, ms, msgtype) *\/ */
-/* /\* 					    == -1) *\/ */
-/* /\* 						log_warnx("control_send_ms error"); *\/ */
-/* /\* 					free(ms); *\/ */
-/* /\* 					query_remove(q); *\/ */
-/* /\* 					break; *\/ */
-/* /\* 				} *\/ */
-				
-/* /\* 				rr_cache = cache_lookup(rrs); *\/ */
-/* 				if (control_send_rr(c, rr, msgtype) == -1) */
-/* 					log_warnx("control_send_rr error"); */
-				
-/* 				if (q->style == QUERY_LOOKUP) { */
-/* 					query_remove(q); */
-/* 					break; */
-/* 				} */
-/* 			} */
-/* 		} */
-/* 	} */
-	
-/* 	return (0); */
-/* } */
-
 int
 rr_notify_out(struct rr *rr)
 {
@@ -995,49 +923,6 @@ rr_notify_out(struct rr *rr)
 	}
 
 	return (0);
-}
-
-struct mdns_service *
-query_to_ms(struct query *q, int *done)
-{
-/* 	struct mdns_service *ms; */
-/* 	struct rr *rr, *srv, *txt, *a; */
-	
-/* 	rr = srv = txt = a = NULL; */
-/* 	LIST_FOREACH(rr, &q->rrlist, qentry) { */
-/* 		if (rr->rrs.type == T_SRV) */
-/* 			srv = rr; */
-/* 		if (rr->rrs.type == T_TXT) */
-/* 			txt = rr; */
-/* 		if (rr->rrs.type == T_A) */
-/* 			a = rr; */
-/* 	} */
-/* 	if (srv == NULL || txt == NULL) { */
-/* 		log_warnx("query_to_ms: Invalid resolving query"); */
-/* 		return (NULL); */
-/* 	} */
-/* 	if ((ms = calloc(1, sizeof(*ms))) == NULL) */
-/* 		fatal("calloc"); */
-	
-/* 	if (done != NULL) { */
-/* 		if (srv->answered && txt->answered && a && a->answered) */
-/* 			*done = 1; */
-/* 		else */
-/* 			*done = 0; */
-/* 	} */
-
-/* 	strlcpy(ms->name, srv->rrs.dname, sizeof(ms->name)); */
-/* 	if (txt->answered) */
-/* 		strlcpy(ms->txt, txt->rdata.TXT, sizeof(ms->txt)); */
-/* 	if (srv->answered) { */
-/* 		ms->priority = srv->rdata.SRV.priority; */
-/* 		ms->weight = srv->rdata.SRV.weight; */
-/* 		ms->port = srv->rdata.SRV.port; */
-/* 	} */
-/* 	ms->addr = a->rdata.A; */
-	
-/* 	return (ms); */
-	return NULL;
 }
 
 /*
