@@ -34,10 +34,12 @@
 #define MDNS_ADDRT		0xFB0000E0 /* the in_addr for 224.0.0.251 */
 #define MDNS_TTL		255
 #define MDNS_PORT		5353
+#define TTL_A			120
+#define TTL_AAAA		120
 #define TTL_HNAME		120
-#define TTL_SRV			300 /* TODO check these */
-#define TTL_TXT			300 /* TODO cheke these */
-#define TTL_PTR			300 /* TODO cheke these */
+#define TTL_SRV			(75 * 60)
+#define TTL_TXT			(75 * 60)
+#define TTL_PTR			(75 * 60)
 #define MDNS_QUERY		0
 #define MDNS_RESPONSE		1
 #define INTERVAL_PROBETIME	250000
