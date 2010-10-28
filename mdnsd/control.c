@@ -455,6 +455,7 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 		/*
 		 * Whoops, already have it, overwrite.
 		 */
+		/* XXX maybe we shouldn't */
 		memcpy(ams, ms, sizeof(ams));
 		return;
 	}
