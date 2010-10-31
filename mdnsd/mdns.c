@@ -932,157 +932,112 @@ rr_notify_out(struct rr *rr)
 void
 group_fsm(int unused, short event, void *v_g)
 {
-	struct mdns_group	*g = v_g;
-	struct mdns_service	*ms;
-	struct pkt		 pkt;
-	struct timeval		 tv;
-	
-	timerclear(&tv);
-	
-	log_debug("group_fsm: group %s (%d)", g->group, g->state);
-	switch (g->state) {
-	case GRP_UNPUBLISHED:
-		g->state = GRP_PROBING;
+	struct publish_group *pg = v_g;
+	struct publish_group_entry *pge;
+	struct question qst;
+	struct timeval tv;
+	struct pkt pkt;
+
+	switch (pg->state){
+	case PGRP_UNPUBLISHED:
+		pg->state = PGRP_PROBING;
 		/* FALLTHROUGH */
-	case GRP_PROBING:
-		LIST_FOREACH(ms, &g->mslist, entry) {
+	case PGRP_PROBING:
+		LIST_FOREACH(pge, &pg->pgelist, entry) {
+			bzero(&qst, sizeof(qst));
+			timerclear(&tv);
 			pkt_init(&pkt);
-			if (ms_to_probe(ms, &pkt, g->sent < 2) == -1) {
-				/* TODO send error */
-				log_warnx("ms_to_probe error");
-				return;
-			}
+			pkt.h.qr      = MDNS_QUERY;
+			qst.rrs.type  = T_ANY;
+			qst.rrs.class = C_IN;
+			(void)strlcpy(qst.rrs.dname, pge->srv.rrs.dname,
+			    sizeof(qst.rrs.dname));
+			if (pg->sent >= 2)
+				qst.src.s_addr = 1;
+			else
+				qst.src.s_addr = 0;
+			pkt_add_question(&pkt, &qst);
+			pkt_add_nsrr(&pkt, &pge->srv);
+			pkt_add_nsrr(&pkt, &pge->txt);
+			pkt_add_nsrr(&pkt, &pge->ptr);
+			/* TODO insert T_A */
 			if (pkt_send_allif(&pkt) == -1)
 				log_warnx("can't send probe packet "
 				    "to all interfaces");
-			pkt_cleanup(&pkt); 
-			/* TODO send error */
 		}
-		/* Enough probing, start announcing */
-		if (++g->sent == 3) {
-			g->state = GRP_ANNOUNCING;
-			g->sent	 = 0;
+		/* Probing done, start announcing */
+		if (++pg->sent == 3) {
+			pg->sent = 0;
+			pg->state = PGRP_ANNOUNCING;
 		}
-		evtimer_add(&g->timer, &tv);
+		tv.tv_usec = INTERVAL_PROBETIME;
+		evtimer_add(&pg->timer, &tv);
 		break;
-	case GRP_ANNOUNCING:
-		LIST_FOREACH(ms, &g->mslist, entry) {
+	case PGRP_ANNOUNCING:
+		LIST_FOREACH(pge, &pg->pgelist, entry) {
+			timerclear(&tv);
 			pkt_init(&pkt);
-			if (ms_to_announce(ms, &pkt) == -1) {
-				;/* TODO */
-			}
+			pkt.h.qr = MDNS_RESPONSE;
+			pkt_add_anrr(&pkt, &pge->srv);
+			pkt_add_anrr(&pkt, &pge->txt);
+			pkt_add_anrr(&pkt, &pge->ptr);
+			/* TODO insert T_A */
 			if (pkt_send_allif(&pkt) == -1)
-				log_warnx("can't send announce packet "
+				log_warnx("can't send probe packet "
 				    "to all interfaces");
-			pkt_cleanup(&pkt);
 		}
-		if (++g->sent < 3) {
-			evtimer_add(&g->timer, &tv);
+		if (++pg->sent < 3)  {
+			tv.tv_sec = pg->sent;
+			evtimer_add(&pg->timer, &tv);
 			break;
 		}
-		/* All finished */
-		g->state = GRP_PUBLISHED;
-		/* TODO insert records in publish tree */
+		pg->state = PGRP_PUBLISHED;
+		/* FALLTHROUGH */
+	case PGRP_PUBLISHED:
+		log_debug("group %s published");
 		break;
-	case GRP_PUBLISHED:
 	default:
-		fatalx("Invalid group state");
-		break;
+		fatalx("invalid group state");
 	}
 }
 
-/*
- * Make a probe packet from a service.
- */
-int
-ms_to_probe(struct mdns_service *ms, struct pkt *pkt, int qu)
+struct publish_group_entry *
+ms_to_pge(struct mdns_service *ms)
 {
-	struct question *qst;
-	struct srv srv;
-	struct rr *rr;
-	char buf[MAXHOSTNAMELEN];
+	struct publish_group_entry	*pge;
+	char				 buf[MAXHOSTNAMELEN];
 	
-	/*
-	 * Add questions
-	 */
-	pkt->h.qr = MDNS_QUERY;
-	if ((qst = calloc(1, sizeof(*qst))) == NULL)
-		fatal("calloc");
-	if (snprintf(qst->rrs.dname, sizeof(qst->rrs.dname),
-	    "%s._%s._%s.local",  ms->name, ms->proto, ms->app)
-	    >= (int)sizeof(qst->rrs.dname)) {
-		log_warnx("ms_to_probe: name too long");
-		free(qst);
-		return (-1);
+	if (snprintf(buf, sizeof(buf),
+	    "%s._%s._%s.local",  ms->name, ms->app, ms->proto)
+	    >= (int)sizeof(buf)) {
+		log_warnx("ms_to_pge: name too long");
+		return (NULL);
 	}
-	qst->rrs.type  = T_ANY;
-	qst->rrs.class = C_IN;
-	/* Deal with unicast response */
-	if (qu)
-		qst->src.s_addr = 1;
-	pkt_add_question(pkt, qst);
-	
+	if ((pge = calloc(1, sizeof(*pge))) == NULL)
+		err(1, "calloc");
 	/*
 	 * TODO add T_A record, need to think on how to do it
 	 */
 	/* SRV */
-	if ((rr = calloc(1, sizeof(*rr))) == NULL)
-		fatal("calloc");
-	bzero(&srv, sizeof(srv));
-	strlcpy(srv.dname, qst->rrs.dname, sizeof(srv.dname));
-	srv.priority = ms->priority;
-	srv.weight = ms->weight;
-	srv.port = ms->port;
-	(void)rr_set(rr, qst->rrs.dname, T_SRV, C_IN, TTL_SRV, 1,
-	    &srv, sizeof(srv));
-	pkt_add_nsrr(pkt, rr);
+	(void)strlcpy(pge->srv.rdata.SRV.dname, conf->myname,
+	    sizeof(pge->srv.rdata.SRV.dname));
+	pge->srv.rdata.SRV.priority = ms->priority;
+	pge->srv.rdata.SRV.weight = ms->weight;
+	pge->srv.rdata.SRV.port = ms->port;
+	(void)rr_set(&pge->srv, buf, T_SRV, C_IN, TTL_SRV, 1,
+	    &pge->srv.rdata, sizeof(pge->srv.rdata));
 	/* TXT */
-	if ((rr = calloc(1, sizeof(*rr))) == NULL)
-		fatal("calloc");
-	(void)rr_set(rr, qst->rrs.dname, T_TXT, C_IN, TTL_TXT, 1,
+	(void)rr_set(&pge->txt, buf, T_TXT, C_IN, TTL_TXT, 1,
 	    ms->txt, sizeof(ms->txt));
-	pkt_add_nsrr(pkt, rr);
 	/* PTR */
-	if ((rr = calloc(1, sizeof(*rr))) == NULL)
-		fatal("calloc");
 	if (snprintf(buf, sizeof(buf), "%s._%s.local",
 	    ms->proto, ms->app)  >= (int)sizeof(buf)) {
-		log_warnx("ms_to_probe: buf too long");
-		free(rr);
-		return (-1);
+		log_warnx("ms_to_pge: buf too long");
+		free(pge);
+		return (NULL);
 	}
-	(void)rr_set(rr, "_services._dns-sd._udp.local",
+	(void)rr_set(&pge->ptr, "_services._dns-sd._udp.local",
 	    T_PTR, C_IN, TTL_PTR, 0, buf, sizeof(buf));
-	pkt_add_nsrr(pkt, rr);
 	
-	return (0);
-}
-
-int
-ms_to_announce(struct mdns_service *ms, struct pkt *pkt)
-{
-	struct rr	*rr;
-	struct question *qst;
-	
-	/*
-	 * This may sound like a dirty hack but it isn't, it guarantees our
-	 * announce packets are equal to the probed one.
-	 */
-	if (ms_to_probe(ms, pkt, 0) == -1)
-		return (-1);
-	pkt->h.qr = MDNS_RESPONSE;
-	/* Remove questions */
-	while ((qst = (LIST_FIRST(&pkt->qlist))) != NULL) {
-		LIST_REMOVE(qst, entry);
-		pkt->h.qdcount--;
-		free(qst);
-	}
-	/* Move all ns records to answer records */
-	while ((rr = (LIST_FIRST(&pkt->nslist))) != NULL) {
-		LIST_REMOVE(rr, pentry);
-		pkt->h.nscount--;
-		pkt_add_anrr(pkt, rr);
-	}
-	
-	return (0);
+	return (pge);
 }

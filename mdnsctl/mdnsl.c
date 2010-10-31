@@ -225,14 +225,14 @@ mdns_resolve(struct mdns *m, const char *name, const char *app,
 int
 mdns_group_add(struct mdns *m, const char *group)
 {
-	struct mdns_group g;
+	char msg[MAXHOSTNAMELEN];
 
-	bzero(&g, sizeof(g));
-	if (strlcpy(g.group, group, sizeof(g.group))
-	    >= sizeof(g.group))
+	bzero(msg, sizeof(msg));
+	if (strlcpy(msg, group, sizeof(msg))
+	    >= sizeof(msg))
 		return (-1);
 	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_ADD,
-	    &g, sizeof(g)) == -1)
+	    msg, sizeof(msg)) == -1)
 		return (-1);
 
 	return (0);
@@ -241,14 +241,14 @@ mdns_group_add(struct mdns *m, const char *group)
 int
 mdns_group_reset(struct mdns *m, const char *group)
 {
-	struct mdns_group g;
+	char msg[MAXHOSTNAMELEN];
 
-	bzero(&g, sizeof(g));
-	if (strlcpy(g.group, group, sizeof(g.group))
-	    >= sizeof(g.group))
+	bzero(msg, sizeof(msg));
+	if (strlcpy(msg, group, sizeof(msg))
+	    >= sizeof(msg))
 		return (-1);
 	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_RESET,
-	    g.group, sizeof(g.group)) == -1)
+	    msg, sizeof(msg)) == -1)
 		return (-1);
 
 	return (0);
@@ -270,13 +270,13 @@ mdns_group_add_service(struct mdns *m, const char *group,
 int
 mdns_group_commit(struct mdns *m, const char *group)
 {
-	struct mdns_group msg;
+	char msg[MAXHOSTNAMELEN];
 
-	if (strlcpy(msg.group, group, sizeof(msg.group))
-	    >= sizeof(msg.group))
+	if (strlcpy(msg, group, sizeof(msg))
+	    >= sizeof(msg))
 		return (-1);
 	if (ibuf_send_imsg(&m->ibuf, IMSG_CTL_GROUP_COMMIT,
-	    &msg, sizeof(msg)) == -1)
+	    msg, sizeof(msg)) == -1)
 		return (-1);
 
 	return (0);

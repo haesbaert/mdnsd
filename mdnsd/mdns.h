@@ -88,24 +88,6 @@ struct mdns_service {
 	struct in_addr	addr;
 };
 
-enum group_state {
-	GRP_UNPUBLISHED,
-	GRP_PROBING,
-	GRP_ANNOUNCING,
-	GRP_REMOVING,
-	GRP_PUBLISHED
-};
-
-struct mdns_group {
-	LIST_ENTRY(mdns_group) entry;
-	LIST_HEAD(, mdns_service) mslist;
-	char			 group[MAXHOSTNAMELEN];
-	struct event		 timer;
-	struct ctl_conn		*c;
-	enum group_state	 state;
-	u_int			 sent;
-};
-
 struct mdns {
 	struct imsgbuf		 ibuf;
 	browse_hook		 bhk;

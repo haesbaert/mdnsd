@@ -84,6 +84,7 @@ struct srv {
 struct rr {
 	LIST_ENTRY(rr)		centry;	/* cache entry */
 	LIST_ENTRY(rr)		pentry;	/* packet entry */
+	LIST_ENTRY(rr)		gentry;	/* group entry */
 	struct rrset 		rrs;
 	int			cacheflush;
 	u_int32_t		ttl;
@@ -156,6 +157,34 @@ struct publish {
 	/* TODO: make sent unsigned */
 	int			sent;	/* how many sent packets */
 	unsigned long		id;	/* unique id */
+};
+
+enum publish_group_state {
+	PGRP_UNPUBLISHED,
+	PGRP_PROBING,
+	PGRP_ANNOUNCING,
+	PGRP_REMOVING,
+	PGRP_PUBLISHED
+};
+
+struct publish_group;
+struct publish_group_entry {
+	LIST_ENTRY(publish_group_entry) entry;
+	struct publish_group	*g;
+	struct rr		 srv;
+	struct rr		 txt;
+	struct rr		 a;
+	struct rr		 ptr;
+};
+
+struct publish_group {
+	LIST_ENTRY(publish_group) 	 entry;
+	LIST_HEAD(, publish_group_entry) pgelist;
+	char				 group[MAXHOSTNAMELEN];
+	struct event			 timer;
+	struct ctl_conn			*c;
+	enum publish_group_state	 state;
+	u_int				 sent;
 };
 
 struct kif {
@@ -297,6 +326,8 @@ int			 rrset_cmp(struct rrset *, struct rrset *);
 int			 rr_notify_in(struct rr *);
 int			 rr_notify_out(struct rr *);
 void			 group_fsm(int, short, void *);
+
+struct publish_group_entry *ms_to_pge(struct mdns_service *);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
