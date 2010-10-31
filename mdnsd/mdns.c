@@ -1001,6 +1001,23 @@ group_fsm(int unused, short event, void *v_g)
 	}
 }
 
+void
+group_cleanup(struct publish_group *pg)
+{
+	struct publish_group_entry *pge;
+	
+	while ((pge = LIST_FIRST(&pg->pgelist)) != NULL) {
+		LIST_REMOVE(pge, entry);
+		free(pge);
+	}
+	if (evtimer_pending(&pg->timer, NULL))
+		evtimer_del(&pg->timer);
+	LIST_REMOVE(pg, entry);
+	
+	/* TODO Unpublish group */
+	log_debug("group_cleanup: Unpublish group if needed");
+}
+
 struct publish_group_entry *
 ms_to_pge(struct mdns_service *ms)
 {

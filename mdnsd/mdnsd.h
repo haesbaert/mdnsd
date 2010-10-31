@@ -326,6 +326,7 @@ int			 rrset_cmp(struct rrset *, struct rrset *);
 int			 rr_notify_in(struct rr *);
 int			 rr_notify_out(struct rr *);
 void			 group_fsm(int, short, void *);
+void			 group_cleanup(struct publish_group *);
 
 struct publish_group_entry *ms_to_pge(struct mdns_service *);
 

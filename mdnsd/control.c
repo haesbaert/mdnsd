@@ -368,21 +368,35 @@ control_group_add(struct ctl_conn *c, struct imsg *imsg)
 void
 control_group_reset(struct ctl_conn *c, struct imsg *imsg)
 {
-/* 	char			 msg[MAXHOSTNAMELEN]; */
-/* 	struct publish_group	*pg; */
-/* 	struct publish_group	*pge; */
-/* 	struct mdns_service	*ms; */
+	char			 msg[MAXHOSTNAMELEN];
+	struct publish_group	*pg;
 	
-/* 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) { */
-/* 		log_warnx("control_group_reset: Invalid group len"); */
-/* 		return; */
-/* 	} */
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
+		log_warnx("control_group_reset: Invalid group len");
+		return;
+	}
 
-/* 	memcpy(msg, imsg->data, sizeof(msg)); */
-/* 	msg[sizeof(msg) - 1] = '\0'; */
+	memcpy(msg, imsg->data, sizeof(msg));
+	msg[sizeof(msg) - 1] = '\0';
+
+	/* Cancel commit */
+	LIST_FOREACH(pg, &c->pglist_commit, entry) {
+		if (strcmp(pg->group, msg) != 0)
+			continue;
+		/* Found */
+		group_cleanup(pg);
+		break;
+	}
+	/* Reset published group */
+	LIST_FOREACH(pg, &c->pglist, entry) {
+		if (strcmp(pg->group, msg) != 0)
+			continue;
+		/* Found */
+		group_cleanup(pg);
+		break;	
+	}
 	
-	/* TODO */
-	log_warnx("control_group_reset uninplemented !!");
+	log_debug("group %s reseted", msg);
 }
 
 void
