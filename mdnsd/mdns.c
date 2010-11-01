@@ -36,8 +36,8 @@ void		 cache_schedrev(struct rr *);
 void		 cache_rev(int, short, void *);
 struct rrt_node *cache_lookup_node(struct rrset *);
 
-int 		   question_cmp(struct question *, struct question *);
-struct question    *question_lookup(struct rrset *);
+int 		 question_cmp(struct question *, struct question *);
+struct question *question_lookup(struct rrset *);
 
 void		 rrt_dump(struct rrt_tree *);
 int		 rrt_cmp(struct rrt_node *, struct rrt_node *);
