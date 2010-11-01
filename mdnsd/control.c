@@ -352,15 +352,13 @@ control_group_add(struct ctl_conn *c, struct imsg *imsg)
 	 * Initialize group in temporary list, when user commits the group, we
 	 * will process it all.
 	 */
-	if ((pg = calloc(1, sizeof(*pg))) == NULL) {
-		log_warn("calloc");
-		return;
-	}
-	strlcpy(pg->group, msg, sizeof(pg->group));
+	if ((pg = calloc(1, sizeof(*pg))) == NULL)
+		fatal("calloc");
 	pg->state = PGRP_UNPUBLISHED;
 	pg->c	  = c;
+	(void)strlcpy(pg->group, msg, sizeof(pg->group));
 	LIST_INIT(&pg->pgelist);
-	evtimer_set(&pg->timer, group_fsm, pg);
+	evtimer_set(&pg->timer, pg_fsm, pg);
 	
 	LIST_INSERT_HEAD(&c->pglist_commit, pg, entry);
 }
@@ -384,7 +382,7 @@ control_group_reset(struct ctl_conn *c, struct imsg *imsg)
 		if (strcmp(pg->group, msg) != 0)
 			continue;
 		/* Found */
-		group_cleanup(pg);
+		pg_cleanup(pg);
 		break;
 	}
 	/* Reset published group */
@@ -392,7 +390,7 @@ control_group_reset(struct ctl_conn *c, struct imsg *imsg)
 		if (strcmp(pg->group, msg) != 0)
 			continue;
 		/* Found */
-		group_cleanup(pg);
+		pg_cleanup(pg);
 		break;	
 	}
 	
@@ -403,7 +401,8 @@ void
 control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 {
 	struct publish_group *pg = NULL;
-	struct publish_group_entry *pge, *pgeaux = NULL;
+	struct publish_group_entry *pge;
+/* 	struct publish_group_entry *pgeaux; */
 	struct mdns_service msg, *ms;
 	char *group;
 	
@@ -437,17 +436,17 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 	/*
 	 * Find if this is a duplicated service.
 	 */
-	LIST_FOREACH(pgeaux, &pg->pgelist, entry) {
-		if (rrset_cmp(&pge->srv.rrs, &pgeaux->srv.rrs) == 0 ||
-		    rrset_cmp(&pge->txt.rrs, &pgeaux->txt.rrs) == 0 ||
-		    rrset_cmp(&pge->ptr.rrs, &pgeaux->ptr.rrs) == 0 ||
-		    rrset_cmp(&pge->a.rrs, &pgeaux->a.rrs)) {
-			log_warnx("control_group_add_service: "
-			    "Duplicated service");
-			free(pge);
-			return;
-		}
-	}
+/* 	LIST_FOREACH(pgeaux, &pg->pgelist, entry) { */
+/* 		if (rrset_cmp(&pge->srv.rrs, &pgeaux->srv.rrs) == 0 || */
+/* 		    rrset_cmp(&pge->txt.rrs, &pgeaux->txt.rrs) == 0 || */
+/* 		    rrset_cmp(&pge->ptr.rrs, &pgeaux->ptr.rrs) == 0 || */
+/* 		    rrset_cmp(&pge->a.rrs, &pgeaux->a.rrs)) { */
+/* 			log_warnx("control_group_add_service: " */
+/* 			    "Duplicated service"); */
+/* 			free(pge); */
+/* 			return; */
+/* 		} */
+/* 	} */
 	/*
 	 * This is a new entry, add.
 	 */

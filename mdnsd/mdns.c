@@ -930,13 +930,13 @@ rr_notify_out(struct rr *rr)
  */
 /* PTR, SRV, TXT, */
 void
-group_fsm(int unused, short event, void *v_g)
+pg_fsm(int unused, short event, void *v_g)
 {
-	struct publish_group *pg = v_g;
-	struct publish_group_entry *pge;
-	struct question qst;
-	struct timeval tv;
-	struct pkt pkt;
+	struct publish_group		*pg = v_g;
+	struct publish_group_entry	*pge;
+	struct rr			*rr;
+	struct timeval			 tv;
+	struct pkt			 pkt;
 
 	switch (pg->state){
 	case PGRP_UNPUBLISHED:
@@ -944,22 +944,16 @@ group_fsm(int unused, short event, void *v_g)
 		/* FALLTHROUGH */
 	case PGRP_PROBING:
 		LIST_FOREACH(pge, &pg->pgelist, entry) {
-			bzero(&qst, sizeof(qst));
 			timerclear(&tv);
 			pkt_init(&pkt);
 			pkt.h.qr      = MDNS_QUERY;
-			qst.rrs.type  = T_ANY;
-			qst.rrs.class = C_IN;
-			(void)strlcpy(qst.rrs.dname, pge->srv.rrs.dname,
-			    sizeof(qst.rrs.dname));
 			if (pg->sent >= 2)
-				qst.src.s_addr = 1;
+				pge->qst.src.s_addr = 1;
 			else
-				qst.src.s_addr = 0;
-			pkt_add_question(&pkt, &qst);
-			pkt_add_nsrr(&pkt, &pge->srv);
-			pkt_add_nsrr(&pkt, &pge->txt);
-			pkt_add_nsrr(&pkt, &pge->ptr);
+				pge->qst.src.s_addr = 0;
+			pkt_add_question(&pkt, &pge->qst);
+			LIST_FOREACH(rr, &pge->rrlist, gentry)
+				pkt_add_nsrr(&pkt, rr);
 			/* TODO insert T_A */
 			if (pkt_send_allif(&pkt) == -1)
 				log_warnx("can't send probe packet "
@@ -978,9 +972,8 @@ group_fsm(int unused, short event, void *v_g)
 			timerclear(&tv);
 			pkt_init(&pkt);
 			pkt.h.qr = MDNS_RESPONSE;
-			pkt_add_anrr(&pkt, &pge->srv);
-			pkt_add_anrr(&pkt, &pge->txt);
-			pkt_add_anrr(&pkt, &pge->ptr);
+			LIST_FOREACH(rr, &pge->rrlist, gentry)
+			    pkt_add_anrr(&pkt, rr);
 			/* TODO insert T_A */
 			if (pkt_send_allif(&pkt) == -1)
 				log_warnx("can't send probe packet "
@@ -1002,12 +995,13 @@ group_fsm(int unused, short event, void *v_g)
 }
 
 void
-group_cleanup(struct publish_group *pg)
+pg_cleanup(struct publish_group *pg)
 {
 	struct publish_group_entry *pge;
 	
 	while ((pge = LIST_FIRST(&pg->pgelist)) != NULL) {
 		LIST_REMOVE(pge, entry);
+		pge_cleanup(pge);
 		free(pge);
 	}
 	if (evtimer_pending(&pg->timer, NULL))
@@ -1018,10 +1012,22 @@ group_cleanup(struct publish_group *pg)
 	log_debug("group_cleanup: Unpublish group if needed");
 }
 
+void
+pge_cleanup(struct publish_group_entry *pge)
+{
+	struct rr *rr;
+	
+	while ((rr = LIST_FIRST(&pge->rrlist)) != NULL) {
+		LIST_REMOVE(rr, gentry);
+		free(rr);
+	}
+}
+
 struct publish_group_entry *
 ms_to_pge(struct mdns_service *ms)
 {
 	struct publish_group_entry	*pge;
+	struct rr			*srv, *ptr, *txt;
 	char				 buf[MAXHOSTNAMELEN];
 	
 	if (snprintf(buf, sizeof(buf),
@@ -1031,30 +1037,46 @@ ms_to_pge(struct mdns_service *ms)
 		return (NULL);
 	}
 	if ((pge = calloc(1, sizeof(*pge))) == NULL)
-		err(1, "calloc");
+		fatal("calloc");
+	LIST_INIT(&pge->rrlist);
 	/*
 	 * TODO add T_A record, need to think on how to do it
 	 */
 	/* SRV */
-	(void)strlcpy(pge->srv.rdata.SRV.dname, conf->myname,
-	    sizeof(pge->srv.rdata.SRV.dname));
-	pge->srv.rdata.SRV.priority = ms->priority;
-	pge->srv.rdata.SRV.weight = ms->weight;
-	pge->srv.rdata.SRV.port = ms->port;
-	(void)rr_set(&pge->srv, buf, T_SRV, C_IN, TTL_SRV, 1,
-	    &pge->srv.rdata, sizeof(pge->srv.rdata));
+	if ((srv = calloc(1, sizeof(*srv))) == NULL)
+		fatal("calloc");
+	(void)strlcpy(srv->rdata.SRV.dname, conf->myname,
+	    sizeof(srv->rdata.SRV.dname));
+	srv->rdata.SRV.priority = ms->priority;
+	srv->rdata.SRV.weight = ms->weight;
+	srv->rdata.SRV.port = ms->port;
+	(void)rr_set(srv, buf, T_SRV, C_IN, TTL_SRV, 1,
+	    &srv->rdata, sizeof(srv->rdata));
+	pge->qst.rrs.type  = T_ANY;
+	pge->qst.rrs.class = C_IN;
+	(void)strlcpy(pge->qst.rrs.dname, srv->rrs.dname,
+	    sizeof(pge->qst.rrs.dname));
+	LIST_INSERT_HEAD(&pge->rrlist, srv, gentry);
 	/* TXT */
-	(void)rr_set(&pge->txt, buf, T_TXT, C_IN, TTL_TXT, 1,
+	if ((txt = calloc(1, sizeof(*txt))) == NULL)
+		fatal("calloc");
+	(void)rr_set(txt, buf, T_TXT, C_IN, TTL_TXT, 1,
 	    ms->txt, sizeof(ms->txt));
+	LIST_INSERT_HEAD(&pge->rrlist, txt, gentry);
 	/* PTR */
+	if ((ptr = calloc(1, sizeof(*ptr))) == NULL)
+		fatal("calloc");
 	if (snprintf(buf, sizeof(buf), "%s._%s.local",
 	    ms->proto, ms->app)  >= (int)sizeof(buf)) {
 		log_warnx("ms_to_pge: buf too long");
+		pge_cleanup(pge);
 		free(pge);
 		return (NULL);
 	}
-	(void)rr_set(&pge->ptr, "_services._dns-sd._udp.local",
+	(void)rr_set(ptr, "_services._dns-sd._udp.local",
 	    T_PTR, C_IN, TTL_PTR, 0, buf, sizeof(buf));
+	LIST_INSERT_HEAD(&pge->rrlist, ptr, gentry);
 	
 	return (pge);
 }
+

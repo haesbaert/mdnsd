@@ -150,13 +150,12 @@ enum publish_state {
 };
 
 struct publish {
-	struct pkt		pkt;
-	struct event		timer;	/* probe/announce timer */
-	struct iface	       *iface;
-	enum publish_state	state;
-	/* TODO: make sent unsigned */
-	int			sent;	/* how many sent packets */
-	unsigned long		id;	/* unique id */
+	struct pkt		 pkt;
+	struct event		 timer;	/* probe/announce timer */
+	struct iface		*iface;
+	enum publish_state	 state;
+	int			 sent;	/* how many sent packets */
+	unsigned long		 id;
 };
 
 enum publish_group_state {
@@ -169,18 +168,17 @@ enum publish_group_state {
 
 struct publish_group;
 struct publish_group_entry {
-	LIST_ENTRY(publish_group_entry) entry;
-	struct publish_group	*g;
-	struct rr		 srv;
-	struct rr		 txt;
-	struct rr		 a;
-	struct rr		 ptr;
+	LIST_ENTRY(publish_group_entry)  entry;
+	LIST_HEAD(, rr)			 rrlist;
+	struct publish_group		*g;
+	struct question			 qst;
 };
+
 
 struct publish_group {
 	LIST_ENTRY(publish_group) 	 entry;
 	LIST_HEAD(, publish_group_entry) pgelist;
-	char				 group[MAXHOSTNAMELEN];
+	char 				 group[MAXHOSTNAMELEN];
 	struct event			 timer;
 	struct ctl_conn			*c;
 	enum publish_group_state	 state;
@@ -325,8 +323,9 @@ struct rr		*cache_lookup(struct rrset *);
 int			 rrset_cmp(struct rrset *, struct rrset *);
 int			 rr_notify_in(struct rr *);
 int			 rr_notify_out(struct rr *);
-void			 group_fsm(int, short, void *);
-void			 group_cleanup(struct publish_group *);
+void			 pg_fsm(int, short, void *);
+void			 pg_cleanup(struct publish_group *);
+void			 pge_cleanup(struct publish_group_entry *);
 
 struct publish_group_entry *ms_to_pge(struct mdns_service *);
 
