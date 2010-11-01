@@ -444,6 +444,7 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 		    rrset_cmp(&pge->a.rrs, &pgeaux->a.rrs)) {
 			log_warnx("control_group_add_service: "
 			    "Duplicated service");
+			free(pge);
 			return;
 		}
 	}
