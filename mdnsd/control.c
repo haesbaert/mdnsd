@@ -341,7 +341,7 @@ control_group_add(struct ctl_conn *c, struct imsg *imsg)
 	/*
 	 * Check if the user hasn't already added this group
 	 */
-	LIST_FOREACH(pg, &c->pglist, entry) {
+	LIST_FOREACH(pg, &c->pglist_commit, entry) {
 		/*
 		 * Just silently accept it, user add the group twice, so what.
 		 */
