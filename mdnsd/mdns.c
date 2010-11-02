@@ -44,9 +44,6 @@ int		 rrt_cmp(struct rrt_node *, struct rrt_node *);
 struct rr	*rrt_lookup(struct rrt_tree *, struct rrset *);
 struct rrt_node	*rrt_lookup_node(struct rrt_tree *, struct rrset *);
 
-int		 ms_to_probe(struct mdns_service *, struct pkt *, int);
-int		 ms_to_announce(struct mdns_service *, struct pkt *);
-
 RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_cmp);
 RB_HEAD(question_tree, question);
 RB_PROTOTYPE(question_tree, question, qst_entry, question_cmp);
