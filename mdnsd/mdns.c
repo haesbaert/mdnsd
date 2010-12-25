@@ -54,343 +54,13 @@ struct question_tree		 question_tree;
 struct rrt_tree			 cache_tree;
 
 /*
- * Publishing
- */
-
-void
-publish_init(void)
-{
-	struct iface	*iface;
-	struct rr	*rr;
-	char		 revaddr[MAXHOSTNAMELEN];
-
-	/* insert default records in all our interfaces */
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		/* myname */
-		if ((rr = calloc(1, sizeof(*rr))) == NULL)
-			fatal("calloc");
-		rr_set(rr, conf->myname, T_A, C_IN, TTL_HNAME, 1,
-		    &iface->addr, sizeof(iface->addr));
-		if (publish_insert(iface, rr) == -1)
-			log_debug("publish_init: can't insert rr");
-
-		/* publish reverse address */
-		if ((rr = calloc(1, sizeof(*rr))) == NULL)
-			fatal("calloc");
-		reversstr(revaddr, &iface->addr);
-		rr_set(rr, revaddr, T_PTR, C_IN, TTL_HNAME, 1,
-		    conf->myname, sizeof(conf->myname));
-		if (publish_insert(iface, rr) == -1)
-			log_debug("publish_init: can't insert rr");
-
-		/* publish hinfo */
-		if ((rr = calloc(1, sizeof(*rr))) == NULL)
-			fatal("calloc");
-		rr_set(rr, conf->myname, T_HINFO, C_IN, TTL_HNAME, 1,
-		    &conf->hi, sizeof(conf->hi));
-		if (publish_insert(iface, rr) == -1)
-			log_debug("publish_init: can't insert rr");
-	}
-}
-
-void
-publish_allrr(struct iface *iface)
-{
-	struct question		*qst;
-	struct rr		*rr, *rrcopy;
-	struct publish		*pub;
-	struct rrt_node		*n;
-	struct timeval		 tv;
-
-	/* start a publish thingy */
-	if ((pub = calloc(1, sizeof(*pub))) == NULL)
-		fatal("calloc");
-	pub->state = PUB_INITIAL;
-	pkt_init(&pub->pkt);
-	if ((qst = calloc(1, sizeof(*qst))) == NULL)
-		fatal("calloc");
-	strlcpy(qst->rrs.dname, conf->myname, sizeof(qst->rrs.dname));
-	qst->rrs.type  = T_ANY;
-	qst->rrs.class = C_IN;
-	pub->pkt.h.qr = MDNS_QUERY;
-	pkt_add_question(&pub->pkt, qst);
-
-	RB_FOREACH(n, rrt_tree, &iface->rrt) {
-		/* now go through all our rr and add to the same packet */
-		LIST_FOREACH(rr, &n->hrr, centry) {
-			if ((rrcopy = calloc(1, sizeof(struct rr))) == NULL)
-				fatal("calloc");
-			memcpy(rrcopy, rr, sizeof(struct rr));
-			pkt_add_nsrr(&pub->pkt, rrcopy);
-		}
-	}
-
-	timerclear(&tv);
-	tv.tv_usec = RANDOM_PROBETIME;
-	evtimer_set(&pub->timer, publish_fsm, pub);
-	evtimer_add(&pub->timer, &tv);
-}
-
-int
-publish_delete(struct iface *iface, struct rr *rr)
-{
-	struct rr	*rraux, *next;
-	struct rrt_node	*s;
-	int		 n = 0;
-
-	log_debug("publish_delete: type: %s name: %s",
-	    rr_type_name(rr->rrs.type), rr->rrs.dname);
-	s = rrt_lookup_node(&iface->rrt, &rr->rrs);
-	if (s == NULL)
-		return (0);
-
-	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
-		next = LIST_NEXT(rraux, centry);
-		if (RR_UNIQ(rr) || /* XXX: Revise this */
-		    (rr_rdata_cmp(rr, rraux) == 0)) {
-			LIST_REMOVE(rraux, centry);
-			free(rraux);
-			n++;
-		}
-	}
-
-	if (LIST_EMPTY(&s->hrr)) {
-		RB_REMOVE(rrt_tree, &iface->rrt, s);
-		free(s);
-	}
-
-	return (n);
-}
-
-int
-publish_insert(struct iface *iface, struct rr *rr)
-{
-	struct rrt_node *n;
-	struct rr	*rraux;
-
-	log_debug("publish_insert: type: %s name: %s",
-	    rr_type_name(rr->rrs.type), rr->rrs.dname);
-
-	n = rrt_lookup_node(&iface->rrt, &rr->rrs);
-	if (n == NULL) {
-		if ((n = calloc(1, sizeof(*n))) == NULL)
-			fatal("calloc");
-		n->rrs = rr->rrs;
-		LIST_INIT(&n->hrr);
-		LIST_INSERT_HEAD(&n->hrr, rr, centry);
-		if (RB_INSERT(rrt_tree, &iface->rrt, n) != NULL)
-			fatal("rrt_insert: RB_INSERT");
-
-		return (0);
-	}
-
-	/* if an unique record, clean all previous and substitute */
-	if (RR_UNIQ(rr)) {
-		while ((rraux = LIST_FIRST(&n->hrr)) != NULL) {
-			LIST_REMOVE(rraux, centry);
-			free(rraux);
-		}
-		LIST_INSERT_HEAD(&n->hrr, rr, centry);
-
-		return (0);
-	}
-
-	/* not unique, just add */
-	LIST_INSERT_HEAD(&n->hrr, rr, centry);
-
-	return (0);
-}
-
-/* XXX: if query type is ANY, won't match. */
-struct rr *
-publish_lookupall(struct rrset *rrs)
-{
-	struct iface	*iface;
-	struct rr	*rr;
-
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		rr = rrt_lookup(&iface->rrt, rrs);
-		if (rr != NULL)
-			return (rr);
-	}
-
-	return (NULL);
-}
-
-void
-publish_fsm(int unused, short event, void *v_pub)
-{
-	struct publish *pub = v_pub;
-	struct timeval tv;
-	struct rr *rr;
-	struct question *qst;
-	static u_long pubid;
-
-	timerclear(&tv);
-	switch (pub->state) {
-	case PUB_INITIAL:
-		pub->state = PUB_PROBE;
-		pub->id = ++pubid;
-		/* FALLTHROUGH */
-	case PUB_PROBE:
-		pub->pkt.h.qr = MDNS_QUERY;
-		if (pkt_send_allif(&pub->pkt) == -1)
-			log_debug("can't send packet to all interfaces");
-		pub->sent++;
-		/* Send only the first 2 question as QU */
-		if (pub->sent == 2)
-			LIST_FOREACH(qst, &pub->pkt.qlist, entry)
-			    qst->src.s_addr = 0;
-		/* enough probing, start announcing */
-		else if (pub->sent == 3) {
-			/* cool, so now that we're done, remove it from
-			 * probing list, now the record is ours. */
-			pub->state = PUB_ANNOUNCE;
-			pub->sent = 0;
-			pub->pkt.h.qr = MDNS_RESPONSE;
-			/* remove questions */
-			while ((qst = (LIST_FIRST(&pub->pkt.qlist))) != NULL) {
-				LIST_REMOVE(qst, entry);
-				pub->pkt.h.qdcount--;
-				free(qst);
-			}
-			/* move all ns records to answer records */
-			while ((rr = (LIST_FIRST(&pub->pkt.nslist))) != NULL) {
-				LIST_REMOVE(rr, pentry);
-				pub->pkt.h.nscount--;
-				pkt_add_anrr(&pub->pkt, rr);
-			}
-			publish_fsm(unused, event, pub);
-			return;
-		}
-		tv.tv_usec = INTERVAL_PROBETIME;
-		evtimer_add(&pub->timer, &tv);
-		break;
-	case PUB_ANNOUNCE:
-		if (pkt_send_allif(&pub->pkt) == -1)
-			log_debug("can't send packet to all interfaces");
-		pub->sent++;
-		if (pub->sent < 3) {
-			tv.tv_sec = pub->sent; /* increse delay linearly */
-			evtimer_add(&pub->timer, &tv);
-			return;
-		}
-
-		/* sent announcement three times, finish */
-		pub->state = PUB_DONE;
-		publish_fsm(unused, event, pub);
-		break;
-	case PUB_DONE:
-		while ((rr = LIST_FIRST(&pub->pkt.anlist)) != NULL) {
-			LIST_REMOVE(rr, pentry);
-			pub->pkt.h.ancount--;
-			free(rr);
-		}
-		while ((rr = LIST_FIRST(&pub->pkt.nslist)) != NULL) {
-			LIST_REMOVE(rr, pentry);
-			pub->pkt.h.nscount--;
-			free(rr);
-		}
-		while ((rr = LIST_FIRST(&pub->pkt.arlist)) != NULL) {
-			LIST_REMOVE(rr, pentry);
-			pub->pkt.h.arcount--;
-			free(rr);
-		}
-		while ((qst = LIST_FIRST(&pub->pkt.qlist)) != NULL) {
-			LIST_REMOVE(qst, entry);
-			pub->pkt.h.qdcount--;
-			free(qst);
-		}
-		free(pub);
-		break;
-	default:
-		fatalx("Unknown publish state, report this");
-		break;
-	}
-}
-
-/*
  * RR cache
  */
 
 void
 cache_init(void)
 {
-#ifdef DUMMY_ENTRIES
-	char **nptr;
-	struct rr *rr;
-	char *tnames[] = {
-		"teste1.local",
-		"teste2.local",
-		"teste3.local",
-		"teste4.local",
-		"teste5.local",
-		"teste6.local",
-		"teste7.local",
-		"teste8.local",
-		"teste9.local",
-		"teste10.local",
-		"teste11.local",
-		"teste12.local",
-		"teste13.local",
-		"teste14.local",
-		"teste15.local",
-		"teste16.local",
-		"teste17.local",
-		"teste18.local",
-		"teste19.local",
-		"teste20.local",
-		"teste21.local",
-		"teste22.local",
-		"teste23.local",
-		"teste24.local",
-		"teste25.local",
-		"teste26.local",
-		"teste27.local",
-		"teste28.local",
-		"teste29.local",
-		"teste30.local",
-		"teste31.local",
-		"teste32.local",
-		"teste33.local",
-		"teste34.local",
-		"teste35.local",
-		"teste36.local",
-		"teste37.local",
-		"teste38.local",
-		"teste39.local",
-		"teste40.local",
-		"teste41.local",
-		"teste42.local",
-		"teste43.local",
-		"teste44.local",
-		"teste45.local",
-		"teste46.local",
-		"teste47.local",
-		"teste48.local",
-		"teste49.local",
-		"teste50.local",
-		0
-	};
-#endif
 	RB_INIT(&cache_tree);
-#ifdef DUMMY_ENTRIES
-	for (nptr = tnames; *nptr != NULL; nptr++) {
-		if ((rr = calloc(1, sizeof(*rr))) == NULL)
-			err(1, "calloc");
-		strlcpy(rr->dname, "_http._tcp.local", sizeof(rr->dname));
-		rr->type = T_PTR;
-		rr->class = C_IN;
-		rr->ttl = 60;
-		strlcpy(rr->rdata.PTR, *nptr, sizeof(rr->rdata.PTR));
-		rr->rdlen = strlen(*nptr);
-		evtimer_set(&rr->rev_timer, cache_rev, rr);
-		cache_insert(rr);
-
-	}
-
-#endif
-
 }
 
 int
@@ -440,10 +110,8 @@ cache_insert(struct rr *rr)
 	struct rrt_node *n;
 	struct rr	*rraux;
 
-/* 	log_debug("cache_insert: type: %s name: %s", rr_type_name(rr->type), */
-/* 	    rr->dname); */
-
 	n = cache_lookup_node(&rr->rrs);
+	/* New entry */
 	if (n == NULL) {
 		if ((n = calloc(1, sizeof(*n))) == NULL)
 			fatal("calloc");
@@ -456,6 +124,9 @@ cache_insert(struct rr *rr)
 		cache_schedrev(rr);
 		rr_notify_in(rr);
 
+		log_debug("cache_insert: (new) type: %s name: %s",
+		    rr_type_name(rr->rrs.type), rr->rrs.dname);
+	
 		return (0);
 	}
 
@@ -471,6 +142,9 @@ cache_insert(struct rr *rr)
 		cache_schedrev(rr);
 		rr_notify_in(rr);
 
+		log_debug("cache_insert: (not new, unique) type: %s name: %s",
+		    rr_type_name(rr->rrs.type), rr->rrs.dname);
+		
 		return (0);
 	}
 
@@ -481,7 +155,9 @@ cache_insert(struct rr *rr)
 			rraux->revision = 0;
 			cache_schedrev(rraux);
 			free(rr);
-
+			log_debug("cache_insert: (cache refresh) "
+			    "type: %s name: %s",
+			    rr_type_name(rr->rrs.type), rr->rrs.dname);
 			return (0);
 		}
 	}
@@ -489,8 +165,11 @@ cache_insert(struct rr *rr)
 	/* not a refresh, so add */
 	LIST_INSERT_HEAD(&n->hrr, rr, centry);
 	rr_notify_in(rr);
-	cache_schedrev(rr);
 	/* XXX: should we cache_schedrev ? */
+	cache_schedrev(rr);
+	log_debug("cache_insert: (shared) type: %s name: %s",
+	    rr_type_name(rr->rrs.type), rr->rrs.dname);
+
 
 	return (0);
 }
@@ -835,6 +514,18 @@ question_cmp(struct question *a, struct question *b)
 	return (rrset_cmp(&a->rrs, &b->rrs));
 }
 
+struct question *
+question_dup(struct question *qst)
+{
+	struct question *qdup;
+
+	if ((qdup = malloc(sizeof(*qdup))) == NULL)
+		fatal("malloc");
+	memcpy(qdup, qst, sizeof(*qdup));
+	
+	return (qdup);
+}
+
 int
 rr_notify_in(struct rr *rr)
 {
@@ -923,68 +614,254 @@ rr_notify_out(struct rr *rr)
 }
 
 /*
- * Publish a set of services in a group, do it in parallel.
+ * This function is crap crap crap.
  */
-/* PTR, SRV, TXT, */
-void
-pg_fsm(int unused, short event, void *v_g)
+struct pge *
+pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 {
-	struct publish_group		*pg = v_g;
-	struct publish_group_entry	*pge;
-	struct rr			*rr;
-	struct timeval			 tv;
-	struct pkt			 pkt;
+	struct pge	*pge;
+	struct rr	*srv, *txt, *rr, *ptr_proto, *ptr_services;
+	struct question *qst;
+	struct pge_if	*pge_if;
+	struct iface	*ifaux;
+	char		 servname[MAXHOSTNAMELEN], proto[MAXHOSTNAMELEN];
+	
+	srv = txt = rr = ptr_proto = ptr_services = NULL;
+	qst = NULL;
+	
+	if (snprintf(servname, sizeof(servname),
+	    "%s._%s._%s.local",  ms->name, ms->app, ms->proto)
+	    >= (int)sizeof(servname)) {
+		log_warnx("pge_from_ms: name too long");
+		return (NULL);
+	}
+	if (snprintf(proto, sizeof(proto),
+	    "_%s._%s.local",  ms->app, ms->proto)
+	    >= (int)sizeof(proto)) {
+		log_warnx("pge_from_ms: proto too long");
+		return (NULL);
+	}
 
-	switch (pg->state){
-	case PGRP_UNPUBLISHED:
-		pg->state = PGRP_PROBING;
+	/* Alloc and init pge structure */
+	if ((pge = calloc(1, sizeof(*pge))) == NULL)
+		fatal("calloc");
+	pge->pg		= pg;
+	pge->pge_type   = PGE_TYPE_SERVICE;
+	pge->pge_flags |= PGE_FLAG_INC_A;
+	LIST_INIT(&pge->pge_if_list);
+	
+	/* T_SRV */
+	if ((srv = calloc(1, sizeof(*srv))) == NULL)
+		fatal("calloc");
+	(void)strlcpy(srv->rdata.SRV.target, conf->myname,
+	    sizeof(srv->rdata.SRV.target));
+	srv->rdata.SRV.priority = ms->priority;
+	srv->rdata.SRV.weight = ms->weight;
+	srv->rdata.SRV.port = ms->port;
+	(void)rr_set(srv, servname, T_SRV, C_IN, TTL_SRV, 1,
+	    &srv->rdata, sizeof(srv->rdata));
+	(void)strlcpy(srv->rdata.SRV.target, ms->target,
+	    sizeof(srv->rdata.SRV.target));
+	/* Question */
+	if ((qst = calloc(1, sizeof(*qst))) == NULL)
+		fatal("calloc");
+	qst->rrs.type  = T_ANY;
+	qst->rrs.class = C_IN;
+	(void)strlcpy(qst->rrs.dname, srv->rrs.dname,
+	    sizeof(qst->rrs.dname));
+	/* T_TXT */
+	if ((txt = calloc(1, sizeof(*txt))) == NULL)
+		fatal("calloc");
+	(void)rr_set(txt, servname, T_TXT, C_IN, TTL_TXT, 1,
+	    ms->txt, sizeof(ms->txt));
+	/* T_PTR proto */
+	if ((ptr_proto = calloc(1, sizeof(*ptr_proto))) == NULL)
+		fatal("calloc");
+	(void)rr_set(ptr_proto, proto, T_PTR, C_IN, TTL_PTR,
+	    0, servname, sizeof(servname));
+	/* T_PTR services */
+	if ((ptr_services = calloc(1, sizeof(*ptr_services))) == NULL)
+		fatal("calloc");
+	(void)rr_set(ptr_services, "_services._dns-sd._udp.local",
+	    T_PTR, C_IN, TTL_PTR, 0, proto, sizeof(proto));
+	
+	/* Check for conflicts */
+	if (pg_rr_in_conflict(srv)		||
+	    pg_rr_in_conflict(txt)		||
+	    pg_rr_in_conflict(ptr_proto)	||
+	    pg_rr_in_conflict(ptr_services)) {
+		log_warnx("Conflict for rr %s", rrs_str(&rr->rrs));
+		LIST_REMOVE(srv, gentry);
+		LIST_REMOVE(txt, gentry);
+		LIST_REMOVE(ptr_proto, gentry);
+		LIST_REMOVE(ptr_services, gentry);
+		free(srv);
+		free(txt);
+		free(ptr_proto);
+		free(ptr_services);
+		free(qst);
+		free(pge);
+	}
+	
+	/*
+	 * If iface is NULL, alloc one fsm for each iface, otherwise only one
+	 * for the selected interface, bail out the loop.
+	 */
+	LIST_FOREACH(ifaux, &conf->iface_list, entry) {
+		if (iface != NULL)
+			ifaux = iface;
+		if ((pge_if = calloc(1, sizeof(*pge_if))) == NULL)
+			err(1, "calloc");
+		LIST_INIT(&pge_if->rr_list);
+		pge_if->pge	 = pge;
+		pge_if->iface	 = ifaux;
+		pge_if->if_state = PGE_IF_STA_UNPUBLISHED;
+		evtimer_set(&pge_if->if_timer, pge_if_fsm,
+		    pge_if);
+		LIST_INSERT_HEAD(&pge->pge_if_list, pge_if, entry);
+		/* Add the Question and the Resource Records */
+		pge_if->pqst = qst;
+		LIST_INSERT_HEAD(&pge_if->rr_list, srv, gentry);
+		LIST_INSERT_HEAD(&pge_if->rr_list, txt, gentry);
+		LIST_INSERT_HEAD(&pge_if->rr_list, ptr_proto, gentry);
+		LIST_INSERT_HEAD(&pge_if->rr_list, ptr_services, gentry);
+		
+		if (iface != NULL || LIST_NEXT(ifaux, entry) == NULL)
+			break;
+		
+		/*
+		 * Each pge_if must hold a copy of every RR, we use rr_dup() and
+		 * question_dup() so the next loop iteration will end up adding
+		 * the copies.
+		 */
+		qst	     = question_dup(qst);
+		srv	     = rr_dup(srv);
+		txt	     = rr_dup(txt);
+		ptr_proto    = rr_dup(ptr_proto);
+		ptr_services = rr_dup(ptr_services);
+	}
+
+	/*
+	 * If we got here, all is fine and we can link pge
+	 */
+	TAILQ_INSERT_TAIL(&pge_queue, pge, entry);
+	LIST_INSERT_HEAD(&pg->pge_list, pge, pge_entry);
+	
+	return (pge);
+}
+
+void
+pge_if_fsm_restart(struct pge_if *pge_if, struct timeval *tv)
+{
+	if (evtimer_pending(&pge_if->if_timer, NULL))
+		evtimer_del(&pge_if->if_timer);
+	evtimer_add(&pge_if->if_timer, tv);
+}
+
+void
+pge_if_fsm(int unused, short event, void *v_pge_if)
+{
+	struct pg	*pg,  *pg_primary;
+	struct pge	*pge, *pge_primary;
+	struct pge_if	*pge_if, *pge_if_primary;
+	struct rr	*rr;
+	struct iface	*iface;
+	struct timeval	 tv;
+	struct pkt	 pkt;
+	
+	pge_if	       = v_pge_if;
+	pge	       = pge_if->pge;
+	pg	       = pge->pg;
+	iface	       = pge_if->iface;
+	pg_primary     = iface->pg_primary;
+	pge_primary    = LIST_FIRST(&pg_primary->pge_list);
+	pge_if_primary = LIST_FIRST(&pge_primary->pge_if_list);
+	/*
+	 * In order to publish services and addresses we must first make sure
+	 * our primary address has been sucessfully published, if not, we delay
+	 * publication for a second.
+	 */
+	if (pge->pge_type == PGE_TYPE_SERVICE &&
+	    pge_if_primary->if_state < PGE_IF_STA_ANNOUNCING) {
+		timerclear(&tv);
+		tv.tv_sec = 1;
+		pge_if_fsm_restart(pge_if, &tv);
+		return;
+	}
+		
+	switch (pge_if->if_state){
+	case PGE_IF_STA_UNPUBLISHED:
+		pge_if->if_state = PGE_IF_STA_PROBING;
 		/* FALLTHROUGH */
-	case PGRP_PROBING:
-		LIST_FOREACH(pge, &pg->pgelist, entry) {
-			timerclear(&tv);
-			pkt_init(&pkt);
-			pkt.h.qr      = MDNS_QUERY;
-			if (pg->sent >= 2)
-				pge->qst.src.s_addr = 1;
+	case PGE_IF_STA_PROBING:
+		/* Build up our probe packet */
+		pkt_init(&pkt);
+		pkt.h.qr = MDNS_QUERY;
+		if (pge_if->pqst != NULL) {
+			/* Unicast question ? */
+			if (pge_if->if_sent >= 2)
+				pge_if->pqst->src.s_addr = 1;
 			else
-				pge->qst.src.s_addr = 0;
-			pkt_add_question(&pkt, &pge->qst);
-			LIST_FOREACH(rr, &pge->rrlist, gentry)
-				pkt_add_nsrr(&pkt, rr);
-			/* TODO insert T_A */
-			if (pkt_send_allif(&pkt) == -1)
-				log_warnx("can't send probe packet "
-				    "to all interfaces");
+				pge_if->pqst->src.s_addr = 0;
+			pkt_add_question(&pkt, pge_if->pqst);
 		}
+		/* Add the RRs in the ns section */
+		LIST_FOREACH(rr, &pge_if->rr_list, gentry)
+			pkt_add_nsrr(&pkt, rr);
+		if (pkt_send_if(&pkt, iface) == -1)
+			log_warnx("can't send probe packet "
+			    "to iface %s", iface->name);
 		/* Probing done, start announcing */
-		if (++pg->sent == 3) {
-			pg->sent = 0;
-			pg->state = PGRP_ANNOUNCING;
+		if (++pge_if->if_sent == 3) {
+			/* if_sent is re-used by PGE_IF_STA_ANNOUNCING */
+			pge_if->if_sent	 = 0;
+			pge_if->if_state = PGE_IF_STA_ANNOUNCING;
 		}
+		timerclear(&tv);
 		tv.tv_usec = INTERVAL_PROBETIME;
-		evtimer_add(&pg->timer, &tv);
+		evtimer_add(&pge_if->if_timer, &tv);
 		break;
-	case PGRP_ANNOUNCING:
-		LIST_FOREACH(pge, &pg->pgelist, entry) {
-			timerclear(&tv);
-			pkt_init(&pkt);
-			pkt.h.qr = MDNS_RESPONSE;
-			LIST_FOREACH(rr, &pge->rrlist, gentry)
-			    pkt_add_anrr(&pkt, rr);
-			/* TODO insert T_A */
-			if (pkt_send_allif(&pkt) == -1)
-				log_warnx("can't send probe packet "
-				    "to all interfaces");
+	case PGE_IF_STA_ANNOUNCING:
+		/* Build up our announcing packet */
+		pkt_init(&pkt);
+		pkt.h.qr = MDNS_RESPONSE;
+		/* Add the RRs in the AN secion */
+		LIST_FOREACH(rr, &pge_if->rr_list, gentry)
+	        	pkt_add_anrr(&pkt, rr);
+		/*
+		 * PGE_FLAG_INC_A, we should add our primary A resource record
+		 * to the packet. We must look for the A record on our primary
+		 */
+		if (pge->pge_flags & PGE_FLAG_INC_A) {
+			LIST_FOREACH(rr, &pge_if_primary->rr_list, gentry) {
+				if (rr->rrs.type != T_A)
+					continue;
+				pkt_add_anrr(&pkt, rr);
+				break;
+			}
+			if (rr == NULL)
+				log_warnx("pge_if_fsm: T_A not found for "
+				    "primary group. Not including T_A !");
 		}
-		if (++pg->sent < 3)  {
-			tv.tv_sec = pg->sent;
-			evtimer_add(&pg->timer, &tv);
+		if (pkt_send_if(&pkt, iface) == -1)
+			log_warnx("can't send probe packet "
+			    "to iface %s", iface->name);
+		if (++pge_if->if_sent < 3)  {
+			tv.tv_sec = pge_if->if_sent;
+			evtimer_add(&pge_if->if_timer, &tv);
 			break;
 		}
-		pg->state = PGRP_PUBLISHED;
+		pge_if->if_state = PGE_IF_STA_PUBLISHED;
+		/*
+		 * Link to published resource records
+		 */
+		/* NOTE: should this be here ? */
+		LIST_FOREACH(rr, &pge_if->rr_list, gentry)
+			LIST_INSERT_HEAD(&iface->auth_rr_list, rr, centry);
 		/* FALLTHROUGH */
-	case PGRP_PUBLISHED:
-		log_debug("group %s published");
+	case PGE_IF_STA_PUBLISHED:
+		log_debug("group %s published on iface %s",
+		    pg->name, iface->name);
 		break;
 	default:
 		fatalx("invalid group state");
@@ -992,88 +869,218 @@ pg_fsm(int unused, short event, void *v_g)
 }
 
 void
-pg_cleanup(struct publish_group *pg)
+pge_kill(struct pge *pge)
 {
-	struct publish_group_entry *pge;
+	struct rr	*rr;
+	struct pge_if	*pge_if;
 	
-	while ((pge = LIST_FIRST(&pg->pgelist)) != NULL) {
-		LIST_REMOVE(pge, entry);
-		pge_cleanup(pge);
-		free(pge);
+	/*
+	 * Cleanup pge_if, if we've reached at least PGE_IF_STA_ANNOUNCING, send
+	 * a goodbye RR and unlink from iface authority RR list.
+	 */
+	while ((pge_if = LIST_FIRST(&pge->pge_if_list)) != NULL) {
+		/*
+		 * Free Resource Records
+		 */
+		while ((rr = LIST_FIRST(&pge_if->rr_list)) != NULL) {
+			if (pge_if->if_state > PGE_IF_STA_PROBING) {
+				/* TODO pge_if_send_goodbye(pge_if); */
+				LIST_REMOVE(rr, centry);
+			}
+			LIST_REMOVE(rr, gentry);
+			free(rr);
+		}
+		LIST_REMOVE(pge_if, entry);
+		free(pge_if);
 	}
-	if (evtimer_pending(&pg->timer, NULL))
-		evtimer_del(&pg->timer);
-	LIST_REMOVE(pg, entry);
-	
-	/* TODO Unpublish group */
-	log_debug("group_cleanup: Unpublish group if needed");
+	/*
+	 * Unlink pge
+	 */
+	TAILQ_REMOVE(&pge_queue, pge, entry);
+	LIST_REMOVE(pge, pge_entry);
+	free(pge);
 }
 
 void
-pge_cleanup(struct publish_group_entry *pge)
+pg_init(void)
 {
-	struct rr *rr;
+	TAILQ_INIT(&pg_queue);
+	TAILQ_INIT(&pge_queue);
+}
+
+void
+pg_publish_byiface(struct iface *iface)
+{
+	struct pge	*pge;
+	struct pge_if	*pge_if;
+	struct timeval	 tv;
 	
-	while ((rr = LIST_FIRST(&pge->rrlist)) != NULL) {
-		LIST_REMOVE(rr, gentry);
-		free(rr);
+	timerclear(&tv);
+	tv.tv_usec = RANDOM_PROBETIME;
+
+	TAILQ_FOREACH(pge, &pge_queue, entry) {
+		LIST_FOREACH(pge_if, &pge->pge_if_list, entry) {
+			if (pge_if->iface != iface)
+				continue;
+			pge_if_fsm_restart(pge_if, &tv);
+		}
 	}
 }
 
-struct publish_group_entry *
-ms_to_pge(struct mdns_service *ms)
+struct pg *
+pg_get(int alloc, char name[MAXHOSTNAMELEN], struct ctl_conn *c)
 {
-	struct publish_group_entry	*pge;
-	struct rr			*srv, *ptr, *txt;
-	char				 buf[MAXHOSTNAMELEN];
+	struct pg *pg;
 	
-	if (snprintf(buf, sizeof(buf),
-	    "%s._%s._%s.local",  ms->name, ms->app, ms->proto)
-	    >= (int)sizeof(buf)) {
-		log_warnx("ms_to_pge: name too long");
-		return (NULL);
+	TAILQ_FOREACH(pg, &pg_queue, entry) {
+		if (pg->c == c && strcmp(pg->name, name) == 0)
+			return (pg);
 	}
+	
+	if (!alloc)
+		return (NULL);
+	if ((pg = calloc(1, sizeof(*pg))) == NULL)
+		err(1, "calloc");
+	(void)strlcpy(pg->name, name, sizeof(pg->name));
+	pg->c	  = c;
+	pg->flags = 0;
+	LIST_INIT(&pg->pge_list);
+	TAILQ_INSERT_TAIL(&pg_queue, pg, entry);
+	
+	return (pg);
+}
+
+struct pg *
+pg_new_primary(struct iface *iface)
+{
+	struct pg	*pg;
+	struct pge	*pge;
+	struct pge_if	*pge_if;
+	struct question	*qst;
+	struct rr	*rr;
+	char		 revaddr[MAXHOSTNAMELEN];
+	
+	/* Alloc a new internal group */
+	if ((pg = calloc(1, sizeof(*pg))) == NULL)
+		fatal("calloc");
+	if (snprintf(pg->name, sizeof(pg->name), "%s_primary", iface->name) >=
+	    (int)sizeof(pg->name))
+		log_warnx("Interface name %s too long", iface->name);
+	pg->flags = PG_FLAG_INTERNAL;
+	pg->c	  = NULL;	/* No controller for internal pgs */
+	LIST_INIT(&pg->pge_list);
+	TAILQ_INSERT_TAIL(&pg_queue, pg, entry);
+	/* Alloc one single group entry */
 	if ((pge = calloc(1, sizeof(*pge))) == NULL)
 		fatal("calloc");
-	LIST_INIT(&pge->rrlist);
-	/*
-	 * TODO add T_A record, need to think on how to do it
-	 */
-	/* SRV */
-	if ((srv = calloc(1, sizeof(*srv))) == NULL)
+	pge->pge_flags = 0;
+	pge->pg	       = pg;
+	LIST_INIT(&pge->pge_if_list);
+	/* Double linked */
+	LIST_INSERT_HEAD(&pg->pge_list, pge, pge_entry);
+	TAILQ_INSERT_TAIL(&pge_queue, pge, entry);
+	/* Get a pge_if for this interface */
+	if ((pge_if = calloc(1, sizeof(*pge_if))) == NULL)
 		fatal("calloc");
-	(void)strlcpy(srv->rdata.SRV.dname, conf->myname,
-	    sizeof(srv->rdata.SRV.dname));
-	srv->rdata.SRV.priority = ms->priority;
-	srv->rdata.SRV.weight = ms->weight;
-	srv->rdata.SRV.port = ms->port;
-	(void)rr_set(srv, buf, T_SRV, C_IN, TTL_SRV, 1,
-	    &srv->rdata, sizeof(srv->rdata));
-	pge->qst.rrs.type  = T_ANY;
-	pge->qst.rrs.class = C_IN;
-	(void)strlcpy(pge->qst.rrs.dname, srv->rrs.dname,
-	    sizeof(pge->qst.rrs.dname));
-	LIST_INSERT_HEAD(&pge->rrlist, srv, gentry);
-	/* TXT */
-	if ((txt = calloc(1, sizeof(*txt))) == NULL)
-		fatal("calloc");
-	(void)rr_set(txt, buf, T_TXT, C_IN, TTL_TXT, 1,
-	    ms->txt, sizeof(ms->txt));
-	LIST_INSERT_HEAD(&pge->rrlist, txt, gentry);
-	/* PTR */
-	if ((ptr = calloc(1, sizeof(*ptr))) == NULL)
-		fatal("calloc");
-	if (snprintf(buf, sizeof(buf), "%s._%s.local",
-	    ms->proto, ms->app)  >= (int)sizeof(buf)) {
-		log_warnx("ms_to_pge: buf too long");
-		pge_cleanup(pge);
-		free(pge);
-		return (NULL);
-	}
-	(void)rr_set(ptr, "_services._dns-sd._udp.local",
-	    T_PTR, C_IN, TTL_PTR, 0, buf, sizeof(buf));
-	LIST_INSERT_HEAD(&pge->rrlist, ptr, gentry);
+	LIST_INIT(&pge_if->rr_list);
+	pge_if->pge	 = pge;
+	pge_if->iface	 = iface;
+	pge_if->if_sent	 = 0;
+	pge_if->if_state = PGE_IF_STA_UNPUBLISHED;
+	evtimer_set(&pge_if->if_timer, pge_if_fsm, pge_if);
+	LIST_INSERT_HEAD(&pge->pge_if_list, pge_if, entry);
 	
-	return (pge);
+	/* Set up primary question */
+	if ((qst = calloc(1, sizeof(qst))) == NULL)
+		fatal("calloc");
+	(void)strlcpy(qst->rrs.dname, conf->myname, sizeof(qst->rrs.dname));
+	qst->rrs.type  = T_ANY;
+	qst->rrs.class = C_IN;
+	pge_if->pqst = qst;
+	/* Must add T_A, T_PTR(rev) and T_HINFO */
+	/* T_A record */
+	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+		fatal("calloc");
+	rr_set(rr, conf->myname, T_A, C_IN, TTL_HNAME, 1,
+	    &iface->addr, sizeof(iface->addr));
+	LIST_INSERT_HEAD(&pge_if->rr_list, rr, gentry);
+	/* T_PTR record reverse address */
+	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+		fatal("calloc");
+	reversstr(revaddr, &iface->addr);
+	rr_set(rr, revaddr, T_PTR, C_IN, TTL_HNAME, 1,
+	    conf->myname, sizeof(conf->myname));
+	LIST_INSERT_HEAD(&pge_if->rr_list, rr, gentry);
+	/* T_HINFO record */
+	if ((rr = calloc(1, sizeof(*rr))) == NULL)
+		fatal("calloc");
+	rr_set(rr, conf->myname, T_HINFO, C_IN, TTL_HNAME, 1,
+	    &conf->hi, sizeof(conf->hi));
+	LIST_INSERT_HEAD(&pge_if->rr_list, rr, gentry);
+		
+	return (pg);
 }
 
+/*
+ * Reset/Cleanup/Unpublish a group.
+ */
+void
+pg_kill(struct pg *pg)
+{
+	log_debug("pg_kill: Uninimplemented");
+/* 	struct pge *pge; */
+/* 	struct rr *rr; */
+
+/* 	while ((pge = LIST_FIRST(&pg->pge_list, entry)) != NULL) */
+/* 		pge_kill(pge); */
+		
+/* 	/\* */
+/* 	 * If pg is uncommited, just cleanup and unlink. */
+/* 	 *\/ */
+/* 	if (pg->flags & PG_FLAG_UNCOMMITED) { */
+		
+/* 	} */
+/* cleanup: */
+/* 	TAILQ_REMOVE(&pg) */
+}
+
+int
+pg_rr_in_conflict(struct rr *rr)
+{
+	struct pge	*pge;
+	struct pge_if	*pge_if;
+	struct rr	*rraux;
+	/* Conflicts only in unique records */
+	if (!RR_UNIQ(rr))
+		return (0);
+	
+	TAILQ_FOREACH(pge, &pge_queue, entry) {
+		LIST_FOREACH(pge_if, &pge->pge_if_list, entry) {
+			LIST_FOREACH(rraux, &pge_if->rr_list, gentry) {
+				if (!RR_UNIQ(rraux))
+					continue;
+				if (rrset_cmp(&rr->rrs, &rraux->rrs) == 0) {
+					log_warnx("pg_rr_in_conflict %s",
+					    rrs_str(&rr->rrs));
+					    return (1);
+				}
+			}
+		}
+	}
+	
+	return (0);
+}
+
+/*
+ * Check if we have a RR that answers the given question.
+ */
+struct rr *
+auth_lookup_rr(struct iface *iface, struct question *qst)
+{
+	struct rr *rr;
+
+	LIST_FOREACH(rr, &iface->auth_rr_list, centry)
+		if (ANSWERS(qst, rr))
+			return (rr);
+	return (NULL);
+}

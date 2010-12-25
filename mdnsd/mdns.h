@@ -80,7 +80,7 @@ struct mdns_service {
 	char		app[MAXLABELLEN];
 	char		proto[MAXPROTOLEN];
 	char		name[MAXHOSTNAMELEN];
-	char		hostname[MAXHOSTNAMELEN];
+	char		target[MAXHOSTNAMELEN];
 	u_int16_t	priority;
 	u_int16_t	weight;
 	u_int16_t	port;

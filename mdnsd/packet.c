@@ -66,7 +66,7 @@ int		 pkt_handleq(struct pkt *);
 int		 pkt_should_answerq(struct pkt *, struct question *);
 ssize_t		 serialize_rr(struct rr *, u_int8_t *, u_int16_t);
 ssize_t		 serialize_question(struct question *, u_int8_t *, u_int16_t);
-ssize_t		 serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
+ssize_t		 serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN], int);
 ssize_t		 serialize_rdata(struct rr *, u_int8_t *, u_int16_t);
 int		 rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 ssize_t		 charstr(char [MAXCHARSTR], u_int8_t *, u_int16_t);
@@ -236,7 +236,9 @@ recv_packet(int fd, short event, void *bula)
 			free(pkt);
 			return;
 		}
-
+	/* Save the received interface */
+	pkt->iface = iface;
+	
 	/* Parse question section */
 	if (pkt->h.qr == MDNS_QUERY)
 		for (i = 0; i < pkt->h.qdcount; i++)
@@ -710,7 +712,7 @@ rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 			return (1);
 		if (rra->rdata.SRV.port < rrb->rdata.SRV.port)
 			return (-1);
-		return strcmp(rra->rdata.SRV.dname, rrb->rdata.SRV.dname);
+		return strcmp(rra->rdata.SRV.target, rrb->rdata.SRV.target);
 	case T_HINFO:
 		if (strcmp(rra->rdata.HINFO.cpu, rrb->rdata.HINFO.cpu) != 0)
 			return (strcmp(rra->rdata.HINFO.cpu,
@@ -737,6 +739,18 @@ rr_ttl_left(struct rr *rr)
 	timespecsub(&tnow, &rr->age, &tr);
 	
 	return (rr->ttl - (u_int32_t)tr.tv_sec);
+}
+
+struct rr *
+rr_dup(struct rr *rr)
+{
+	struct rr *rdup;
+
+	if ((rdup = malloc(sizeof(*rdup))) == NULL)
+		fatal("malloc");
+	memcpy(rdup, rr, sizeof(*rdup));
+	
+	return (rdup);
 }
 
 int
@@ -820,6 +834,10 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	return (0);
 }
 
+/*
+ * TODO: we need a flag to use name compression or not, RFC 2782 states that the
+ * target of a SRV record should not be compressed.
+ */
 ssize_t
 pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
@@ -972,7 +990,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 		tmplen -= INT16SZ;
 		GETSHORT(rr->rdata.SRV.port, buf);
 		tmplen -= INT16SZ;
-		if (rr_parse_dname(buf, tmplen, rr->rdata.SRV.dname) == -1)
+		if (rr_parse_dname(buf, tmplen, rr->rdata.SRV.target) == -1)
 			return (-1);
 		break;
 	case T_AAAA:
@@ -1004,6 +1022,7 @@ pkt_handleq(struct pkt *pkt)
 	
 	pkt_init(&sendpkt);
 	sendpkt.h.qr = MDNS_RESPONSE;
+	sendpkt.iface = pkt->iface;
 	while ((qst = LIST_FIRST(&pkt->qlist)) != NULL) {
 		/*
 		 * Discard question which shouldn't be handled, can be a probing
@@ -1016,13 +1035,21 @@ pkt_handleq(struct pkt *pkt)
 			continue;
 		}
 		
-		rr = publish_lookupall(&qst->rrs);
-		if (rr != NULL && ANSWERS(qst, rr)) {
+		/*
+		 * XXX: O(n), make this a tree some day.
+		 */
+		LIST_FOREACH(rr, &pkt->iface->auth_rr_list, centry) {
+			if (!ANSWERS(qst, rr))
+				continue;
 			pkt_add_anrr(&sendpkt, rr);
-			if (pkt_send_allif(&sendpkt) == -1)
-				log_debug("Can't send packet to"
-				    "all interfaces");
 		}
+		/*
+		 * If we have answers, send it.
+		 */
+		if (sendpkt.h.ancount > 0)
+			if (pkt_send_if(&sendpkt, sendpkt.iface) == -1)
+				log_warnx("Can't send packet to"
+				    "%s", pkt->iface->name);
 		
 		LIST_REMOVE(qst, entry);
 		free(qst);
@@ -1041,7 +1068,6 @@ pkt_should_answerq(struct pkt *pkt, struct question *qst)
 	 */
 	if (pkt->h.qr == MDNS_RESPONSE)
 		return (0);
-	
 	/*
 	 * If this question belongs to a probe packet, that is, if an answer to
 	 * this question resides in the packet authority section, we're not
@@ -1050,13 +1076,12 @@ pkt_should_answerq(struct pkt *pkt, struct question *qst)
 	LIST_FOREACH(rr, &pkt->nslist, pentry)
 		if (ANSWERS(qst, rr))
 			return (0);
-	
 	/*
 	 * Check if the answer we would give isn't already in the known answer
 	 * supression list, that is, check that the answer isn't in the answer
 	 * section with a ttl at least half the original value. 
 	 */
-	rrans = publish_lookupall(&qst->rrs);
+	rrans = auth_lookup_rr(pkt->iface, qst);
 	/* We've no answers for it, we should try to answer, but we
 	 * already know we can't so return 0, this is a speed hack. */
 	if (rrans == NULL)
@@ -1088,7 +1113,8 @@ rr_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 }
 
 ssize_t
-serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
+serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN],
+    int compress)
 {
 	char *end;
 	char *dbuf = dname;
@@ -1097,7 +1123,9 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	struct namecomp *nc;
 	
 	/* Try to compress this name */
-	if ((nc = pktcomp_lookup(dname)) != NULL) {
+	
+	if (compress &&
+	    (nc = pktcomp_lookup(dname)) != NULL) {
 		PUTSHORT(nc->offset, pbuf);
 		len -= INT16SZ;
 		return (pbuf - buf);
@@ -1128,8 +1156,10 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	 * Add dname to name compression, buf - pktcomp->start, should give us
 	 * the correct offset in the current packet.
 	 */
-	if (pktcomp_add(dname, (u_int16_t) (buf - pktcomp.start)) == -1)
-		log_warnx("pktcomp_add error: %s", dname);
+	if (compress)
+		if (pktcomp_add(dname, (u_int16_t) (buf - pktcomp.start))
+		    == -1)
+			log_warnx("pktcomp_add error: %s", dname);
 	
 	return (pbuf - buf);
 }
@@ -1141,7 +1171,7 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	ssize_t		 n;
 	u_int16_t	 rdlen = 0;
 	u_int8_t	 cpulen, oslen;
-	
+
 	switch (rr->rrs.type) {
 	case T_HINFO:
 		cpulen = strlen(rr->rdata.HINFO.cpu);
@@ -1172,12 +1202,11 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		len  -= INT16SZ;
 		/* NOTE rr->rdata.PTR == rr->rdata.TXT */
 		if ((n = serialize_dname(pbuf, len,
-		    rr->rdata.PTR)) == -1)
+		    rr->rdata.PTR, 1)) == -1)
 			return (-1);
 		rdlen = n;
 		pbuf += rdlen;
 		len  -= rdlen;
-		rdlen = htons(rdlen);
 		PUTSHORT(rdlen, prdlen);
 		break;
 	case T_A:
@@ -1200,18 +1229,20 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		if (len < INT16SZ * 3)
 			return (-1);
 		PUTSHORT(rr->rdata.SRV.priority, pbuf);
-		len -= INT16SZ;
+		len   -= INT16SZ;
+		rdlen += INT16SZ;
 		PUTSHORT(rr->rdata.SRV.weight, pbuf);
-		len -= INT16SZ;
+		len   -= INT16SZ;
+		rdlen += INT16SZ;
 		PUTSHORT(rr->rdata.SRV.port, pbuf);
-		len -= INT16SZ;
+		len   -= INT16SZ;
+		rdlen += INT16SZ;
 		if ((n = serialize_dname(pbuf, len,
-		    rr->rdata.SRV.dname)) == -1)
+		    rr->rdata.SRV.target, 0)) == -1)
 			return (-1);
-		rdlen = n;
-		pbuf += rdlen;
-		len  -= rdlen;
-		rdlen = htons(rdlen);
+		rdlen += n;
+		pbuf  += n;
+		len   -= n;
 		PUTSHORT(rdlen, prdlen);
 		break;
 	default:
@@ -1230,7 +1261,7 @@ serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 	u_int16_t	 us   = 0;
 	ssize_t		 n;
 
-	n = serialize_dname(pbuf, len, rr->rrs.dname);
+	n = serialize_dname(pbuf, len, rr->rrs.dname, 1);
 	if (n == -1 || n > len)
 		return (-1);
 	pbuf += n;
@@ -1264,7 +1295,7 @@ serialize_question(struct question *qst, u_int8_t *buf, u_int16_t len)
 	u_int16_t qclass;
 	ssize_t n;
 
-	n = serialize_dname(pbuf, len, qst->rrs.dname);
+	n = serialize_dname(pbuf, len, qst->rrs.dname, 1);
 	if (n == -1 || n > len)
 		return (-1);
 	pbuf += n;

@@ -236,7 +236,7 @@ my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
 		printf(" Priority: %u\n", ms->priority);
 		printf(" Weight: %u\n", ms->weight);
 		printf(" Port: %u\n", ms->port);
-		printf(" Hostname: %s\n", ms->hostname);
+		printf(" Target: %s\n", ms->target);
 		printf(" Address: %s\n", inet_ntoa(ms->addr));
 		printf(" Txt: %s\n", ms->txt);
 		break;

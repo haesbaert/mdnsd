@@ -244,10 +244,10 @@ log_debug_rr(struct rr *rr)
 		log_debug("\t %s", rr->rdata.PTR);
 		break;
 	case T_SRV:
-		log_debug("\t dname: %s", rr->rdata.SRV.dname);
 		log_debug("\t priority: %u", rr->rdata.SRV.priority);
 		log_debug("\t weight: %u", rr->rdata.SRV.weight);
 		log_debug("\t port: %u", rr->rdata.SRV.port);
+		log_debug("\t target: %s", rr->rdata.SRV.target);
 		break;
 	case T_TXT:
 		log_debug("\t %s", rr->rdata.TXT);

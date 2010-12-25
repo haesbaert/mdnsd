@@ -51,6 +51,8 @@ void		 control_group_reset(struct ctl_conn *, struct imsg *);
 void		 control_group_commit(struct ctl_conn *, struct imsg *);
 void		 control_group_add_service(struct ctl_conn *, struct imsg *);
 
+extern struct mdnsd_conf *conf;
+
 void
 control_lookup(struct ctl_conn *c, struct imsg *imsg)
 {
@@ -309,7 +311,7 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 	if ((srv_cache = cache_lookup(rrs_srv)) != NULL) {
 		if ((rrs_a = calloc(1, sizeof(*rrs_a))) == NULL)
 			err(1, "calloc");
-		strlcpy(rrs_a->dname, srv_cache->rdata.SRV.dname,
+		strlcpy(rrs_a->dname, srv_cache->rdata.SRV.target,
 		    sizeof(rrs_a->dname));
 		rrs_a->class = C_IN;
 		rrs_a->type = T_A;
@@ -328,8 +330,8 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 void
 control_group_add(struct ctl_conn *c, struct imsg *imsg)
 {
-	char msg[MAXHOSTNAMELEN];
-	struct publish_group *pg;
+	char		 msg[MAXHOSTNAMELEN];
+	struct pg	*pg;
 	
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_group_add: Invalid group len");
@@ -339,35 +341,55 @@ control_group_add(struct ctl_conn *c, struct imsg *imsg)
 	memcpy(msg, imsg->data, sizeof(msg));
 	msg[sizeof(msg) - 1] = '\0';
 	/*
-	 * Check if the user hasn't already added this group
+	 * Check if the user hasn't already added this group, we'll issue an
+	 * error when he commits.
 	 */
-	LIST_FOREACH(pg, &c->pglist_commit, entry) {
-		/*
-		 * Just silently accept it, user add the group twice, so what.
-		 */
-		if (strcmp(pg->group, msg) == 0)
-			return;
-	}
+	if (pg_get(0, msg, c) != NULL)
+		return;
 	/*
 	 * Initialize group in temporary list, when user commits the group, we
-	 * will process it all.
+	 * will process it all. We need one group for each interface.
 	 */
-	if ((pg = calloc(1, sizeof(*pg))) == NULL)
-		fatal("calloc");
-	pg->state = PGRP_UNPUBLISHED;
-	pg->c	  = c;
-	(void)strlcpy(pg->group, msg, sizeof(pg->group));
-	LIST_INIT(&pg->pgelist);
-	evtimer_set(&pg->timer, pg_fsm, pg);
+	pg = pg_get(1, msg, c);
+}
+
+void
+control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
+{
+	struct pg		*pg;
+	struct pge		*pge;
+	struct mdns_service	 msg, *ms;
 	
-	LIST_INSERT_HEAD(&c->pglist_commit, pg, entry);
+	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
+		log_warnx("control_group_add_service: Invalid group len");
+		return;
+	}
+	memcpy(&msg, imsg->data, sizeof(msg));
+	msg.name[sizeof(msg.name) - 1] = '\0';
+	ms = &msg;
+	/* TODO deal with target, accept ourselves only for now */
+	(void)strlcpy(ms->target, conf->myname, sizeof(ms->target));
+	
+	/* Group not found, or group commited */
+	pg = pg_get(0, ms->name, c);
+	if (pg == NULL ||
+	    (pg != NULL && pg->flags & PG_FLAG_COMMITED)) {
+		log_warnx("Controller trying to add service to invalid group");
+		return;
+	}
+	
+	/* TODO implement iface option in ms */
+	if ((pge = pge_from_ms(pg, ms, NULL)) == NULL) {
+		log_warnx("pge_from_ms Failed");
+		return;
+	}
 }
 
 void
 control_group_reset(struct ctl_conn *c, struct imsg *imsg)
 {
-	char			 msg[MAXHOSTNAMELEN];
-	struct publish_group	*pg;
+	char		 msg[MAXHOSTNAMELEN];
+	struct pg	*pg;
 	
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_group_reset: Invalid group len");
@@ -377,88 +399,25 @@ control_group_reset(struct ctl_conn *c, struct imsg *imsg)
 	memcpy(msg, imsg->data, sizeof(msg));
 	msg[sizeof(msg) - 1] = '\0';
 
-	/* Cancel commit */
-	LIST_FOREACH(pg, &c->pglist_commit, entry) {
-		if (strcmp(pg->group, msg) != 0)
-			continue;
-		/* Found */
-		pg_cleanup(pg);
-		break;
+	if ((pg = pg_get(0, msg, NULL)) == NULL) {
+		log_debug("control_group_reset: group %s not found",
+		    msg);
+		return;
 	}
-	/* Reset published group */
-	LIST_FOREACH(pg, &c->pglist, entry) {
-		if (strcmp(pg->group, msg) != 0)
-			continue;
-		/* Found */
-		pg_cleanup(pg);
-		break;	
-	}
+
+	pg_kill(pg);
 	
 	log_debug("group %s reseted", msg);
 }
 
 void
-control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
-{
-	struct publish_group *pg = NULL;
-	struct publish_group_entry *pge;
-/* 	struct publish_group_entry *pgeaux; */
-	struct mdns_service msg, *ms;
-	char *group;
-	
-	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
-		log_warnx("control_group_add_service: Invalid group len");
-		return;
-	}
-	memcpy(&msg, imsg->data, sizeof(msg));
-	msg.name[sizeof(msg.name) - 1] = '\0';
-	ms = &msg;
-	group = ms->name;
-	
-	/*
-	 * Find our group
-	 */
-	LIST_FOREACH(pg, &c->pglist_commit, entry) {
-		if (strcmp(pg->group, group) == 0)
-			break;
-	}
-	/*
-	 * If group doesn't exist, the user will get an error on commit.
-	 */
-	if (pg == NULL) {
-		log_warnx("control_add_service on uncreated group");
-		return;
-	}
-	if ((pge = ms_to_pge(ms)) == NULL) {
-		log_warnx("ms_to_pge error");
-		return;
-	}
-	/*
-	 * Find if this is a duplicated service.
-	 */
-/* 	LIST_FOREACH(pgeaux, &pg->pgelist, entry) { */
-/* 		if (rrset_cmp(&pge->srv.rrs, &pgeaux->srv.rrs) == 0 || */
-/* 		    rrset_cmp(&pge->txt.rrs, &pgeaux->txt.rrs) == 0 || */
-/* 		    rrset_cmp(&pge->ptr.rrs, &pgeaux->ptr.rrs) == 0 || */
-/* 		    rrset_cmp(&pge->a.rrs, &pgeaux->a.rrs)) { */
-/* 			log_warnx("control_group_add_service: " */
-/* 			    "Duplicated service"); */
-/* 			free(pge); */
-/* 			return; */
-/* 		} */
-/* 	} */
-	/*
-	 * This is a new entry, add.
-	 */
-	LIST_INSERT_HEAD(&pg->pgelist, pge, entry);
-}
-
-void
 control_group_commit(struct ctl_conn *c, struct imsg *imsg)
 {
-	char			 msg[MAXHOSTNAMELEN];
-	struct publish_group	*pgc, *pg;
-	struct timeval		 tv;
+	char		 msg[MAXHOSTNAMELEN];
+	struct pg	*pg;
+	struct pge	*pge;
+	struct pge_if	*pge_if;
+	struct timeval	 tv;
 	
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_group_commit: Invalid group len");
@@ -467,42 +426,42 @@ control_group_commit(struct ctl_conn *c, struct imsg *imsg)
 	memcpy(msg, imsg->data, sizeof(msg));
 	msg[sizeof(msg) - 1] = '\0';
 	
-	pgc = pg = NULL;
-	LIST_FOREACH(pgc, &c->pglist_commit, entry) {
-		if (strcmp(pgc->group, msg) != 0)
-			continue;
-		break;
-	}
-	/* Not found */
-	if (pgc == NULL) {
+	/* Check if we have the group under our control. */
+	pg = pg_get(0, msg, c);
+	if (pg == NULL) {
+		/*
+		 * If we don't, check if someone else does, if yes, we
+		 * probabably failed adding some service due to a collision, so
+		 * guess this is a collision :-), yes this is disgusting, will
+		 * fix it someday.
+		 */
+		TAILQ_FOREACH(pg, &pg_queue, entry) {
+			if (strcmp(pg->name, msg) != 0)
+				continue;
+			mdnsd_imsg_compose_ctl(c, IMSG_CTL_GROUP_ERR_COLLISION,
+			    msg, sizeof(msg));
+			return;
+		}
+		
 		mdnsd_imsg_compose_ctl(c, IMSG_CTL_GROUP_ERR_NOT_FOUND,
 		    msg, sizeof(msg));
 		return;
 	}
-	/* Check if this group was already commited */
-	LIST_FOREACH(pg, &c->pglist, entry) {
-		if (strcmp(pg->group, msg) != 0)
-			continue;
-		/* Group already there  */
-		mdnsd_imsg_compose_ctl(c,
-		    IMSG_CTL_GROUP_ERR_DOUBLE_ADD,
-		    msg, sizeof(msg));
-		return;
-	}
-	
+
 	/*
 	 * If we got here, the world is a nice place and we can go on.
 	 */
-	pg = pgc;
-	/* Move our group to the actual group list */
-	LIST_REMOVE(pgc, entry);
-	LIST_INSERT_HEAD(&c->pglist, pgc, entry);
-	/*
-	 * pgc was initialized in control_group_add, just let the ball roll.
-	 */
+
+	/* Mark we got a commit */
+	pg->flags |= PG_FLAG_COMMITED; 
+	
 	timerclear(&tv);
 	tv.tv_usec = RANDOM_PROBETIME;
-	evtimer_add(&pgc->timer, &tv);
+	LIST_FOREACH(pge, &pg->pge_list, pge_entry) {
+		LIST_FOREACH(pge_if, &pge->pge_if_list, entry) {
+			pge_if_fsm_restart(pge_if, &tv);
+		}
+	}
 }
 
 int
@@ -597,8 +556,6 @@ control_accept(int listenfd, short event, void *bula)
 	}
 	
 	LIST_INIT(&c->qlist);
-	LIST_INIT(&c->pglist);
-	LIST_INIT(&c->pglist_commit);
 	imsg_init(&c->iev.ibuf, connfd);
 	c->iev.handler = control_dispatch_imsg;
 	c->iev.events = EV_READ;
@@ -638,8 +595,6 @@ control_close(int fd)
 {
 	struct ctl_conn			*c;
 	struct query			*q;
-	struct publish_group		*pg;
-	struct publish_group_entry	*pge;
 
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_close: fd %d: not found", fd);
@@ -652,14 +607,7 @@ control_close(int fd)
 	close(c->iev.ibuf.fd);
 	while ((q = LIST_FIRST(&c->qlist)) != NULL)
 		query_remove(q);
-	while ((pg = LIST_FIRST(&c->pglist)) != NULL) {
-		while ((pge = LIST_FIRST(&pg->pgelist)) != NULL) {
-			LIST_REMOVE(pge, entry);
-			free(pge);
-		}
-		LIST_REMOVE(pg, entry);
-		free(pg);
-	}
+	/* TODO cleanup pg and pge */
 	free(c);
 }
 
@@ -762,7 +710,7 @@ control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 int
 control_send_ms(struct ctl_conn *c, struct mdns_service *ms, int msgtype)
 {
-	log_debug("control_send_ms");
+	log_debug("control_send_ms %s", ms->name);
 
 	return (mdnsd_imsg_compose_ctl(c, msgtype, ms, sizeof(*ms)));
 }
@@ -777,7 +725,7 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	struct rrset rrs;
 	struct mdns_service ms;
 	
-	log_debug("control_try_answer_ms");
+	log_debug("control_try_answer_ms %s", dname);
 	strlcpy(rrs.dname, dname, sizeof(rrs.dname));
 	rrs.class = C_IN;
 	rrs.type = T_SRV;
@@ -786,14 +734,15 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	rrs.type = T_TXT;
 	if ((txt = cache_lookup(&rrs)) == NULL)
 		return (0);
-	strlcpy(rrs.dname, srv->rdata.SRV.dname, sizeof(rrs.dname));
+	strlcpy(rrs.dname, srv->rdata.SRV.target, sizeof(rrs.dname));
 	rrs.type = T_A;
 	if ((a = cache_lookup(&rrs)) == NULL)
 		return (0);
 	
 	bzero(&ms, sizeof(ms));
 	strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
-	strlcpy(ms.hostname, rrs.dname, sizeof(ms.hostname));
+	/* TODO revise ms.target */
+	strlcpy(ms.target, rrs.dname, sizeof(ms.target));
 	strlcpy(ms.txt, txt->rdata.TXT, sizeof(ms.txt));
 	ms.priority = srv->rdata.SRV.priority;
 	ms.weight = srv->rdata.SRV.weight;

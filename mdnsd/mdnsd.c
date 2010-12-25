@@ -67,6 +67,9 @@ mdnsd_conf_init(int argc, char *argv[])
 	if ((conf = calloc(1, sizeof(*conf))) == NULL)
 		fatal("calloc");
 
+	fetchmyname(conf->myname);
+	fetchhinfo(&conf->hi);
+
 	LIST_INIT(&conf->iface_list);
 
 	/* fetch all kernel interfaces and match argv */
@@ -82,15 +85,11 @@ mdnsd_conf_init(int argc, char *argv[])
 
 		found++;
 		iface = if_new(k);
-		RB_INIT(&iface->rrt);
 		LIST_INSERT_HEAD(&conf->iface_list, iface, entry);
 	}
 
 	if (!found)
 		fatal("Couldn't find any interface");
-
-	fetchmyname(conf->myname);
-	fetchhinfo(&conf->hi);
 
 	LIST_FOREACH(iface, &conf->iface_list, entry)
 		log_debug("using iface %s index %u", iface->name, iface->ifindex);
@@ -232,8 +231,6 @@ main(int argc, char *argv[])
 	if (!argc)
 		usage();
 
-	mdnsd_conf_init(argc, argv);
-
 	/* check for root privileges */
 	if (geteuid())
 		errx(1, "need root privileges");
@@ -280,6 +277,12 @@ main(int argc, char *argv[])
 	signal_add(&ev_sighup, NULL);
 	signal(SIGPIPE, SIG_IGN);
 
+	/* init publish queues */
+	pg_init();
+	
+	/* init interfaces and names */
+	mdnsd_conf_init(argc, argv);
+
 	/* init some packet internals */
 	packet_init();
 	
@@ -288,9 +291,6 @@ main(int argc, char *argv[])
 
 	/* init RR cache */
 	cache_init();
-
-	/* init publish */
-	publish_init();
 
 	/* listen to kernel interface events */
 	kev_init();

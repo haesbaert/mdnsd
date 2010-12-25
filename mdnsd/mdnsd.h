@@ -75,10 +75,10 @@ struct hinfo {
 };
 
 struct srv {
-	char            dname[MAXHOSTNAMELEN];
 	u_int16_t       priority;
 	u_int16_t       weight;
 	u_int16_t       port;
+	char            target[MAXHOSTNAMELEN];
 };
 
 struct rr {
@@ -112,6 +112,7 @@ struct pkt {
 	LIST_HEAD(, rr)       	arlist;	/* Additional section */
 	struct sockaddr_in	ipsrc;
 	struct event		timer;
+	struct iface 	       *iface; /* The received interface */
 };
 
 struct question {
@@ -142,48 +143,59 @@ struct query {
 	struct rrset		*br_ptr;
 };
 
-enum publish_state {
-	PUB_INITIAL,
-	PUB_PROBE,
-	PUB_ANNOUNCE,
-	PUB_DONE
+/* Publish Group */
+struct pg {
+	TAILQ_ENTRY(pg) 	entry;
+	LIST_HEAD(, pge) 	pge_list;
+	struct ctl_conn 	*c;
+	char 			name[MAXHOSTNAMELEN];
+	u_int 			flags;
+#define PG_FLAG_INTERNAL 0x01
+#define PG_FLAG_COMMITED 0x02
 };
 
-struct publish {
-	struct pkt		 pkt;
-	struct event		 timer;	/* probe/announce timer */
-	struct iface		*iface;
-	enum publish_state	 state;
-	int			 sent;	/* how many sent packets */
-	unsigned long		 id;
+/* Publish Group Entry types */
+enum pge_type {
+	PGE_TYPE_CUSTOM,
+	PGE_TYPE_SERVICE,
+	PGE_TYPE_ADDRESS
 };
 
-enum publish_group_state {
-	PGRP_UNPUBLISHED,
-	PGRP_PROBING,
-	PGRP_ANNOUNCING,
-	PGRP_REMOVING,
-	PGRP_PUBLISHED
+enum pge_if_state {
+	PGE_IF_STA_UNPUBLISHED,
+	PGE_IF_STA_PROBING,
+	PGE_IF_STA_ANNOUNCING,
+	PGE_IF_STA_PUBLISHED,
 };
 
-struct publish_group;
-struct publish_group_entry {
-	LIST_ENTRY(publish_group_entry)  entry;
-	LIST_HEAD(, rr)			 rrlist;
-	struct publish_group		*g;
-	struct question			 qst;
+/* Publish Group Entry */
+struct pge {
+	TAILQ_ENTRY(pge) 	entry;	  	/* pge_queue link */
+	LIST_ENTRY(pge)		pge_entry; 	/* Group link */
+	LIST_HEAD(, pge_if)	pge_if_list;	/* FSM list, one per iface */
+	struct pg 	       *pg;		/* Parent Publish Group */
+	enum pge_type 	 	pge_type;	/* Type of this entry */
+	u_int 		 	pge_flags;	
+#define PGE_FLAG_INC_A 0x01	/* Include primary A record */
+};
+	
+/* Publish Group Entry per iface state */
+struct pge_if {
+	LIST_ENTRY(pge_if)	 entry;	    	/* pge_if_list link */
+	LIST_HEAD(, rr)		 rr_list;	/* Proposed records */
+	struct question 	*pqst;		/* Probing Question, may be NULL */
+	struct pge		*pge; 		/* Pointer to parent */
+	struct iface		*iface;		/* Iface to be published */
+	struct event		 if_timer;	/* FSM timer */
+	enum pge_if_state	 if_state;	/* FSM state */
+	u_int			 if_sent;	/* How many sent packets */
+	
 };
 
-
-struct publish_group {
-	LIST_ENTRY(publish_group) 	 entry;
-	LIST_HEAD(, publish_group_entry) pgelist;
-	char 				 group[MAXHOSTNAMELEN];
-	struct event			 timer;
-	struct ctl_conn			*c;
-	enum publish_group_state	 state;
-	u_int				 sent;
-};
+/* Publish Group Queue, should hold all publishing groups */
+TAILQ_HEAD(, pg)  pg_queue;
+/* Publish Group Entry Queue, should hold all publishing group entries */
+TAILQ_HEAD(, pge) pge_queue;
 
 struct kif {
 	char		ifname[IF_NAMESIZE];
@@ -224,7 +236,9 @@ enum iface_type {
 
 struct iface {
 	LIST_ENTRY(iface)	 entry;
-	struct rrt_tree		 rrt;
+	LIST_HEAD(, rr)	       	 auth_rr_list;
+	struct pg		*pg_primary;
+/* 	struct rrt_tree		 rrt; */
 	char			 name[IF_NAMESIZE];
 	struct in_addr		 addr;
 	struct in_addr		 dst;
@@ -304,30 +318,38 @@ int	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, int, void *, size_t);
 
 /* mdns.c */
-void			 publish_init(void);
-void			 publish_allrr(struct iface *);
-int			 publish_insert(struct iface *, struct rr *);
-int			 publish_delete(struct iface *, struct rr *);
-struct rr *		 publish_lookupall(struct rrset *);
-void			 publish_fsm(int, short, void *_pub);
-void			 query_init(void);
-void			 query_fsm(int, short, void *);
-struct query *		 query_lookup(struct rrset *);
-void			 query_remove(struct query *);
-void			 query_remove(struct query *);
-struct question		*question_add(struct rrset *);
-void			 question_remove(struct rrset *);
-void			 cache_init(void);
-int			 cache_process(struct rr *);
-struct rr		*cache_lookup(struct rrset *);
-int			 rrset_cmp(struct rrset *, struct rrset *);
-int			 rr_notify_in(struct rr *);
-int			 rr_notify_out(struct rr *);
-void			 pg_fsm(int, short, void *);
-void			 pg_cleanup(struct publish_group *);
-void			 pge_cleanup(struct publish_group_entry *);
-
-struct publish_group_entry *ms_to_pge(struct mdns_service *);
+void		 publish_init(void);
+void		 publish_allrr(struct iface *);
+int		 publish_insert(struct iface *, struct rr *);
+int		 publish_delete(struct iface *, struct rr *);
+struct rr	*publish_lookupall(struct rrset *);
+void		 publish_fsm(int, short, void *_pub);
+void		 query_init(void);
+void		 query_fsm(int, short, void *);
+struct query	*query_lookup(struct rrset *);
+void		 query_remove(struct query *);
+void		 query_remove(struct query *);
+struct question	*question_add(struct rrset *);
+void		 question_remove(struct rrset *);
+void		 cache_init(void);
+int		 cache_process(struct rr *);
+struct rr	*cache_lookup(struct rrset *);
+int		 rrset_cmp(struct rrset *, struct rrset *);
+int		 rr_notify_in(struct rr *);
+int		 rr_notify_out(struct rr *);
+struct rr	*rr_dup(struct rr *);
+struct question *question_dup(struct question *);
+void		 pg_init(void);
+void		 pg_publish_byiface(struct iface *);
+struct pg *	 pg_new_primary(struct iface *);
+struct pg	*pg_get(int, char [MAXHOSTNAMELEN], struct ctl_conn *);
+void		 pg_kill(struct pg *);
+int		 pg_rr_in_conflict(struct rr *);
+struct pge	*pge_from_ms(struct pg *, struct mdns_service *, struct iface *);
+void		 pge_kill(struct pge *);
+void		 pge_if_fsm(int, short, void *);
+void		 pge_if_fsm_restart(struct pge_if *, struct timeval *);
+struct rr *	 auth_lookup_rr(struct iface *, struct question *);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;

@@ -188,8 +188,8 @@ if_act_start(struct iface *iface)
 		fatalx("if_act_start: unknown interface type");
 	}
 
-	/* publish all records on this interface */
-	publish_allrr(iface);
+	/* publish all groups on this interface */
+	pg_publish_byiface(iface);
 
 	return (0);
 }
@@ -423,6 +423,12 @@ if_new(struct kif *kif)
 		sain = (struct sockaddr_in *)&ifr->ifr_addr;
 		iface->dst = sain->sin_addr;
 	}
+	
+	/* init authority rr list  */
+	LIST_INIT(&iface->auth_rr_list);
+	
+	/* get the primary group for this interface */
+	iface->pg_primary = pg_new_primary(iface);
 
 	free(ifr);
 	close(s);
