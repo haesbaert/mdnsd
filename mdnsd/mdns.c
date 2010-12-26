@@ -816,6 +816,11 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 			/* if_sent is re-used by PGE_IF_STA_ANNOUNCING */
 			pge_if->if_sent	 = 0;
 			pge_if->if_state = PGE_IF_STA_ANNOUNCING;
+			/*
+			 * Link to published resource records
+			 */
+			LIST_FOREACH(rr, &pge_if->rr_list, gentry)
+			    LIST_INSERT_HEAD(&iface->auth_rr_list, rr, centry);
 		}
 		timerclear(&tv);
 		tv.tv_usec = INTERVAL_PROBETIME;
@@ -852,12 +857,6 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 			break;
 		}
 		pge_if->if_state = PGE_IF_STA_PUBLISHED;
-		/*
-		 * Link to published resource records
-		 */
-		/* NOTE: should this be here ? */
-		LIST_FOREACH(rr, &pge_if->rr_list, gentry)
-			LIST_INSERT_HEAD(&iface->auth_rr_list, rr, centry);
 		/* FALLTHROUGH */
 	case PGE_IF_STA_PUBLISHED:
 		log_debug("group %s published on iface %s",
