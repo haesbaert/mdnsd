@@ -878,6 +878,9 @@ pge_kill(struct pge *pge)
 	 * a goodbye RR and unlink from iface authority RR list.
 	 */
 	while ((pge_if = LIST_FIRST(&pge->pge_if_list)) != NULL) {
+		/* Stop pge_if machine */
+		if (evtimer_pending(&pge_if->if_timer, NULL))
+			evtimer_del(&pge_if->if_timer);
 		/*
 		 * Free Resource Records
 		 */
@@ -1026,21 +1029,13 @@ pg_new_primary(struct iface *iface)
 void
 pg_kill(struct pg *pg)
 {
-	log_debug("pg_kill: Uninimplemented");
-/* 	struct pge *pge; */
-/* 	struct rr *rr; */
+	struct pge *pge;
 
-/* 	while ((pge = LIST_FIRST(&pg->pge_list, entry)) != NULL) */
-/* 		pge_kill(pge); */
+	while ((pge = LIST_FIRST(&pg->pge_list)) != NULL)
+		pge_kill(pge);
 		
-/* 	/\* */
-/* 	 * If pg is uncommited, just cleanup and unlink. */
-/* 	 *\/ */
-/* 	if (pg->flags & PG_FLAG_UNCOMMITED) { */
-		
-/* 	} */
-/* cleanup: */
-/* 	TAILQ_REMOVE(&pg) */
+	TAILQ_REMOVE(&pg_queue, pg, entry);
+	free(pg);
 }
 
 int
