@@ -210,9 +210,12 @@ main(int argc, char *argv[])
 	struct passwd	*pw;
 	struct iface	*iface;
 	struct event	 ev_sigint, ev_sigterm, ev_sighup;
-	
-	log_init(1);	/* log to stderr until daemonized */
 
+	/*
+	 * XXX Carefull not to call anything that would malloc prior to setting
+	 * malloc_options, malloc will disregard malloc_options after the first
+	 * call. 
+	 */
 	while ((ch = getopt(argc, argv, "d")) != -1) {
 		switch (ch) {
 		case 'd':
@@ -224,7 +227,9 @@ main(int argc, char *argv[])
 			/* NOTREACHED */
 		}
 	}
-
+	
+	log_init(1);	/* log to stderr until daemonized */
+	
 	argc -= optind;
 	argv += optind;
 
@@ -238,7 +243,7 @@ main(int argc, char *argv[])
 	/* check for mdnsd user */
 	if ((pw = getpwnam(MDNSD_USER)) == NULL)
 		fatal("getpwnam");
-
+	
 	log_init(debug);
 
 	if (!debug)
