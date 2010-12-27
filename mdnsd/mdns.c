@@ -993,7 +993,7 @@ pg_new_primary(struct iface *iface)
 	LIST_INSERT_HEAD(&pge->pge_if_list, pge_if, entry);
 	
 	/* Set up primary question */
-	if ((qst = calloc(1, sizeof(qst))) == NULL)
+	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
 	(void)strlcpy(qst->rrs.dname, conf->myname, sizeof(qst->rrs.dname));
 	qst->rrs.type  = T_ANY;
