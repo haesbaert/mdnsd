@@ -893,7 +893,9 @@ pge_kill(struct pge *pge)
 {
 	struct rr	*rr;
 	struct pge_if	*pge_if;
-	
+	struct pg	*pg;
+
+	pg = pge->pg;
 	/*
 	 * Cleanup pge_if
 	 */
@@ -920,6 +922,8 @@ pge_kill(struct pge *pge)
 			free(rr);
 		}
 		LIST_REMOVE(pge_if, entry);
+		log_debug("group %s unpublished on iface %s",
+		    pg->name, pge_if->iface->name);
 		free(pge_if);
 	}
 	/*
