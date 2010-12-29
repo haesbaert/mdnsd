@@ -593,8 +593,9 @@ control_connbypid(pid_t pid)
 void
 control_close(int fd)
 {
-	struct ctl_conn			*c;
-	struct query			*q;
+	struct ctl_conn	*c;
+	struct query	*q;
+	struct pg	*pg, *pg_next;
 
 	if ((c = control_connbyfd(fd)) == NULL) {
 		log_warn("control_close: fd %d: not found", fd);
@@ -607,7 +608,15 @@ control_close(int fd)
 	close(c->iev.ibuf.fd);
 	while ((q = LIST_FIRST(&c->qlist)) != NULL)
 		query_remove(q);
-	/* TODO cleanup pg and pge */
+	/*
+	 * Clean up all groups belonging to this controller
+	 */
+	for (pg = TAILQ_FIRST(&pg_queue); pg != NULL;
+	     pg = pg_next) {
+		pg_next = TAILQ_NEXT(pg, entry);
+		if (pg->c == c)
+			pg_kill(pg);
+	}
 	free(c);
 }
 
