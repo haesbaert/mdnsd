@@ -1022,7 +1022,6 @@ pg_new_primary(struct iface *iface)
 	pge_if->if_state = PGE_IF_STA_UNPUBLISHED;
 	evtimer_set(&pge_if->if_timer, pge_if_fsm, pge_if);
 	LIST_INSERT_HEAD(&pge->pge_if_list, pge_if, entry);
-	
 	/* Set up primary question */
 	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
