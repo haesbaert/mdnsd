@@ -834,10 +834,6 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	return (0);
 }
 
-/*
- * TODO: we need a flag to use name compression or not, RFC 2782 states that the
- * target of a SRV record should not be compressed.
- */
 ssize_t
 pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 {
