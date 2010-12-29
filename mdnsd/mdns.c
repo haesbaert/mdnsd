@@ -867,6 +867,27 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 	}
 }
 
+/*
+ * MDNS draft section 10.2
+ */
+void
+pge_if_send_goodbye(struct pge_if *pge_if)
+{
+	struct pkt pkt;
+	struct rr *rr;
+
+	pkt_init(&pkt);
+	pkt.h.qr = MDNS_RESPONSE;
+	LIST_FOREACH(rr, &pge_if->rr_list, gentry) {
+		rr->ttl = 0;
+		pkt_add_anrr(&pkt, rr);
+	}
+
+	if (pkt_send_if(&pkt, pge_if->iface) == -1)
+		log_warnx("can't send goodbye packet "
+		    "to iface %s", pge_if->iface->name);
+}
+
 void
 pge_kill(struct pge *pge)
 {
@@ -874,22 +895,28 @@ pge_kill(struct pge *pge)
 	struct pge_if	*pge_if;
 	
 	/*
-	 * Cleanup pge_if, if we've reached at least PGE_IF_STA_ANNOUNCING, send
-	 * a goodbye RR and unlink from iface authority RR list.
+	 * Cleanup pge_if
 	 */
 	while ((pge_if = LIST_FIRST(&pge->pge_if_list)) != NULL) {
 		/* Stop pge_if machine */
 		if (evtimer_pending(&pge_if->if_timer, NULL))
 			evtimer_del(&pge_if->if_timer);
 		/*
-		 * Free Resource Records
+		 * If we've reached at least PGE_IF_STA_ANNOUNCING, send
+		 * a goodbye RR.
 		 */
+		if (pge_if->if_state >= PGE_IF_STA_ANNOUNCING)
+			pge_if_send_goodbye(pge_if);
+
+		/* Free Resource Records */
 		while ((rr = LIST_FIRST(&pge_if->rr_list)) != NULL) {
-			if (pge_if->if_state > PGE_IF_STA_PROBING) {
-				/* TODO pge_if_send_goodbye(pge_if); */
-				LIST_REMOVE(rr, centry);
-			}
 			LIST_REMOVE(rr, gentry);
+			/*
+			 * If we've reached at least PGE_IF_STA_ANNOUNCING,
+			 * this is a published RR and is linked in auth_rr_list.
+			 */
+			if (pge_if->if_state >= PGE_IF_STA_ANNOUNCING)
+				LIST_REMOVE(rr, centry);
 			free(rr);
 		}
 		LIST_REMOVE(pge_if, entry);

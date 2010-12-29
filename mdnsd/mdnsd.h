@@ -349,6 +349,7 @@ struct pge	*pge_from_ms(struct pg *, struct mdns_service *, struct iface *);
 void		 pge_kill(struct pge *);
 void		 pge_if_fsm(int, short, void *);
 void		 pge_if_fsm_restart(struct pge_if *, struct timeval *);
+void		 pge_if_send_goodbye(struct pge_if *);
 struct rr *	 auth_lookup_rr(struct iface *, struct question *);
 
 /* control.c */
