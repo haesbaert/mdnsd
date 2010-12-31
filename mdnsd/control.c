@@ -768,6 +768,12 @@ control_notify_pg(struct ctl_conn *c, struct pg *pg, int msgtype)
 {
 	log_debug("control_notify_pg %s msg %d", pg->name, msgtype);
 	
+	if (c == NULL || pg->flags & PG_FLAG_INTERNAL) {
+		log_warnx("Calling control_notify_pg() "
+		    "with NULL or wrong flags, report me!");
+		return (-1);
+	}
+	
 	return (mdnsd_imsg_compose_ctl(c, msgtype, pg->name,
 	    sizeof(pg->name)));
 }
