@@ -796,8 +796,9 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		pge_if->if_state = PGE_IF_STA_PROBING;
 		/* FALLTHROUGH */
 	case PGE_IF_STA_PROBING:
-		control_notify_pg(pg->c, pg,
-		    IMSG_CTL_GROUP_PROBING);
+		if ((pg->flags & PG_FLAG_INTERNAL) == 0)
+			control_notify_pg(pg->c, pg,
+			    IMSG_CTL_GROUP_PROBING);
 		/* Build up our probe packet */
 		pkt_init(&pkt);
 		pkt.h.qr = MDNS_QUERY;
@@ -831,8 +832,9 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		pge_if_fsm_restart(pge_if, &tv);
 		break;
 	case PGE_IF_STA_ANNOUNCING:
-		control_notify_pg(pg->c, pg,
-		    IMSG_CTL_GROUP_ANNOUNCING);
+		if ((pg->flags & PG_FLAG_INTERNAL) == 0)
+			control_notify_pg(pg->c, pg,
+			    IMSG_CTL_GROUP_ANNOUNCING);
 		/* Build up our announcing packet */
 		pkt_init(&pkt);
 		pkt.h.qr = MDNS_RESPONSE;
@@ -871,7 +873,8 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		 * Check if every pge_if in every pge is published, if it is
 		 * we'll consider the group as published, notify controller
 		 */
-		if (pg_published(pg))
+		if ((pg->flags & PG_FLAG_INTERNAL) == 0 &&
+		    pg_published(pg))
 			control_notify_pg(pg->c, pg, IMSG_CTL_GROUP_PUBLISHED);
 		break;
 	default:
