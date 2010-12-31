@@ -61,7 +61,7 @@ usage(void)
 __dead void
 display_version(void)
 {
-	printf("OpenMdns Daemon (build %s)\n", BUILD);
+	printf("OpenMdns Daemon %s\n", VERSION);
 	printf("Copyright (C) 2010-2011 Christiano F. Haesbaert\n");
 	
 	exit(0);

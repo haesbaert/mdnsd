@@ -797,7 +797,7 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		/* FALLTHROUGH */
 	case PGE_IF_STA_PROBING:
 		if ((pg->flags & PG_FLAG_INTERNAL) == 0 &&
-		    pfe_if->if_sent == 0)
+		    pge_if->if_sent == 0)
 			control_notify_pg(pg->c, pg,
 			    IMSG_CTL_GROUP_PROBING);
 		/* Build up our probe packet */
