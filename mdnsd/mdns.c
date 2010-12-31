@@ -855,7 +855,7 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 			    "to iface %s", iface->name);
 		if (++pge_if->if_sent < 3)  {
 			tv.tv_sec = pge_if->if_sent;
-			evtimer_add(&pge_if->if_timer, &tv);
+			pge_if_fsm_restart(pge_if, &tv);
 			break;
 		}
 		pge_if->if_state = PGE_IF_STA_PUBLISHED;
