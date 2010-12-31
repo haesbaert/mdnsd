@@ -3,7 +3,9 @@ SRCS=	log.c mdnsd.c kiface.c interface.c packet.c \
 	control.c mdns.c ../mdnsctl/mdnsl.c
 
 #MAN=	mdnsd.8
+BUILD!=date '+%Y-%m-%d'
 
+CFLAGS+=-DBUILD=\"${BUILD}\"
 CFLAGS+= -g -Wall -I${.CURDIR}
 CFLAGS+= -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS+= -Wmissing-declarations

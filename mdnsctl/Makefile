@@ -2,7 +2,11 @@
 
 PROG=	mdnsctl
 SRCS=	mdnsctl.c parser.c mdnsl.c 
-CFLAGS+= -g -Wall
+
+BUILD!=date '+%Y-%m-%d'
+
+CFLAGS+=-DBUILD="${BUILD}"
+pCFLAGS+= -g -Wall
 CFLAGS+= -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS+= -Wmissing-declarations
 CFLAGS+= -Wshadow -Wpointer-arith -Wcast-qual

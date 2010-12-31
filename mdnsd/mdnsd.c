@@ -36,6 +36,7 @@
 #include "control.h"
 
 __dead void	usage(void);
+__dead void	display_version(void);
 void		mdnsd_sig_handler(int, short, void *);
 void		mdnsd_conf_init(int, char *[]);
 void		mdnsd_shutdown(void);
@@ -53,7 +54,17 @@ usage(void)
 
 	fprintf(stderr, "usage: %s [-d] ifname [ifnames...]\n",
 	    __progname);
+	fprintf(stderr, "usage: %s -v\n", __progname);
 	exit(1);
+}
+
+__dead void
+display_version(void)
+{
+	printf("OpenMdns Daemon (build %s)\n", BUILD);
+	printf("Copyright (C) 2010-2011 Christiano F. Haesbaert\n");
+	
+	exit(0);
 }
 
 void
@@ -216,12 +227,15 @@ main(int argc, char *argv[])
 	 * malloc_options, malloc will disregard malloc_options after the first
 	 * call. 
 	 */
-	while ((ch = getopt(argc, argv, "d")) != -1) {
+	while ((ch = getopt(argc, argv, "dv")) != -1) {
 		switch (ch) {
 		case 'd':
 			debug = 1;
 			malloc_options = "AFGJPX";
 			break;
+		case 'v':
+			display_version();
+			break;	/* NOTREACHED */
 		default:
 			usage();
 			/* NOTREACHED */
