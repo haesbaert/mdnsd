@@ -38,7 +38,7 @@
 __dead void	usage(void);
 __dead void	display_version(void);
 void		mdnsd_sig_handler(int, short, void *);
-void		mdnsd_conf_init(int, char *[]);
+void		conf_init_ifaces(int, char *[]);
 void		mdnsd_shutdown(void);
 int		mdns_sock(void);
 void		fetchmyname(char [MAXHOSTNAMELEN]);
@@ -52,7 +52,7 @@ usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s [-d] ifname [ifnames...]\n",
+	fprintf(stderr, "usage: %s [-dw] ifname [ifnames...]\n",
 	    __progname);
 	fprintf(stderr, "usage: %s -v\n", __progname);
 	exit(1);
@@ -68,24 +68,12 @@ display_version(void)
 }
 
 void
-mdnsd_conf_init(int argc, char *argv[])
+conf_init_ifaces(int argc, char *argv[])
 {
 	int		 found = 0;
 	int		 i;
 	struct kif	*k;
 	struct iface	*iface;
-
-	if ((conf = calloc(1, sizeof(*conf))) == NULL)
-		fatal("calloc");
-
-	fetchmyname(conf->myname);
-	fetchhinfo(&conf->hi);
-
-	LIST_INIT(&conf->iface_list);
-
-	/* fetch all kernel interfaces and match argv */
-	if (kif_init() != 0)
-		fatal("Can't get kernel interfaces");
 
 	for (i = 0; i < argc; i++) {
 		k = kif_findname(argv[i]);
@@ -217,17 +205,18 @@ int
 main(int argc, char *argv[])
 {
 	int		 ch;
-	int		 debug = 0;
+	int		 debug, no_workstation;
 	struct passwd	*pw;
 	struct iface	*iface;
 	struct event	 ev_sigint, ev_sigterm, ev_sighup;
 
+	debug = no_workstation = 0;
 	/*
 	 * XXX Carefull not to call anything that would malloc prior to setting
 	 * malloc_options, malloc will disregard malloc_options after the first
 	 * call. 
 	 */
-	while ((ch = getopt(argc, argv, "dv")) != -1) {
+	while ((ch = getopt(argc, argv, "dvw")) != -1) {
 		switch (ch) {
 		case 'd':
 			debug = 1;
@@ -236,6 +225,9 @@ main(int argc, char *argv[])
 		case 'v':
 			display_version();
 			break;	/* NOTREACHED */
+		case 'w':
+			no_workstation = 1;
+			break;
 		default:
 			usage();
 			/* NOTREACHED */
@@ -296,11 +288,23 @@ main(int argc, char *argv[])
 	signal_add(&ev_sighup, NULL);
 	signal(SIGPIPE, SIG_IGN);
 
+	/* fetch all kernel interfaces */
+	if (kif_init() != 0)
+		fatal("Can't get kernel interfaces");
+
+	/* init conf */
+	if ((conf = calloc(1, sizeof(*conf))) == NULL)
+		fatal("calloc");
+	fetchmyname(conf->myname);
+	fetchhinfo(&conf->hi);
+	LIST_INIT(&conf->iface_list);
+	conf->no_workstation = no_workstation;
+	
 	/* init publish queues */
 	pg_init();
-	
+
 	/* init interfaces and names */
-	mdnsd_conf_init(argc, argv);
+	conf_init_ifaces(argc, argv);
 
 	/* init some packet internals */
 	packet_init();

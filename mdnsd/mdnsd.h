@@ -281,6 +281,7 @@ struct mdnsd_conf {
 	struct event		ev_mdns;
 	struct hinfo		hi;
 	char			myname[MAXHOSTNAMELEN];
+	int 			no_workstation;
 };
 
 /* kiface.c */
