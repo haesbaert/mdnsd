@@ -438,13 +438,13 @@ control_group_commit(struct ctl_conn *c, struct imsg *imsg)
 		TAILQ_FOREACH(pg, &pg_queue, entry) {
 			if (strcmp(pg->name, msg) != 0)
 				continue;
-			mdnsd_imsg_compose_ctl(c, IMSG_CTL_GROUP_ERR_COLLISION,
-			    msg, sizeof(msg));
+			control_notify_pg(c, pg,
+			    IMSG_CTL_GROUP_ERR_COLLISION);
 			return;
 		}
 		
-		mdnsd_imsg_compose_ctl(c, IMSG_CTL_GROUP_ERR_NOT_FOUND,
-		    msg, sizeof(msg));
+		control_notify_pg(c, pg,
+		    IMSG_CTL_GROUP_ERR_NOT_FOUND);
 		return;
 	}
 
@@ -761,4 +761,13 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 		log_warnx("control_send_ms error");
 	
 	return (1);
+}
+
+int
+control_notify_pg(struct ctl_conn *c, struct pg *pg, int msgtype)
+{
+	log_debug("control_notify_pg %s msg %d", pg->name, msgtype);
+	
+	return (mdnsd_imsg_compose_ctl(c, msgtype, pg->name,
+	    sizeof(pg->name)));
 }

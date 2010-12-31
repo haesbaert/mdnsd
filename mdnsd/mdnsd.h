@@ -344,6 +344,7 @@ void		 pg_publish_byiface(struct iface *);
 struct pg *	 pg_new_primary(struct iface *);
 struct pg	*pg_get(int, char [MAXHOSTNAMELEN], struct ctl_conn *);
 void		 pg_kill(struct pg *);
+int		 pg_published(struct pg *);
 int		 pg_rr_in_conflict(struct rr *);
 struct pge	*pge_from_ms(struct pg *, struct mdns_service *, struct iface *);
 void		 pge_kill(struct pge *);
@@ -357,6 +358,7 @@ TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 int     control_send_rr(struct ctl_conn *, struct rr *, int);
 int	control_send_ms(struct ctl_conn *, struct mdns_service *, int);
 int     control_try_answer_ms(struct ctl_conn *, char[MAXHOSTNAMELEN]);
+int    	control_notify_pg(struct ctl_conn *, struct pg *, int);
 				    
 
 #endif /* _MDNSD_H_ */

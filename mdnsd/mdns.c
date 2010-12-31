@@ -796,6 +796,8 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		pge_if->if_state = PGE_IF_STA_PROBING;
 		/* FALLTHROUGH */
 	case PGE_IF_STA_PROBING:
+		control_notify_pg(pg->c, pg,
+		    IMSG_CTL_GROUP_PROBING);
 		/* Build up our probe packet */
 		pkt_init(&pkt);
 		pkt.h.qr = MDNS_QUERY;
@@ -829,6 +831,8 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		pge_if_fsm_restart(pge_if, &tv);
 		break;
 	case PGE_IF_STA_ANNOUNCING:
+		control_notify_pg(pg->c, pg,
+		    IMSG_CTL_GROUP_ANNOUNCING);
 		/* Build up our announcing packet */
 		pkt_init(&pkt);
 		pkt.h.qr = MDNS_RESPONSE;
@@ -863,6 +867,12 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 	case PGE_IF_STA_PUBLISHED:
 		log_debug("group %s published on iface %s",
 		    pg->name, iface->name);
+		/*
+		 * Check if every pge_if in every pge is published, if it is
+		 * we'll consider the group as published, notify controller
+		 */
+		if (pg_published(pg))
+			control_notify_pg(pg->c, pg, IMSG_CTL_GROUP_PUBLISHED);
 		break;
 	default:
 		fatalx("invalid group state");
@@ -1068,6 +1078,25 @@ pg_kill(struct pg *pg)
 		
 	TAILQ_REMOVE(&pg_queue, pg, entry);
 	free(pg);
+}
+
+/*
+ * True if group is published
+ */
+int
+pg_published(struct pg *pg)
+{
+	struct pge	*pge;
+	struct pge_if	*pge_if;
+	
+	LIST_FOREACH(pge, &pg->pge_list, pge_entry) {
+		LIST_FOREACH(pge_if, &pge->pge_if_list, entry) {
+			if (pge_if->if_state != PGE_IF_STA_PUBLISHED)
+				return (0);
+		}
+	}
+	
+	return (1);
 }
 
 int
