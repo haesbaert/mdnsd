@@ -505,6 +505,8 @@ query_fsm(int unused, short event, void *v_query)
 		if (pkt_send_allif(&pkt) == -1)
 			log_warnx("can't send packet to all interfaces");
 	q->count++;
+	if (evtimer_pending(&q->timer, NULL))
+		evtimer_del(&q->timer);
 	evtimer_add(&q->timer, &tv);
 }
 
