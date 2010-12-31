@@ -63,6 +63,12 @@ enum client_events {
 	MDNS_SERVICE_UP,
 	MDNS_RESOLVE_SUCCESS,
 	MDNS_RESOLVE_FAILURE,
+	MDNS_GROUP_ERR_COLLISION,
+	MDNS_GROUP_ERR_NOT_FOUND,
+	MDNS_GROUP_ERR_DOUBLE_ADD,
+	MDNS_GROUP_PROBING,
+	MDNS_GROUP_ANNOUNCING,
+	MDNS_GROUP_PUBLISHED,
 };
 
 struct mdns;
@@ -76,6 +82,7 @@ typedef void (*lookup_PTR_hook) (struct mdns *, int event, const char *name,
     const char *ptr);
 typedef void (*lookup_HINFO_hook) (struct mdns *, int event, const char *name,
     const char *cpu, const char *os);
+typedef void (*group_hook) (struct mdns *, int event, const char *name);
 
 /* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
 struct mdns_service {
@@ -91,6 +98,7 @@ struct mdns_service {
 	struct in_addr	addr;
 };
 
+/* TODO browse_udata and group_udata */
 struct mdns {
 	struct imsgbuf		 ibuf;
 	browse_hook		 bhk;
@@ -98,6 +106,7 @@ struct mdns {
 	lookup_PTR_hook		 lhk_PTR;
 	lookup_HINFO_hook	 lhk_HINFO;
 	resolve_hook		 rhk;
+	group_hook		 ghk;
 	void			*udata;
 };
 
@@ -112,7 +121,9 @@ void	mdns_set_resolve_hook(struct mdns *m, resolve_hook);
 void	mdns_set_lookup_A_hook(struct mdns *, lookup_A_hook);
 void	mdns_set_lookup_PTR_hook(struct mdns *, lookup_PTR_hook);
 void	mdns_set_lookup_HINFO_hook(struct mdns *, lookup_HINFO_hook);
+void	mdns_set_group_hook(struct mdns *, group_hook);
 void	mdns_set_udata(struct mdns *, void *);
+
 int	mdns_lookup_A(struct mdns *, const char *);
 int	mdns_lookup_PTR(struct mdns *, const char *);
 int	mdns_lookup_HINFO(struct mdns *, const char *);

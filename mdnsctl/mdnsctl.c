@@ -46,6 +46,8 @@ void		my_lookup_HINFO_hook(struct mdns *, int, const char *,
 void		my_browse_hook(struct mdns *, int, const char *, const char *,
     const char *);
 void		my_resolve_hook(struct mdns *, int, struct mdns_service *);
+void		my_group_hook(struct mdns *, int, const char *);
+
 
 struct parse_result	*res;
 
@@ -242,6 +244,37 @@ my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
 		break;
 	default:
 		errx(1, "Unhandled event");
+		break;
+	}
+}
+
+void
+my_group_hook(struct mdns *m, int ev, const char *group)
+{
+	switch (ev) {
+	case MDNS_GROUP_ERR_COLLISION:
+		printf("Group %s got a collision, not published\n",
+		    group);
+		break;
+	case MDNS_GROUP_ERR_NOT_FOUND:
+		printf("Group %s not found, this is an internal error,"
+		    " please report\n", group);
+		break;
+	case MDNS_GROUP_ERR_DOUBLE_ADD:
+		printf("Group %s got a double add, ignore for now...\n",
+		    group);
+		break;
+	case MDNS_GROUP_PROBING:
+		printf("Group %s is probing...\n", group);
+		break;
+	case MDNS_GROUP_ANNOUNCING:
+		printf("Group %s is announcing...\n", group);
+		break;
+	case MDNS_GROUP_PUBLISHED:
+		printf("Group %s published !\n", group);
+		break;
+	default:
+		warnx("Unhandle group event");
 		break;
 	}
 }

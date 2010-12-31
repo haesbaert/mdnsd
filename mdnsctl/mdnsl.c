@@ -25,6 +25,7 @@
 
 #include <fcntl.h>
 #include <errno.h>
+#include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,11 +43,13 @@ static int	ibuf_send_imsg(struct imsgbuf *, u_int32_t,
     void *, u_int16_t);
 static int	splitdname(char [MAXHOSTNAMELEN], char [MAXHOSTNAMELEN],
     char [MAXLABEL], char [4], int *);
+static int	imsgctl_to_event(int);
 
 static int mdns_browse_adddel(struct mdns *, const char *, const char *, u_int);
 static int mdns_handle_lookup(struct mdns *, struct rr *, int);
 static int mdns_handle_browse(struct mdns *, struct rr *, int);
 static int mdns_handle_resolve(struct mdns *, struct mdns_service *, int);
+static int mdns_handle_group(struct mdns *, char [MAXHOSTNAMELEN], int);
 
 int
 mdns_open(struct mdns *m)
@@ -101,6 +104,12 @@ void
 mdns_set_udata(struct mdns *m, void *udata)
 {
 	m->udata = udata;
+}
+
+void
+mdns_set_group_hook(struct mdns *m, group_hook ghk)
+{
+	m->ghk = ghk;
 }
 
 int
@@ -314,12 +323,14 @@ mdns_read(struct mdns *m)
 	struct imsg		imsg;
 	struct rr		rr;
 	struct mdns_service	ms;
+	char			groupname[MAXHOSTNAMELEN];
 
 	n = imsg_read(&m->ibuf);
 
 	if (n == -1 || n == 0)
 		return (n);
 
+	/* TODO call imsgctl_to_event() */
 	while ((r = imsg_get(&m->ibuf, &imsg)) > 0) {
 		switch (imsg.hdr.type) {
 		case IMSG_CTL_LOOKUP: /* FALLTHROUGH */
@@ -349,6 +360,25 @@ mdns_read(struct mdns *m)
 			memcpy(&ms, imsg.data, sizeof(ms));
 			r = mdns_handle_resolve(m, &ms, ev);
 			break;
+		case IMSG_CTL_GROUP_ADD:
+		case IMSG_CTL_GROUP_RESET:
+		case IMSG_CTL_GROUP_ADD_SERVICE:
+		case IMSG_CTL_GROUP_COMMIT:
+		case IMSG_CTL_GROUP_ERR_COLLISION:
+		case IMSG_CTL_GROUP_ERR_NOT_FOUND:
+		case IMSG_CTL_GROUP_ERR_DOUBLE_ADD:
+		case IMSG_CTL_GROUP_PROBING:
+		case IMSG_CTL_GROUP_ANNOUNCING:
+		case IMSG_CTL_GROUP_PUBLISHED:
+			if ((imsg.hdr.len - IMSG_HEADER_SIZE) !=
+			    sizeof(groupname))
+				return (-1);
+			if ((ev = imsgctl_to_event(imsg.hdr.type)) == -1)
+				return (-1);
+			memcpy(groupname, imsg.data, sizeof(groupname));
+			r = mdns_handle_group(m, groupname, ev);
+
+
 		default:
 			return (-1);
 		}
@@ -425,6 +455,17 @@ mdns_handle_resolve(struct mdns *m, struct mdns_service *ms, int ev)
 		return (-1);
 
 	m->rhk(m, ev, ms);
+	
+	return (0);
+}
+
+static int
+mdns_handle_group(struct mdns *m, char groupname[MAXHOSTNAMELEN], int ev)
+{
+	if (m->ghk == NULL)
+		return (0);
+	
+	m->ghk(m, ev, groupname);
 	
 	return (0);
 }
@@ -523,6 +564,43 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 	return (0);
 }
 
+static int
+imsgctl_to_event(int msgtype)
+{
+	switch (msgtype) {
+	case IMSG_CTL_GROUP_ERR_COLLISION:
+		return
+		    (MDNS_GROUP_ERR_COLLISION);
+		break;
+	case IMSG_CTL_GROUP_ERR_NOT_FOUND:
+		return
+		    (MDNS_GROUP_ERR_NOT_FOUND);
+		break;
+	case IMSG_CTL_GROUP_ERR_DOUBLE_ADD:
+		return
+		    (MDNS_GROUP_ERR_DOUBLE_ADD);
+		break;
+	case IMSG_CTL_GROUP_PROBING:
+		return
+		    (MDNS_GROUP_PROBING);
+		break;
+	case IMSG_CTL_GROUP_ANNOUNCING:
+		return
+		    (MDNS_GROUP_ANNOUNCING);
+		break;
+	case IMSG_CTL_GROUP_PUBLISHED:
+		return
+		    (MDNS_GROUP_PUBLISHED);
+		break;
+	default:
+		/* TODO remove this once in the wild */
+		warnx("imsgctl_to_event: Unknown imsgctl %d",
+		    msgtype);
+	}
+	/* NOTREACHED */
+	return (-1);
+}
+
 void
 reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
 {
@@ -532,3 +610,4 @@ reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
 	    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
 	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
 }
+
