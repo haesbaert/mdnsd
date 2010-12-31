@@ -796,7 +796,8 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		pge_if->if_state = PGE_IF_STA_PROBING;
 		/* FALLTHROUGH */
 	case PGE_IF_STA_PROBING:
-		if ((pg->flags & PG_FLAG_INTERNAL) == 0)
+		if ((pg->flags & PG_FLAG_INTERNAL) == 0 &&
+		    pfe_if->if_sent == 0)
 			control_notify_pg(pg->c, pg,
 			    IMSG_CTL_GROUP_PROBING);
 		/* Build up our probe packet */
@@ -832,7 +833,8 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		pge_if_fsm_restart(pge_if, &tv);
 		break;
 	case PGE_IF_STA_ANNOUNCING:
-		if ((pg->flags & PG_FLAG_INTERNAL) == 0)
+		if ((pg->flags & PG_FLAG_INTERNAL) == 0 &&
+		    pge_if->if_sent == 0)
 			control_notify_pg(pg->c, pg,
 			    IMSG_CTL_GROUP_ANNOUNCING);
 		/* Build up our announcing packet */
