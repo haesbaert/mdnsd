@@ -826,7 +826,7 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		}
 		timerclear(&tv);
 		tv.tv_usec = INTERVAL_PROBETIME;
-		evtimer_add(&pge_if->if_timer, &tv);
+		pge_if_fsm_restart(pge_if, &tv);
 		break;
 	case PGE_IF_STA_ANNOUNCING:
 		/* Build up our announcing packet */
