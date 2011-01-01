@@ -1066,7 +1066,37 @@ pg_new_primary(struct iface *iface)
 	rr_set(rr, conf->myname, T_HINFO, C_IN, TTL_HNAME, 1,
 	    &conf->hi, sizeof(conf->hi));
 	LIST_INSERT_HEAD(&pge_if->rr_list, rr, gentry);
-		
+	
+	return (pg);
+}
+
+struct pg *
+pg_new_workstation(struct iface *iface)
+{
+	struct mdns_service	 ms;
+	struct pg		*pg;
+	
+	/* Alloc a new internal group */
+	if ((pg = calloc(1, sizeof(*pg))) == NULL)
+		fatal("calloc");
+	/* TODO turn this into a function, same as pg_new_primary() */
+	pg->flags = PG_FLAG_INTERNAL;
+	pg->c	  = NULL;	/* No controller for internal pgs */
+	LIST_INIT(&pg->pge_list);
+	TAILQ_INSERT_TAIL(&pg_queue, pg, entry);
+	/* Build our service */
+	bzero(&ms, sizeof(ms));
+	ms.port = 9;	/* workstation stuff */
+	strlcpy(ms.app, "Workstation", sizeof(ms.app));
+	strlcpy(ms.proto, "tcp", sizeof(ms.app));
+	if (snprintf(ms.name, sizeof(ms.name),
+	    "%s [%s:%s]", conf->myname, iface->name,
+	    ether_ntoa(&iface->ea)) >= (int)sizeof(ms.name))
+		log_warnx("Workstation name too long");
+	strlcpy(ms.target, conf->myname, sizeof(ms.target));
+	/* Will link pge in pg */
+	pge_from_ms(pg, &ms, iface);
+	
 	return (pg);
 }
 
@@ -1144,3 +1174,4 @@ auth_lookup_rr(struct iface *iface, struct question *qst)
 			return (rr);
 	return (NULL);
 }
+
