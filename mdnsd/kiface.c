@@ -195,6 +195,16 @@ fetchifs(int ifindex)
 				else if (sdl->sdl_nlen > 0)
 					memcpy(kif->k.ifname, sdl->sdl_data,
 					    sdl->sdl_nlen);
+				if (sdl->sdl_alen > 0) {
+					if (sdl->sdl_alen != ETHER_ADDR_LEN)
+						log_warnx("sdl->sdl_alen = %u\n",
+						    sdl->sdl_alen);
+					memcpy(&kif->k.ea,
+					    sdl->sdl_data + sdl->sdl_nlen,
+					    MIN(sizeof(kif->k.ea),
+					    sdl->sdl_alen));
+				}
+					
 				/* string already terminated via calloc() */
 			}
 		kif_insert(kif);

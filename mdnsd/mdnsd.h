@@ -20,8 +20,10 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <netinet/in.h>
+#include <net/if_arp.h>
 #include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/if_ether.h>
 
 #include <event.h>
 #include <imsg.h>
@@ -198,13 +200,14 @@ TAILQ_HEAD(, pg)  pg_queue;
 TAILQ_HEAD(, pge) pge_queue;
 
 struct kif {
-	char		ifname[IF_NAMESIZE];
-	u_int64_t	baudrate;
-	int		flags;
-	int		mtu;
-	u_short		ifindex;
-	u_int8_t	media_type;
-	u_int8_t	link_state;
+	char			ifname[IF_NAMESIZE];
+	u_int64_t		baudrate;
+	int			flags;
+	int			mtu;
+	u_short			ifindex;
+	u_int8_t		media_type;
+	u_int8_t		link_state;
+	struct ether_addr	ea;
 };
 
 /* interface states */
@@ -238,7 +241,6 @@ struct iface {
 	LIST_ENTRY(iface)	 entry;
 	LIST_HEAD(, rr)	       	 auth_rr_list;
 	struct pg		*pg_primary;
-/* 	struct rrt_tree		 rrt; */
 	char			 name[IF_NAMESIZE];
 	struct in_addr		 addr;
 	struct in_addr		 dst;
@@ -255,6 +257,7 @@ struct iface {
 	u_int8_t		 linktype;
 	u_int8_t		 media_type;
 	u_int8_t		 linkstate;
+	struct ether_addr	 ea;
 };
 
 /* interface.c */

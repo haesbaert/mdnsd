@@ -403,7 +403,8 @@ if_new(struct kif *kif)
 	iface->linkstate = kif->link_state;
 	iface->media_type = kif->media_type;
 	iface->baudrate = kif->baudrate;
-
+	iface->ea = kif->ea;
+	
 	/* get address */
 	if (ioctl(s, SIOCGIFADDR, ifr) < 0)
 		err(1, "if_new: cannot get address");
