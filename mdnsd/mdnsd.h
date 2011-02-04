@@ -241,6 +241,7 @@ struct iface {
 	LIST_ENTRY(iface)	 entry;
 	LIST_HEAD(, rr)	       	 auth_rr_list;
 	struct pg		*pg_primary;
+	struct pg		*pg_workstation;
 	char			 name[IF_NAMESIZE];
 	struct in_addr		 addr;
 	struct in_addr		 dst;

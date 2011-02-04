@@ -625,7 +625,7 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 	struct rr	*srv, *txt, *rr, *ptr_proto, *ptr_services;
 	struct question *qst;
 	struct pge_if	*pge_if;
-	struct iface	*ifaux;
+	struct iface	*ifaux = NULL;
 	char		 servname[MAXHOSTNAMELEN], proto[MAXHOSTNAMELEN];
 	
 	srv = txt = rr = ptr_proto = ptr_services = NULL;
@@ -643,7 +643,6 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 		log_warnx("pge_from_ms: proto too long");
 		return (NULL);
 	}
-
 	/* Alloc and init pge structure */
 	if ((pge = calloc(1, sizeof(*pge))) == NULL)
 		fatal("calloc");
@@ -709,7 +708,14 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 	 * If iface is NULL, alloc one fsm for each iface, otherwise only one
 	 * for the selected interface, bail out the loop.
 	 */
+	/*
+	 * We need this goto since conf->iface_list may not yet have the iface,
+	 * this happens if this function gets called in if_new()
+	 */
+	if (iface != NULL)
+		goto dontloop;
 	LIST_FOREACH(ifaux, &conf->iface_list, entry) {
+	dontloop:
 		if (iface != NULL)
 			ifaux = iface;
 		if ((pge_if = calloc(1, sizeof(*pge_if))) == NULL)
@@ -1080,6 +1086,9 @@ pg_new_workstation(struct iface *iface)
 	if ((pg = calloc(1, sizeof(*pg))) == NULL)
 		fatal("calloc");
 	/* TODO turn this into a function, same as pg_new_primary() */
+	if (snprintf(pg->name, sizeof(pg->name), "%s_workstation", iface->name)
+	    >= (int)sizeof(pg->name))
+		errx(1, "workstation name too big");
 	pg->flags = PG_FLAG_INTERNAL;
 	pg->c	  = NULL;	/* No controller for internal pgs */
 	LIST_INIT(&pg->pge_list);

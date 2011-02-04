@@ -430,6 +430,7 @@ if_new(struct kif *kif)
 	
 	/* get the primary group for this interface */
 	iface->pg_primary = pg_new_primary(iface);
+	iface->pg_workstation = pg_new_workstation(iface);
 
 	free(ifr);
 	close(s);
