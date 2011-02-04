@@ -59,6 +59,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	struct rrset	 mlkup, *rrs;
 	struct rr	*rr;
 	struct query 	*q;
+	struct iface	*iface;
 	struct timeval	 tv;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
@@ -100,7 +101,23 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 
 	log_debug("looking up %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
+	
+	/*
+	 * Look for answers in our published records.
+	 */
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		LIST_FOREACH(rr, &iface->auth_rr_list, centry) {
+			if (!ANSWERS(&mlkup, &rr->rrs))
+				continue;
+			if (control_send_rr(c, rr, IMSG_CTL_LOOKUP) == -1)
+				log_warnx("control_send_rr error 1");
+			return;
+		}
+	}
 
+	/*
+	 * Look for answers in our cache
+	 */
 	rr = cache_lookup(&mlkup);
 	/* cache hit */
 	if (rr != NULL) {
@@ -137,6 +154,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	struct rrset	 mlkup, *rrs;
 	struct rr	*rr;
 	struct query 	*q;
+	struct iface	*iface;
 	struct timeval	 tv;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
@@ -170,11 +188,26 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
-
+	
+	/*
+	 * Look for answers in our published records.
+	 */
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		LIST_FOREACH(rr, &iface->auth_rr_list, centry) {
+			if (!ANSWERS(&mlkup, &rr->rrs))
+				continue;
+			if (control_send_rr(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
+				log_warnx("control_send_rr error 1");
+		}
+	}
+	
+	/*
+	 * Look for answers in our cache
+	 */
 	rr = cache_lookup(&mlkup);
 	while (rr != NULL) {
 		if (control_send_rr(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
-			log_warnx("control_send_rr error");
+			log_warnx("control_send_rr error 2");
 		rr = LIST_NEXT(rr, centry);
 	}
 
@@ -733,8 +766,40 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	struct rr *srv, *txt, *a;
 	struct rrset rrs;
 	struct mdns_service ms;
+	int our = 0;
+	
+	srv = txt = a = NULL;
 	
 	log_debug("control_try_answer_ms %s", dname);
+	strlcpy(rrs.dname, dname, sizeof(rrs.dname));
+	rrs.class = C_IN;
+	rrs.type = T_SRV;
+	/* Look for answers in our published records. */
+	if ((srv = auth_lookup_rr(NULL, &rrs)) != NULL)
+		our++;
+	rrs.type = T_TXT;
+	if ((txt = auth_lookup_rr(NULL, &rrs)) != NULL)
+		our++;
+	if (srv != NULL) {
+		strlcpy(rrs.dname, srv->rdata.SRV.target,
+		    sizeof(rrs.dname));
+		rrs.type = T_A;
+		if ((a = auth_lookup_rr(NULL, &rrs)) != NULL)
+			our++;
+	}
+	if (our > 0) {
+		if (our != 3) {
+			log_warnx("control_try_answer_ms: Invalid our "
+			    "value for dname %s (%d)", dname, our);
+			return (0);
+		}
+		/* We have them all */
+		goto answer;
+	}
+
+	/*
+	 * Look for answers in our cache
+	 */
 	strlcpy(rrs.dname, dname, sizeof(rrs.dname));
 	rrs.class = C_IN;
 	rrs.type = T_SRV;
@@ -747,7 +812,7 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	rrs.type = T_A;
 	if ((a = cache_lookup(&rrs)) == NULL)
 		return (0);
-	
+answer:
 	bzero(&ms, sizeof(ms));
 	strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
 	/* TODO revise ms.target */

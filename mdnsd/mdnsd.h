@@ -49,10 +49,10 @@
 #define FIRST_QUERYTIME		(arc4random_uniform(120000) + 20000)
 #define MAXQUERYTIME		(60 * 60) /* one hour */
 
-#define ANSWERS(q, rr)							\
-	((((q)->rrs.type == T_ANY) || ((q)->rrs.type == (rr)->rrs.type)) && \
-	    (q)->rrs.class == (rr)->rrs.class                            && \
-	    (strcmp((q)->rrs.dname, (rr)->rrs.dname)) == 0)
+#define ANSWERS(qrrs, rrs)						\
+	((((qrrs)->type == T_ANY) || ((qrrs)->type == (rrs)->type))  && \
+	    (qrrs)->class == (rrs)->class                            &&	\
+	    (strcmp((qrrs)->dname, (rrs)->dname)) == 0)
 
 #define RR_UNIQ(rr) (rr->cacheflush)
 
@@ -357,7 +357,7 @@ void		 pge_kill(struct pge *);
 void		 pge_if_fsm(int, short, void *);
 void		 pge_if_fsm_restart(struct pge_if *, struct timeval *);
 void		 pge_if_send_goodbye(struct pge_if *);
-struct rr *	 auth_lookup_rr(struct iface *, struct question *);
+struct rr *	 auth_lookup_rr(struct iface *, struct rrset *);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;

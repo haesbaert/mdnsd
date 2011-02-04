@@ -831,8 +831,10 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 			/*
 			 * Link to published resource records
 			 */
-			LIST_FOREACH(rr, &pge_if->rr_list, gentry)
-			    LIST_INSERT_HEAD(&iface->auth_rr_list, rr, centry);
+			LIST_FOREACH(rr, &pge_if->rr_list, gentry) {
+				LIST_INSERT_HEAD(&iface->auth_rr_list, rr,
+				    centry);
+			}
 		}
 		timerclear(&tv);
 		tv.tv_usec = INTERVAL_PROBETIME;
@@ -1174,13 +1176,22 @@ pg_rr_in_conflict(struct rr *rr)
  * Check if we have a RR that answers the given question.
  */
 struct rr *
-auth_lookup_rr(struct iface *iface, struct question *qst)
+auth_lookup_rr(struct iface *iface, struct rrset *qrrs)
 {
 	struct rr *rr;
+	struct iface *ifaux;
 
-	LIST_FOREACH(rr, &iface->auth_rr_list, centry)
-		if (ANSWERS(qst, rr))
-			return (rr);
+	LIST_FOREACH(ifaux, &conf->iface_list, entry) {
+		if (iface != NULL)
+			ifaux = iface;
+		LIST_FOREACH(rr, &ifaux->auth_rr_list, centry) {
+			if (ANSWERS(qrrs, &rr->rrs))
+				return (rr);
+		}
+		if (iface != NULL)
+			break;
+	}
+	
 	return (NULL);
 }
 

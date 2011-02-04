@@ -1035,7 +1035,7 @@ pkt_handleq(struct pkt *pkt)
 		 * XXX: O(n), make this a tree some day.
 		 */
 		LIST_FOREACH(rr, &pkt->iface->auth_rr_list, centry) {
-			if (!ANSWERS(qst, rr))
+			if (!ANSWERS(&qst->rrs, &rr->rrs))
 				continue;
 			pkt_add_anrr(&sendpkt, rr);
 		}
@@ -1070,14 +1070,14 @@ pkt_should_answerq(struct pkt *pkt, struct question *qst)
 	 * supposed to answer.
 	 */
 	LIST_FOREACH(rr, &pkt->nslist, pentry)
-		if (ANSWERS(qst, rr))
+		if (ANSWERS(&qst->rrs, &rr->rrs))
 			return (0);
 	/*
 	 * Check if the answer we would give isn't already in the known answer
 	 * supression list, that is, check that the answer isn't in the answer
 	 * section with a ttl at least half the original value. 
 	 */
-	rrans = auth_lookup_rr(pkt->iface, qst);
+	rrans = auth_lookup_rr(pkt->iface, &qst->rrs);
 	/* We've no answers for it, we should try to answer, but we
 	 * already know we can't so return 0, this is a speed hack. */
 	if (rrans == NULL)
