@@ -377,9 +377,10 @@ mdns_read(struct mdns *m)
 				return (-1);
 			memcpy(groupname, imsg.data, sizeof(groupname));
 			r = mdns_handle_group(m, groupname, ev);
-
-
+			break;
 		default:
+			/* TODO remove this once in the wild */
+			warnx("Unknown imsg type %d", imsg.hdr.type);
 			return (-1);
 		}
 		
