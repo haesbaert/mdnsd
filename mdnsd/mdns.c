@@ -834,6 +834,7 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 			LIST_FOREACH(rr, &pge_if->rr_list, gentry) {
 				LIST_INSERT_HEAD(&iface->auth_rr_list, rr,
 				    centry);
+				rr_notify_in(rr);
 			}
 		}
 		timerclear(&tv);
