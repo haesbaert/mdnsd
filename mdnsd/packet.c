@@ -671,12 +671,15 @@ rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
 	rr->rrs.class = class;
 	rr->ttl = ttl;
 	rr->cacheflush = cacheflush;
-	if (rdlen > sizeof(rr->rdata)) {
-		log_debug("rr_set: Invalid rdlen %zd", rdlen);
-		return (-1);
-	}
-	memcpy(&rr->rdata, rdata, rdlen);
 	strlcpy(rr->rrs.dname, dname, sizeof(rr->rrs.dname));
+	
+	if (rdata != NULL) {
+		if (rdlen > sizeof(rr->rdata)) {
+			log_debug("rr_set: Invalid rdlen %zd", rdlen);
+			return (-1);
+		}
+		memcpy(&rr->rdata, rdata, rdlen);
+	}
 
 	return (0);
 }

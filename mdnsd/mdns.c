@@ -654,15 +654,13 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 	/* T_SRV */
 	if ((srv = calloc(1, sizeof(*srv))) == NULL)
 		fatal("calloc");
-	(void)strlcpy(srv->rdata.SRV.target, conf->myname,
+	(void)rr_set(srv, servname, T_SRV, C_IN, TTL_SRV, 1,
+	    NULL, 0);
+	(void)strlcpy(srv->rdata.SRV.target, ms->target,
 	    sizeof(srv->rdata.SRV.target));
 	srv->rdata.SRV.priority = ms->priority;
 	srv->rdata.SRV.weight = ms->weight;
 	srv->rdata.SRV.port = ms->port;
-	(void)rr_set(srv, servname, T_SRV, C_IN, TTL_SRV, 1,
-	    &srv->rdata, sizeof(srv->rdata));
-	(void)strlcpy(srv->rdata.SRV.target, ms->target,
-	    sizeof(srv->rdata.SRV.target));
 	/* Question */
 	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
