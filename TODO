@@ -16,7 +16,6 @@ Setup
   
 Code
 -----------------
-  * Implement controller publishing notifications.
   * Fix reported nmap BUG.
   * Move all mdns related globals to mdnsd structure, rename
   mdnsd_conf to mdnsd, too many scattered lists through code.
@@ -25,6 +24,7 @@ Code
   * Conflict name resolution.
   * Check for possible overruns when parsing packets, specially in
   name pointers.
+  * Implement controller publishing notifications. DONE
   * Publish commands in mdnsctl. DONE
   * Remove all static declarations, I'm sick of breaking lines. DONE.
   * [BUG] When a service is unpublished/published it comes up twice. DONE.
