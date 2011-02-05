@@ -941,9 +941,13 @@ pge_kill(struct pge *pge)
 			/*
 			 * If we've reached at least PGE_IF_STA_ANNOUNCING,
 			 * this is a published RR and is linked in auth_rr_list.
+			 * Also notify any interested controller that this
+			 * service has been unpublished.
 			 */
-			if (pge_if->if_state >= PGE_IF_STA_ANNOUNCING)
+			if (pge_if->if_state >= PGE_IF_STA_ANNOUNCING) {
+				rr_notify_out(rr);
 				LIST_REMOVE(rr, centry);
+			}
 			free(rr);
 		}
 		LIST_REMOVE(pge_if, entry);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
+ * Copyright (c) 2010, 2011 Christiano F. Haesbaert <haesbaert@haesbaert.org>
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
