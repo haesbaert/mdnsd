@@ -248,7 +248,7 @@ main(int argc, char *argv[])
 
 	/* check for mdnsd user */
 	if ((pw = getpwnam(MDNSD_USER)) == NULL)
-		fatal("getpwnam");
+		fatal("getpwnam, make sure you have user and group _mdnsd");
 	
 	log_init(debug);
 
