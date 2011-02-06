@@ -1,0 +1,167 @@
+.\"
+.\" Copyright (c) 2010, 2011, Christiano F. Haesbaert <haesbaert@haesbaert.org>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: Feb 06 2011 $
+.Dt mdnsd 8
+.Os
+.Sh NAME
+.Nm mdnsd
+.Nd "Multicast DNS/DNS-SD daemon"
+.Sh SYNOPSIS
+.Nm
+.Op Fl dvw
+.Ar ifname
+.Op Ar ifnames ...
+.Sh DESCRIPTION
+.Nm
+is a Multicast Domain Name System
+.Pq MDNS
+daemon which acts as the host mdns querier and responder.
+.Nm
+supports both raw MDNS as well as DNS-SD (Service Discovery) as described in the
+MDNS and DNS-SD drafts.
+.Pp
+MDNS is a way to perform DNS-like operations via multicast on the local link,
+there is no hierarchy or multiple domains as in conventional unicast DNS. MDNS
+provides a way for hosts to co-operate and maintain a cache name database which
+can be used to resolve local host names without the need of a central DNS
+server.
+.Pp
+DNS-SD is a convention on some names used in MDNS to provide hosts with Service
+Discovery capabilities.
+
+A host can publish a service of any type, be it a HTTP server, NTP server, a
+Printer and so on, this services can then be browsed and resolved by the other
+hosts on the local network.
+.Pp
+There are basically two roles in a MDNS environment, the Querier, and the
+Responder.
+
+The Querier is the entity responsible for sending questions and MDNS
+requests on the local link, it can't be done as is in libc where each process
+does it's own lookup, there must be something centralizing all the requests are
+there are various complications implied, as cache, timers and so on.
+.Pp
+The Responder is the entity responsible for answering those queries, there
+should be only one responder per host. Both roles are performed by MDNS.
+
+MDNS operates on the All-Link-Local Multicast address 224.0.0.251 under UDP port
+5353. There are no multiple domains in MDNS as in unicast DNS, the .local domain
+name is the single MDNS domain name and it's where all the queries and answers
+take place.
+.Pp
+There are three basic types of MDNS question, in which
+.Nm
+uses two of them.
+
+The One-Shot Query, which resembles unicast DNS, where a single question is sent
+and a answer is expected, if no answer is received it means no one can answer
+that question. This question is used for simple lookups.
+.Pp
+Continuous Multicast Query is a more complex way of querying, the querier will
+send the same question multiple times, doubling the interval between each time
+and multiple answers and be received, it's used as a way for monitoring the
+Resource Records on the network. This question is mainly used by network
+browsing in DNS-SD, where a question for a type of service may enumerate one or
+more instances, for example, if browsing for the HTTP servers, there may be one
+or more servers (instances).
+
+To diminish the volume of redundant answers, a feature called Known Answer
+Suppression is present, in which the querier when performing a Continuous
+Multicast Query places all the previous known answers in the additional section
+of the MDNS packet, thus, any answer that would be given which is already in the
+additional section is suppressed.
+.Pp
+There are two type of Resource Records, Unique and Shared.
+.Pp
+Unique records are the ones which there may be only one answer for it in the
+local name, the A, PTR and HINFO under the hostname.local name is an example of
+Unique record, it would be strange if two hosts would answer an address for the
+same foobar.local. All Unique records must be Probed to verify it's uniqueness,
+if a conflict is found, another name must be chosen (Unimplemented).
+.Pp
+A Shared record is used for PTR records in DNS-SD, a host may have as many
+answers as necessary for a shared record, it's used only in network browsing,
+where there may be multiple instances of the same service.
+.PP
+To access the MDNS services, a libmdns library will be provided in the near
+future, programs will then, be able to link with libmdns and publish its own
+services though MDNS. By now, only mdnsctl(8) is provided which is a command
+line interface to the daemon in the same fashion as ripctl(8) and ospfctl(8).
+.Pp
+When
+.Nm
+starts up, it probes for it's hostname, fetched from /etc/myname, on the network
+and if there isn't a conflict, it publishes an A and a PTR record for itself,
+both records will be under the .local domain, which is the MDNS single domain
+name. All the other domain names in /etc/myname will be stripped, therefore
+foo.bar.midearth becomes foo.local, which can be resolved through MDNS. If a
+conflict is found, read, there is another foo.local in the network, conflict
+resolution will take place (Unimplemented yet).
+.Pp
+If -w was not specified,
+.Nm
+will also publish a Workstation service, this service has no data itself, it's
+used to state that the host is up, it can be used for example, to browse every
+powered host on the local network.
+.Pp
+.Nm
+supports multiple interfaces, the interfaces used must be specified as the
+arguments.
+.PP
+.Nm
+must be started as root and upon start up it will drop privileges, change it's
+euid/egid to _mdnsd and chroot. Therefore make sure you have user and group
+_mdnsd created.
+.Pp
+MDNS operations can be done with the
+.Xr mdnsctl 8
+utility.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl d
+Do not daemonize.
+If this option is specified, debugging will be enabled,
+.Nm
+will run in the foreground and log to
+.Em stderr .
+.It Fl w
+Do not publish a workstation service on startup.
+.It Fl v
+Print version and exit.
+.El
+.Sh FILES
+.Bl -tag -width "/var/run/mdnsd.sockXX" -compact
+.It /var/run/mdnsd.sock
+.Ux Ns -domain
+socket used for communication with
+.Xr mdnsctl 8 .
+.El
+.Sh SEE ALSO
+.Xr mdnsctl 8
+.Rs
+.%R http://files.multicastdns.org/draft-cheshire-dnsext-multicastdns.txt
+.%T "MDNS Draft"
+.%D July 2010
+.Re
+.Rs
+.%R http://files.dns-sd.org/draft-cheshire-dnsext-dns-sd.txt 
+.%T "DNS-SD Draft"
+.%D January 2011
+.Re
+.Sh BUGS
+No support for name conflict resolution. Bugs in packet parser as it won't
+survive some forms of portscan. No proper error return in mdnsl.c.

@@ -2,7 +2,7 @@ PROG=	mdnsd
 SRCS=	log.c mdnsd.c kiface.c interface.c packet.c \
 	control.c mdns.c ../mdnsctl/mdnsl.c
 
-#MAN=	mdnsd.8
+MAN=	mdnsd.8
 VERSION=pre-alpha (2011-02-05)
 
 CFLAGS+=-DVERSION="\"${VERSION}\""
@@ -15,3 +15,4 @@ LDADD+= -levent -lutil
 DPADD+= ${LIBEVENT} ${LIBUTIL}
 
 .include <bsd.prog.mk>
+.include <bsd.man.mk>
