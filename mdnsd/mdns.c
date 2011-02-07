@@ -154,10 +154,10 @@ cache_insert(struct rr *rr)
 			rraux->ttl = rr->ttl;
 			rraux->revision = 0;
 			cache_schedrev(rraux);
-			free(rr);
 			log_debug("cache_insert: (cache refresh) "
 			    "type: %s name: %s",
 			    rr_type_name(rr->rrs.type), rr->rrs.dname);
+			free(rr);
 			return (0);
 		}
 	}
@@ -818,7 +818,7 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		/* Add the RRs in the ns section */
 		LIST_FOREACH(rr, &pge_if->rr_list, gentry)
 			pkt_add_nsrr(&pkt, rr);
-		if (pkt_send_if(&pkt, iface) == -1)
+		if (pkt_send_if(&pkt, iface, NULL) == -1)
 			log_warnx("can't send probe packet "
 			    "to iface %s", iface->name);
 		/* Probing done, start announcing */
@@ -865,7 +865,7 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 				log_warnx("pge_if_fsm: T_A not found for "
 				    "primary group. Not including T_A !");
 		}
-		if (pkt_send_if(&pkt, iface) == -1)
+		if (pkt_send_if(&pkt, iface, NULL) == -1)
 			log_warnx("can't send probe packet "
 			    "to iface %s", iface->name);
 		if (++pge_if->if_sent < 3)  {
@@ -907,7 +907,7 @@ pge_if_send_goodbye(struct pge_if *pge_if)
 		pkt_add_anrr(&pkt, rr);
 	}
 
-	if (pkt_send_if(&pkt, pge_if->iface) == -1)
+	if (pkt_send_if(&pkt, pge_if->iface, NULL) == -1)
 		log_warnx("can't send goodbye packet "
 		    "to iface %s", pge_if->iface->name);
 }

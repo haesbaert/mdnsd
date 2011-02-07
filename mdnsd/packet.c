@@ -440,9 +440,9 @@ pkt_process(int unused, short event, void *v_pkt)
 }
 
 int
-pkt_send_if(struct pkt *pkt, struct iface *iface)
+pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 {
-	struct sockaddr_in	 dst;
+	struct sockaddr_in	 all_mdns;
 	static u_int8_t		 buf[MAXPACKET];
 	struct question		*qst;
 	struct rr		*rr;
@@ -450,10 +450,14 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 	u_int8_t		*pbuf;
 	ssize_t			 n, left;
 
-	inet_aton(ALL_MDNS_DEVICES, &dst.sin_addr);
-	dst.sin_port   = htons(MDNS_PORT);
-	dst.sin_family = AF_INET;
-	dst.sin_len    = sizeof(struct sockaddr_in);
+	inet_aton(ALL_MDNS_DEVICES, &all_mdns.sin_addr);
+	all_mdns.sin_port   = htons(MDNS_PORT);
+	all_mdns.sin_family = AF_INET;
+	all_mdns.sin_len    = sizeof(struct sockaddr_in);
+
+	/* If dst not specified, send to mcast addr */
+	if (pdst == NULL)
+		pdst = &all_mdns;
 	if (iface->mtu > MAXPACKET) {
 		log_warnx("pkt_send_if: insane mtu");
 		return (-1);
@@ -523,7 +527,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 			/* Set truncation bit and close packet */
 			h->tc = 1;
 			header_htons(h);
-			if (send_packet(iface, buf, pbuf - buf, &dst) == -1)
+			if (send_packet(iface, buf, pbuf - buf, pdst) == -1)
 				return (-1);
 			/* Reset states */
 			bzero(buf, sizeof(buf));
@@ -572,10 +576,9 @@ pkt_send_if(struct pkt *pkt, struct iface *iface)
 		left -= n;
 	}
 
-
 	/* Close packet and send. */
 	header_htons(h);
-	if (send_packet(iface, buf, pbuf - buf, &dst) == -1)
+	if (send_packet(iface, buf, pbuf - buf, pdst) == -1)
 		return (-1);
 	return (0);
 }
@@ -586,7 +589,7 @@ pkt_send_allif(struct pkt *pkt)
 	struct iface	*iface = NULL;
 	int		 succ  = 0;
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		if (pkt_send_if(pkt, iface) == -1)
+		if (pkt_send_if(pkt, iface, NULL) == -1)
 			log_warnx("Can't send packet through %s", iface->name);
 		else
 			succ++;
@@ -1013,19 +1016,21 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 int
 pkt_handleq(struct pkt *pkt)
 {
-	struct question *qst;
-	struct rr	*rr;
-	struct pkt	sendpkt;
+	struct question		*qst;
+	struct rr		*rr;
+	struct pkt		 sendpkt;
+	struct sockaddr_in	 *pdst;
 
 	/* TODO: Mdns draft 6.3 Duplicate Question Suppression */
 	
 	pkt_init(&sendpkt);
 	sendpkt.h.qr = MDNS_RESPONSE;
 	sendpkt.iface = pkt->iface;
+	pdst = NULL;
 	while ((qst = LIST_FIRST(&pkt->qlist)) != NULL) {
 		/*
-		 * Discard question which shouldn't be handled, can be a probing
-		 * query or we may be already listed in the known answer
+		 * Discard questions which shouldn't be handled, can be a
+		 * probing query or we may be already listed in the known answer
 		 * supression list.
 		 */
 		if (!pkt_should_answerq(pkt, qst)) {
@@ -1042,17 +1047,24 @@ pkt_handleq(struct pkt *pkt)
 				continue;
 			pkt_add_anrr(&sendpkt, rr);
 		}
-		/*
-		 * If we have answers, send it.
-		 */
-		if (sendpkt.h.ancount > 0)
-			if (pkt_send_if(&sendpkt, sendpkt.iface) == -1)
-				log_warnx("Can't send packet to"
-				    "%s", pkt->iface->name);
+		
+		/* If this is a unicast question, send answer back to querier */
+		if (qst->src.s_addr != NULL)
+			pdst = &pkt->ipsrc;
 		
 		LIST_REMOVE(qst, entry);
 		free(qst);
+		
 	}
+	
+	/*
+	 * If we have answers, send it.
+	 */
+	if (sendpkt.h.ancount > 0)
+		if (pkt_send_if(&sendpkt, sendpkt.iface, pdst) == -1)
+			log_warnx("Can't send packet to"
+			    "%s", pkt->iface->name);
+
 	
 	return (0);
 }

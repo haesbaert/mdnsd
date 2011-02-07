@@ -308,7 +308,7 @@ void	  packet_init(void);
 void	  recv_packet(int, short, void *);   
 int	  send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
 void	  pkt_process(int, short, void *);
-int	  pkt_send_if(struct pkt *, struct iface *);
+int	  pkt_send_if(struct pkt *, struct iface *, struct sockaddr_in *);
 int	  pkt_send_allif(struct pkt *);
 void	  pkt_init(struct pkt *);
 void	  pkt_cleanup(struct pkt *);
