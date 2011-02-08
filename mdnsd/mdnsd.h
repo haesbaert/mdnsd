@@ -358,6 +358,7 @@ void		 pge_if_fsm(int, short, void *);
 void		 pge_if_fsm_restart(struct pge_if *, struct timeval *);
 void		 pge_if_send_goodbye(struct pge_if *);
 struct rr *	 auth_lookup_rr(struct iface *, struct rrset *);
+void		 auth_unpublish_all(void);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;

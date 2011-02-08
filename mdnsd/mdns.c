@@ -1203,3 +1203,22 @@ auth_lookup_rr(struct iface *iface, struct rrset *qrrs)
 	return (NULL);
 }
 
+void
+auth_unpublish_all(void)
+{
+	struct pkt	 pkt;
+	struct iface	*iface;
+	struct rr	*rr;
+
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		pkt_init(&pkt);
+		pkt.h.qr = MDNS_RESPONSE;
+		LIST_FOREACH(rr, &iface->auth_rr_list, centry) {
+			rr->ttl = 0;
+			pkt_add_anrr(&pkt, rr);
+		}
+		if (pkt_send_if(&pkt, iface, NULL) == -1)
+			log_warnx("can't send goodbye packet "
+			    "to iface %s", iface->name);
+	}
+}

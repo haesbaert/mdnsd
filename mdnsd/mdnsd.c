@@ -122,7 +122,12 @@ void
 mdnsd_shutdown(void)
 {
 	struct iface	*iface;
-
+	
+	/*
+	 * Send goodbye RR for all published records.
+	 */
+	auth_unpublish_all();
+	
 	while ((iface = LIST_FIRST(&conf->iface_list)) != NULL) {
 		LIST_REMOVE(iface, entry);
 		free(iface);
