@@ -1086,6 +1086,7 @@ pg_new_workstation(struct iface *iface)
 {
 	struct mdns_service	 ms;
 	struct pg		*pg;
+	char			 myname[MAXLABELLEN], *cp;
 	
 	/* Alloc a new internal group */
 	if ((pg = calloc(1, sizeof(*pg))) == NULL)
@@ -1101,10 +1102,14 @@ pg_new_workstation(struct iface *iface)
 	/* Build our service */
 	bzero(&ms, sizeof(ms));
 	ms.port = 9;	/* workstation stuff */
-	strlcpy(ms.app, "Workstation", sizeof(ms.app));
-	strlcpy(ms.proto, "tcp", sizeof(ms.app));
+	(void)strlcpy(ms.app, "workstation", sizeof(ms.app));
+	(void)strlcpy(ms.proto, "tcp", sizeof(ms.app));
+	(void)strlcpy(myname, conf->myname, sizeof(myname));
+	/* Chomp .local suffix */
+	if ((cp = strchr(myname, '.')) != NULL)
+		*cp = '\0';
 	if (snprintf(ms.name, sizeof(ms.name),
-	    "%s [%s:%s]", conf->myname, iface->name,
+	    "%s [%s:%s]", myname, iface->name,
 	    ether_ntoa(&iface->ea)) >= (int)sizeof(ms.name))
 		log_warnx("Workstation name too long");
 	strlcpy(ms.target, conf->myname, sizeof(ms.target));
