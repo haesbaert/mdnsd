@@ -2,6 +2,11 @@ Copyright (c) 2010, Christiano F. Haesbaert <haesbaert@haesbaert.org>
 
            Multicast Domain Name System for OpenBSD
            ----------------------------------------
+	   
+Quickstart
+---------
+If you're looking for a quickstart jump to the end of this document.
+
 Intro
 -----
 This is an attempt to bring native mdns/dns-sd to OpenBSD. Mainly
@@ -86,7 +91,7 @@ curious.
 MDNSCTL
 -------
      It's a simple interface for the library, code is inspired in
-     ripctl. By now you can use it to lookup hosts and browse
+     ripctl. By now you can use it to lookup hosts, and browse and publish
      services.
 
 How do I use this thing ?
@@ -95,9 +100,21 @@ How do I use this thing ?
      Add user and group _mdnsd
      Compile and install mdnsd and mdnsctl
      Make sure you have proper multicast setup (man 7 netstart), or
-     just add a route to lo0:
+     just delete the default reject route:
           route delete 224/4
-          route add 224/4 127.0.0.1
      
-     Run mdnsd on the desired interface: mdnsd -d iface
-     Play with mdnsctl :)
+     Run mdnsd on the desired interface: mdnsd -d rl0
+     Play with mdnsctl:
+     # Lookup a host as well as the HINFO record
+     mdnsctl lookup -h foobar.local
+     # Reverse lookup an address
+     mdnsctl rlookup 192.168.8.32
+     # Browse up all services in the local network
+     mdnsctl browse all
+     # Browse and resolve all services
+     mdnsctl browse -r all
+     # Browse and resolve all the http services in the local network
+     mdnsctl browse -r http tcp
+     # Publish a simple ftp service
+     mdnsctl publish myftp ftp tcp 21 "user=foobar"
+     
