@@ -70,18 +70,17 @@ The basic data flow would be:
 LIBMDNS Design (API)
 --------------------
 
-Libmdns is a shared library in which programs can link against in
-order to have mdns capabilities, like publishing services, browsing
-the network and so on, by now the only thing it does is resolving mdns
-names and browsing for services, no publishing capabilities yet. All
-the library does is sending and receiving messages to mdnsd through
-the imsg framework.  The library should provide in the near future:
+Libmdns is a shared library in which programs can link against in order to have
+mdns capabilities, like publishing services, browsing the network and so on, by
+now you can lookup resources, browse and publish services. All the library does
+is sending and receiving messages to mdnsd through the imsg framework.  The
+library should provides:
     * Means for looking up names. (DONE)
-    * Means for publishing names.
+    * Means for publishing names. (DONE)
     * Means for browsing services (dns-service-discovery). (DONE)
-    * Means for publishing services.
-By now no library is being used to make it easier for people to test
-mdnsctl, everything is being kept on mdnsl.c in mdnsctl/.
+    * Means for publishing services. (DONE)
+By now no library is being used to make it easier for people to test mdnsctl
+(read no shared objecto), everything is being kept on mdnsl.c in mdnsctl/.
 
 On libc integration:
 After a chat with nicm@ we have decided not to worry about libc right
