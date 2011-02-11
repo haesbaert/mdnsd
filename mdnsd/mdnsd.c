@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include "version.h"
 #include "mdnsd.h"
 #include "mdns.h"
 #include "log.h"
@@ -61,7 +62,7 @@ usage(void)
 __dead void
 display_version(void)
 {
-	printf("OpenMdns Daemon %s\n", VERSION);
+	printf("OpenMdns Daemon %s\n", MDNS_VERSION);
 	printf("Copyright (C) 2010-2011 Christiano F. Haesbaert\n");
 	
 	exit(0);

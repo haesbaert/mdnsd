@@ -1,9 +1,7 @@
-.PATH:	${.CURDIR}/../mdnsd
-
 PROG=	mdnsctl
 SRCS=	mdnsctl.c parser.c mdnsl.c 
 
-pCFLAGS+= -g -Wall
+CFLAGS+= -g -Wall
 CFLAGS+= -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS+= -Wmissing-declarations
 CFLAGS+= -Wshadow -Wpointer-arith -Wcast-qual
