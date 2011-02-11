@@ -47,6 +47,7 @@
 #define CACHEFLUSH_MSK	0x8000
 #define CLASS_MSK	~0x8000
 #define UNIRESP_MSK	0x8000
+#define NAMECOMP_BYTE_MSK 0xc0 	/* TODO unify this someday */
 #define NAMECOMP_MSK	0xc000
 #define NAMEADDR_MSK	~0xc000
 #define MAXLABELS	128
@@ -854,18 +855,42 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 
 	for (i = 0; i < MAXLABELS; i++) {
 		/* check if head is a pointer */
-		if (*buf & 0xc0) {
-			u_int16_t us;
+		if (*buf & NAMECOMP_BYTE_MSK) {
+			u_int16_t us, ncoff;
 
 			GETSHORT(us, buf);
 			if (!jumped)
 				len -= INT16SZ;
-			buf = pktcomp.start + (us & NAMEADDR_MSK);
+			ncoff = us & NAMEADDR_MSK;
+			/*
+			 * Prevent the following:
+			 * 1. Pointers should only point backward.
+			 * 2. No pointer should point past buf.
+			 */
+			if (ncoff > pktcomp.len - len) {
+				log_warnx("Invalid NC pointer");
+				return (-1);
+			}
+			buf = pktcomp.start + ncoff;
 			jumped = 1;
+		}
+		
+		/*
+		 * XXX No support for multiple pointers yet.
+		 */
+		if (*buf & NAMECOMP_BYTE_MSK) {
+			log_warnx("I can't cope with multiple compression"
+			    " pointers");
+			return (-1);
 		}
 
 		lablen = *buf++;
 
+		if (lablen > sizeof(label)) {
+			log_warnx("Invalid lablen, too big");
+			return (-1);
+		}
+			
 		if (!jumped)
 			len--;
 
