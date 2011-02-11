@@ -57,47 +57,47 @@
 #define RR_UNIQ(rr) (rr->cacheflush)
 
 struct rrset {
-	LIST_ENTRY(rrset) entry;
-	char            dname[MAXHOSTNAMELEN];
-	u_int16_t       type;
-	u_int16_t       class;
+	LIST_ENTRY(rrset) entry;	       /* List link */
+	char            dname[MAXHOSTNAMELEN]; /* Domain Name */
+	u_int16_t       type;		       /* RR type: T_A, T_PTR... */
+	u_int16_t       class;		       /* C_IN */
 };
 
 struct rrt_node {
-	RB_ENTRY(rrt_node)      entry;
-	struct rrset		rrs;
-	LIST_HEAD(, rr) 	hrr;	/* head rr */
+	RB_ENTRY(rrt_node)      entry; 	/* Cache RBTREE link */
+	struct rrset		rrs;	/* Cache head */
+	LIST_HEAD(, rr) 	hrr;	/* List of RR in this head */
 };
 RB_HEAD(rrt_tree, rrt_node);
 RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_cmp);
 
 struct hinfo {
-	char    cpu[MAXCHARSTR];
-	char    os[MAXCHARSTR];
+	char    cpu[MAXCHARSTR]; /* Cpu name */
+	char    os[MAXCHARSTR];	 /* Operating System name */
 };
 
 struct srv {
-	u_int16_t       priority;
-	u_int16_t       weight;
-	u_int16_t       port;
-	char            target[MAXHOSTNAMELEN];
+	u_int16_t       priority; /* Used only by application */
+	u_int16_t       weight;	  /* Used only by application */
+	u_int16_t       port;	  /* Service port, tcp or udp */
+	char            target[MAXHOSTNAMELEN]; /* Service host */
 };
 
 struct rr {
-	LIST_ENTRY(rr)		centry;	/* cache entry */
-	LIST_ENTRY(rr)		pentry;	/* packet entry */
-	LIST_ENTRY(rr)		gentry;	/* group entry */
-	struct rrset 		rrs;
-	int			cacheflush;
-	u_int32_t		ttl;
+	LIST_ENTRY(rr)		centry;	/* Cache entry */
+	LIST_ENTRY(rr)		pentry;	/* Packet entry */
+	LIST_ENTRY(rr)		gentry;	/* Group entry */
+	struct rrset 		rrs;	/* RR tripple */
+	int			cacheflush; /* Unique/Shared record */
+	u_int32_t		ttl;	/* DNS Time to live */
 	union {
-		struct in_addr	A;
-		char		CNAME[MAXHOSTNAMELEN];
-		char		PTR[MAXHOSTNAMELEN];
-		char		NS[MAXHOSTNAMELEN];
-		char		TXT[MAXCHARSTR];
-		struct srv	SRV;
-		struct hinfo	HINFO;
+		struct in_addr	A; 	/* IPv4 Address */
+		char		CNAME[MAXHOSTNAMELEN]; /* CNAME */
+		char		PTR[MAXHOSTNAMELEN];   /* PTR */
+		char		NS[MAXHOSTNAMELEN];    /* Name server */
+		char		TXT[MAXCHARSTR];       /* Text */
+		struct srv	SRV;		       /* Service */
+		struct hinfo	HINFO;		       /* Host Info */
 
 	} rdata;
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
@@ -106,68 +106,68 @@ struct rr {
 };
 
 struct pkt {
-	TAILQ_ENTRY(pkt)	entry;
-	HEADER			h;
+	TAILQ_ENTRY(pkt)	entry;	/* Deferred pkt queue */
+	HEADER			h;	/* Packet header */
 	LIST_HEAD(, question) 	qlist;	/* Question section */
 	LIST_HEAD(, rr)       	anlist;	/* Answer section */
 	LIST_HEAD(, rr)       	nslist;	/* Authority section */
 	LIST_HEAD(, rr)       	arlist;	/* Additional section */
-	struct sockaddr_in	ipsrc;
-	struct event		timer;
-	struct iface 	       *iface; /* The received interface */
+	struct sockaddr_in	ipsrc;	/* Received ipsource */
+	struct event		timer;	/* Timer for truncated pkts */
+	struct iface 	       *iface;  /* Received interface */
 };
 
 struct question {
-	LIST_ENTRY(question)	entry;
-	RB_ENTRY(question)	qst_entry;
-	struct rrset 		rrs;			
-	struct in_addr		src; /* If unicast response, src != 0 */
-	int			active;
-	u_int			sent;
-	struct timespec		lastsent;
-	struct timespec		sched;
+	LIST_ENTRY(question)	entry; 	   /* Packet link */
+	RB_ENTRY(question)	qst_entry; /* Question Tree link */
+	struct rrset 		rrs;	   /* RR tripple */
+	struct in_addr		src; 	   /* If unicast response, src.s_addr != 0 */
+	int			active;	   /* Active controllers */
+	u_int			sent;	   /* Used in question_fsm */
+	struct timespec		lastsent;  /* Last time we sent this question */
+	struct timespec		sched;	   /* Next scheduled time to send */
 };
 
 enum query_style {
-	QUERY_LOOKUP,
-	QUERY_BROWSE,
-	QUERY_RESOLVE,
+	QUERY_LOOKUP,		/* A simple single-shot query */
+	QUERY_BROWSE,		/* A Continuous Querying query */
+	QUERY_RESOLVE,		/* A service resolve query */
 };
 
 struct query {
-	LIST_ENTRY(query)	 entry;
-	LIST_HEAD(, rrset)	 rrslist;
-	struct ctl_conn		*ctl;
-	enum query_style	 style;
-	struct event		 timer;
-	u_int			 count;
+	LIST_ENTRY(query)	 entry;	 /* Query link */
+	LIST_HEAD(, rrset)	 rrslist;/* List of question tree keys */
+	struct ctl_conn		*ctl;	 /* Owner */
+	enum query_style	 style;	 /* Style */
+	struct event		 timer;	 /* query_fsm() timer */
+	u_int			 count;	 /* Used in query_fsm() */
 	struct rrset		*ms_srv; /* The SRV in QUERY_RESOLVE */
-	struct rrset		*br_ptr;
+	struct rrset		*br_ptr; /* The PTR in QUERY_BROWSE */
 };
 
 /* Publish Group */
 struct pg {
-	TAILQ_ENTRY(pg) 	entry;
-	LIST_HEAD(, pge) 	pge_list;
-	struct ctl_conn 	*c;
-	char 			name[MAXHOSTNAMELEN];
-	u_int 			flags;
-#define PG_FLAG_INTERNAL 0x01
-#define PG_FLAG_COMMITED 0x02
+	TAILQ_ENTRY(pg) 	entry; 		/* pg_queue link */
+	LIST_HEAD(, pge) 	pge_list;	/* List of pge */
+	struct ctl_conn 	*c;		/* Owner */
+	char 			name[MAXHOSTNAMELEN]; /* Name id */
+	u_int 			flags;		/* Misc flags */
+#define PG_FLAG_INTERNAL 0x01			/* No Owner/Controller */
+#define PG_FLAG_COMMITED 0x02			/* Controller sent commit */
 };
 
 /* Publish Group Entry types */
 enum pge_type {
-	PGE_TYPE_CUSTOM,
-	PGE_TYPE_SERVICE,
-	PGE_TYPE_ADDRESS
+	PGE_TYPE_CUSTOM,	/* Unused */
+	PGE_TYPE_SERVICE,	/* A DNS-SD Service */
+	PGE_TYPE_ADDRESS	/* A Primary Address */
 };
 
 enum pge_if_state {
-	PGE_IF_STA_UNPUBLISHED,
-	PGE_IF_STA_PROBING,
-	PGE_IF_STA_ANNOUNCING,
-	PGE_IF_STA_PUBLISHED,
+	PGE_IF_STA_UNPUBLISHED,		/* Initial state */
+	PGE_IF_STA_PROBING,		/* Probing state */
+	PGE_IF_STA_ANNOUNCING,		/* Considered announced */
+	PGE_IF_STA_PUBLISHED,		/* Finished announcing */
 };
 
 /* Publish Group Entry */
@@ -177,8 +177,8 @@ struct pge {
 	LIST_HEAD(, pge_if)	pge_if_list;	/* FSM list, one per iface */
 	struct pg 	       *pg;		/* Parent Publish Group */
 	enum pge_type 	 	pge_type;	/* Type of this entry */
-	u_int 		 	pge_flags;	
-#define PGE_FLAG_INC_A 0x01	/* Include primary A record */
+	u_int 		 	pge_flags;	/* Misc flags */
+#define PGE_FLAG_INC_A 0x01	/* Include primary T_A record */
 };
 	
 /* Publish Group Entry per iface state */
