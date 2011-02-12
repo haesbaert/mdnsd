@@ -216,6 +216,9 @@ rr_type_name(uint16_t type)
 	case T_NS:
 		return "NS";
 		break;		/* NOTREACHED */
+	case T_NSEC:
+		return "NSEC";
+		break;		/* NOTREACHED */
 	default:
 		log_debug("Unknown %d", type);
 		break;		/* NOTREACHED */
