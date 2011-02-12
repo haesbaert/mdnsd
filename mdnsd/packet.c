@@ -886,7 +886,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 
 		lablen = *buf++;
 
-		if (lablen > sizeof(label) || lablen > len) {
+		if (lablen > sizeof(label)) {
 			log_warnx("Invalid lablen, too big");
 			return (-1);
 		}
