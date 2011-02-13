@@ -1,0 +1,138 @@
+.\"
+.\" Copyright (c) 2010, 2011, Christiano F. Haesbaert <haesbaert@haesbaert.org>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: Feb 12 2011 $
+.Dt MDNSCTL 8
+.Os
+.Sh NAME
+.Nm mdnsctl
+.Nd control the Multicast Domain Server daemon
+.Sh SYNOPSIS
+.Nm
+.Ar command
+.Op Ar argument ...
+.Sh DESCRIPTION
+The
+.Nm
+program controls the
+.Xr mdnsd 8
+daemon, it can perform simples MDNS lookups, as well as browsing and publishing
+MDNS/DNS-SD services.
+.Pp
+The following commands are available:
+.Bl -tag -width xxxxxx
+.It Xo
+.Cm lookup
+.Op Ar rr-types
+.Cm Ar host.local
+.Xc
+Look up resource records for 
+.Ar host.local .
+The optional
+.Ar rr-types
+specifies which type of resource record should be looked up. It can be any
+combination of the following:
+.Pp
+.Bl -tag -width "   " -compact
+.It Cm -a
+A record (IPv4 Address). This is the default.
+.It Cm -h
+HINFO record (Host Information).
+.It Cm -s
+SRV record (Service). Unimplemented.
+.It Cm -t
+TXT record (Text). Unimplemented.
+.El
+.Pp
+.It Cm rlookup Ar a.b.c.d
+Reverse lookup an IPv4 address in the
+.Ar a.b.c.d
+form, use this to obtain the hostname of the given
+address.
+.It Xo
+.Cm browse
+.Op Fl r
+.Op Ar application proto
+.Xc
+Browse for application services of type
+.Ar application
+for the given transport protocol 
+.Ar proto .
+.Ar application
+may be any application service type, like http, workstation, ftp, printer...
+.Ar proto
+must be either tcp or udp. Defaults to all services if none specified.
+.It Xo
+.Cm publish
+.Ar service-name
+.Ar application
+.Ar proto
+.Ar port
+.Ar text-string
+.Xc
+Publish services via dns-sd,
+.Ar service-name
+is the unique chosen name for the service, it can be any string up to 63
+characters. The
+.Ar application
+is the application protocol for the service, like http, ftp...
+.Ar proto
+is the transport protocol, must be either tcp or udp.
+.Ar port
+is the tcp or udp port.
+.Ar text-string
+is the string in the TXT record for the given service, it can be used to
+express additional service information.
+.El
+.Sh FILES
+.Bl -tag -width "/var/run/mdnsctl.sockXX" -compact
+.It /var/run/mdnsctl.sock
+.Ux Ns -domain
+socket used for communication with
+.Xr mdnsd 8 .
+.El
+.Sh EXAMPLES
+The following examples demonstrate some basic uses of
+.Nm .
+.Bd -literal
+# Lookup a host A and HINFO record
+mdnsctl lookup -ah foobar.local
+
+# Reverse lookup an address
+mdnsctl rlookup 192.168.8.32
+
+# Browse up all services in the local network
+mdnsctl browse
+
+# Browse and resolve all services
+mdnsctl browse -r
+
+# Browse and resolve all the http services in the local network
+mdnsctl browse -r http tcp
+
+# Publish a simple ftp service
+mdnsctl publish myftp ftp tcp 21 "user=foobar"
+.Sh SEE ALSO
+.Xr mdnsd 8
+.Sh LICENSE
+.Nm
+is released under the ISC license.
+.Sh HISTORY
+The
+.Nm
+program version 0.1 was released in 13 February 2011.
+.Sh AUTHORS
+Christiano Farina Haesbaert <haesbaert@haesbaert.org>
+

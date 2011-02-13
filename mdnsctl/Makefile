@@ -10,6 +10,6 @@ CFLAGS+= -I${.CURDIR} -I${.CURDIR}/../mdnsd
 LDADD+= -lutil
 DPADD+=  ${LIBUTIL}
 
-#MAN=	mdnsctl.8
+MAN=	mdnsctl.8
 
 .include <bsd.prog.mk>
