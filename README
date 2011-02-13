@@ -109,9 +109,9 @@ How do I use this thing ?
      # Reverse lookup an address
      mdnsctl rlookup 192.168.8.32
      # Browse up all services in the local network
-     mdnsctl browse all
+     mdnsctl browse
      # Browse and resolve all services
-     mdnsctl browse -r all
+     mdnsctl browse -r
      # Browse and resolve all the http services in the local network
      mdnsctl browse -r http tcp
      # Publish a simple ftp service

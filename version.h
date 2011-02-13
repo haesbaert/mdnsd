@@ -18,7 +18,7 @@
 #define _MDNS_VERSION_H
 
 #ifndef MDNS_VERSION
-#define MDNS_VERSION "pre-alpha (2011-02-05)"
+#define MDNS_VERSION "0.1 (2011-02-13)"
 #endif	/* MDNS_VERSION */
 
 #endif	/* _MDNS_VERSION_H */
