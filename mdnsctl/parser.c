@@ -68,7 +68,7 @@ static const struct token t_publish_app_proto_port_txt[];
 static const struct token t_main[] = {
 	{KEYWORD,	"lookup",	NONE,		t_lookup},
 	{KEYWORD,	"rlookup",	NONE,		t_rlookup},
-	{KEYWORD,	"browse",	NONE,		t_browse_app},
+	{KEYWORD,	"browse",	BROWSE_PROTO,	t_browse_app},
 	{KEYWORD,	"publish",	NONE,		t_publish},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
@@ -86,8 +86,8 @@ static const struct token t_rlookup[] = {
 
 static const struct token t_browse_app[] = {
 	{ BRFLAGS,	"-",		NONE,		t_browse_app},
-	{ KEYWORD,	"all",		BROWSE_PROTO,	NULL},
 	{ APPPROTO,	"",		NONE,		t_browse_proto},
+	{ NOTOKEN,	"",		BROWSE_PROTO,	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -226,8 +226,7 @@ match_token(const char *word, const struct token *table)
 			}
 			break;
 		case APPPROTO:
-			if (word && *word != '-' &&
-			    (strcmp(word, "all") != 0)) {
+			if (word != NULL && *word != '-') {
 				res.app = word;
 				match++;
 				t = &table[i];
