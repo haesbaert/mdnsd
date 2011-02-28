@@ -63,7 +63,7 @@ int		 pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 ssize_t		 pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 int		 pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
 int		 pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
-int		 pkt_handleq(struct pkt *);
+int		 pkt_handleqst(struct pkt *);
 int		 pkt_should_answerq(struct pkt *, struct question *);
 ssize_t		 serialize_rr(struct rr *, u_int8_t *, u_int16_t);
 ssize_t		 serialize_question(struct question *, u_int8_t *, u_int16_t);
@@ -240,6 +240,10 @@ recv_packet(int fd, short event, void *bula)
 	/* Save the received interface */
 	pkt->iface = iface;
 	
+	/* Check if this is a legacy dns packet */
+	if (ntohs(pkt->ipsrc.sin_port) != MDNS_PORT)
+		pkt->flags |= PKT_FLAG_LEGACY;
+	
 	/* Parse question section */
 	if (pkt->h.qr == MDNS_QUERY)
 		for (i = 0; i < pkt->h.qdcount; i++)
@@ -380,8 +384,8 @@ pkt_process(int unused, short event, void *v_pkt)
 		TAILQ_REMOVE(&deferred_queue, pkt, entry);
 	}
 		
-	if (pkt_handleq(pkt) == -1) {
-		log_warnx("pkt_handleq() error");
+	if (pkt_handleqst(pkt) == -1) {
+		log_warnx("pkt_handleqst() error");
 		pkt_cleanup(pkt);
 		free(pkt);
 		return;
@@ -476,7 +480,10 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 		log_warnx("pkt_send_if: left < HDR_LEN");
 		return (-1);
 	}
-	/* Copy header. */
+	/* Copy header, field by field as we do our own calculations in
+	 * qdcount, ancount and etc... */
+	if (pkt->flags & PKT_FLAG_LEGACY)
+		h->id = pkt->h.id;
 	h->qr  = pkt->h.qr;
 	left  -= HDR_LEN;
 	pbuf  += HDR_LEN;
@@ -539,6 +546,8 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 			n    = 0;
 			pktcomp_reset(0, buf, left);
 			/* Copy header */
+			if (pkt->flags & PKT_FLAG_LEGACY)
+				h->id = pkt->h.id;
 			h->qr  = pkt->h.qr;
 			left  -= HDR_LEN;
 			pbuf  += HDR_LEN;
@@ -793,7 +802,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 
 	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
-
+	
 	n = pkt_parse_dname(*pbuf, *len, qst->rrs.dname);
 	if (n == -1) {
 		free(qst);
@@ -809,23 +818,16 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
 
-	if (us & UNIRESP_MSK) {
-		/* Unicast questions may have ephemeral source ports */
-		qst->src = pkt->ipsrc.sin_addr;
+	/* Deal with legacy packets */
+	if (pkt->flags & PKT_FLAG_LEGACY) {
+		qst->flags |= QST_FLAG_UNIRESP;
+		qst->rrs.class = us;
+	} else { /* Normal MDNS packets */
+		if (us & UNIRESP_MSK) 
+			qst->flags |= QST_FLAG_UNIRESP;
+		/* Get the class */
+		qst->rrs.class = us & CLASS_MSK;
 	}
-	else {
-		/* Make sure source port is MDNS_PORT */
-		if (ntohs(pkt->ipsrc.sin_port) != MDNS_PORT) {
-			log_warnx("pkt_parse_question: Non unicast question "
-			    "from %s:%u with ephemeral source port, "
-			    "droping packet", inet_ntoa(pkt->ipsrc.sin_addr),
-			    pkt->ipsrc.sin_port);
-			free(qst);
-			return (-1);
-		}
-			
-	}
-	qst->rrs.class = us & CLASS_MSK;
 
 	/* This really sucks, we can't know if the class is valid prior to
 	 * parsing the labels, I mean, we could but would be ugly */
@@ -1036,23 +1038,30 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	return (0);
 }
 
-/*
- * Handle all questions in pkt, will remove/free all pkt questions.
- */
 int
-pkt_handleq(struct pkt *pkt)
+pkt_handleqst(struct pkt *pkt)
 {
 	struct question		*qst;
 	struct rr		*rr;
 	struct pkt		 sendpkt;
-	struct sockaddr_in	 *pdst;
+	struct sockaddr_in	 dst, *pdst;
 
 	/* TODO: Mdns draft 6.3 Duplicate Question Suppression */
 	
 	pkt_init(&sendpkt);
 	sendpkt.h.qr = MDNS_RESPONSE;
 	sendpkt.iface = pkt->iface;
+	bzero(&dst, sizeof(dst));
 	pdst = NULL;
+	
+	/* If legacy packet, we must copy id and answer as unicast dns  */
+	if (pkt->flags & PKT_FLAG_LEGACY) {
+		sendpkt.flags = pkt->flags;
+		sendpkt.h.id = pkt->h.id;
+		dst = pkt->ipsrc;
+		pdst = &dst;
+	}
+		
 	while ((qst = LIST_FIRST(&pkt->qlist)) != NULL) {
 		/*
 		 * Discard questions which shouldn't be handled, can be a
@@ -1066,21 +1075,40 @@ pkt_handleq(struct pkt *pkt)
 		}
 		
 		/*
+		 * XXX: This assumes that every question came from the same
+		 * packet, hence, the same source. It also assumes QU questions
+		 * may not be mixed up with QM questions, maybe this flag should
+		 * be moved to pkt.
+		 */
+		if (qst->flags & QST_FLAG_UNIRESP) {
+			dst = pkt->ipsrc;
+			pdst = &dst;
+		}
+
+		/*
 		 * XXX: O(n), make this a tree some day.
 		 */
 		LIST_FOREACH(rr, &pkt->iface->auth_rr_list, centry) {
 			if (!ANSWERS(&qst->rrs, &rr->rrs))
 				continue;
+			
+			/* Make a copy since we may modify if PKT_F_LEGACY */
+			rr = rr_dup(rr);
+			/*
+			 * If this is a legacy question, get a copy rr, remove
+			 * the cacheflush bit and copy the qid from question.
+			 */
+			if (pkt->flags & PKT_FLAG_LEGACY) {
+				rr->cacheflush = 0;
+				/* Draft says up to 10 */
+				rr->ttl = 5;
+			} 
+			/* Add to response packet */
 			pkt_add_anrr(&sendpkt, rr);
 		}
 		
-		/* If this is a unicast question, send answer back to querier */
-		if (qst->src.s_addr != NULL)
-			pdst = &pkt->ipsrc;
-		
 		LIST_REMOVE(qst, entry);
 		free(qst);
-		
 	}
 	
 	/*
@@ -1090,8 +1118,10 @@ pkt_handleq(struct pkt *pkt)
 		if (pkt_send_if(&sendpkt, sendpkt.iface, pdst) == -1)
 			log_warnx("Can't send packet to"
 			    "%s", pkt->iface->name);
-
 	
+	/* Cleanup our pkt since the RRs were dupped */
+	pkt_cleanup(&sendpkt);
+
 	return (0);
 }
 
@@ -1105,6 +1135,11 @@ pkt_should_answerq(struct pkt *pkt, struct question *qst)
 	 */
 	if (pkt->h.qr == MDNS_RESPONSE)
 		return (0);
+	/*
+	 * If this is a legacy pkt, we must answer
+	 */
+	if (pkt->flags & PKT_FLAG_LEGACY)
+		return (1);
 	/*
 	 * If this question belongs to a probe packet, that is, if an answer to
 	 * this question resides in the packet authority section, we're not
@@ -1345,7 +1380,7 @@ serialize_question(struct question *qst, u_int8_t *buf, u_int16_t len)
 	PUTSHORT(qst->rrs.type, pbuf);
 	
 	qclass = qst->rrs.class;
-	if (qst->src.s_addr)
+	if (qst->flags & QST_FLAG_UNIRESP)
 		qclass = qst->rrs.class | UNIRESP_MSK;
 	PUTSHORT(qclass, pbuf);
 

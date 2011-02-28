@@ -810,9 +810,9 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 		if (pge_if->pqst != NULL) {
 			/* Unicast question ? */
 			if (pge_if->if_sent >= 2)
-				pge_if->pqst->src.s_addr = 1;
+				pge_if->pqst->flags |= QST_FLAG_UNIRESP;
 			else
-				pge_if->pqst->src.s_addr = 0;
+				pge_if->pqst->flags &= ~QST_FLAG_UNIRESP;
 			pkt_add_question(&pkt, pge_if->pqst);
 		}
 		/* Add the RRs in the ns section */

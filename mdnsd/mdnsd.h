@@ -107,6 +107,8 @@ struct rr {
 
 struct pkt {
 	TAILQ_ENTRY(pkt)	entry;	/* Deferred pkt queue */
+	u_int			flags;	/* Packet flags */
+#define PKT_FLAG_LEGACY 0x1		/* Legacy unicast packet */
 	HEADER			h;	/* Packet header */
 	LIST_HEAD(, question) 	qlist;	/* Question section */
 	LIST_HEAD(, rr)       	anlist;	/* Answer section */
@@ -121,7 +123,8 @@ struct question {
 	LIST_ENTRY(question)	entry; 	   /* Packet link */
 	RB_ENTRY(question)	qst_entry; /* Question Tree link */
 	struct rrset 		rrs;	   /* RR tripple */
-	struct in_addr		src; 	   /* If unicast response, src.s_addr != 0 */
+	u_int			flags;	   /* Question flags */
+#define QST_FLAG_UNIRESP 0x1		   /* Accepts unicast response */
 	int			active;	   /* Active controllers */
 	u_int			sent;	   /* Used in question_fsm */
 	struct timespec		lastsent;  /* Last time we sent this question */
