@@ -142,6 +142,7 @@ struct query {
 	struct event		 timer;	 /* query_fsm() timer */
 	u_int			 count;	 /* Used in query_fsm() */
 	struct rrset		*ms_srv; /* The SRV in QUERY_RESOLVE */
+	struct rrset		*ms_a;   /* The A in QUERY_RESOLVE */
 	struct rrset		*br_ptr; /* The PTR in QUERY_BROWSE */
 };
 

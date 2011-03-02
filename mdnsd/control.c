@@ -348,6 +348,7 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 		    sizeof(rrs_a->dname));
 		rrs_a->class = C_IN;
 		rrs_a->type = T_A;
+		q->ms_a = rrs_a;
 		LIST_INSERT_HEAD(&q->rrslist, rrs_a, entry);
 	}
 	
