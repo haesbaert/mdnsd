@@ -128,6 +128,7 @@ main(int argc, char *argv[])
 		ssize_t n;
 		
 		n = mdns_read(&mdns);
+		fflush(stdout);
 		if (n == -1)
 			err(1, "mdns_read");
 		if (n == 0)
