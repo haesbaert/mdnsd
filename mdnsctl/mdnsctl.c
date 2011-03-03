@@ -272,7 +272,7 @@ my_group_hook(struct mdns *m, int ev, const char *group)
 		printf("Group %s is announcing...\n", group);
 		break;
 	case MDNS_GROUP_PUBLISHED:
-		printf("Group %s published !\n", group);
+		printf("Group %s published.\n", group);
 		break;
 	default:
 		warnx("Unhandle group event");
