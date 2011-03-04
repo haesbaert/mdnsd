@@ -1,3 +1,7 @@
+PREFIX?=/usr/local
+BINDIR=${PREFIX}/bin
+MANDIR= ${PREFIX}/man/cat
+
 PROG=	mdnsctl
 SRCS=	mdnsctl.c parser.c mdnsl.c 
 

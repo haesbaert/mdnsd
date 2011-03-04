@@ -537,9 +537,11 @@ rr_notify_in(struct rr *rr)
 	struct rrset		*rrs;
 	int			 query_done;
 	
+	/* See if we have a question matching this rr */
 	if ((qst = question_lookup(&rr->rrs)) == NULL)
 		return (0);
 	
+	/* Loop through controllers and check who wants it */
 	TAILQ_FOREACH(c, &ctl_conns, entry) {
 		for (q = LIST_FIRST(&c->qlist); q != NULL; q = nq) {
 			nq = LIST_NEXT(q, entry);
@@ -564,6 +566,27 @@ rr_notify_in(struct rr *rr)
 						log_warnx("control_send_rr error");
 					break;
 				case QUERY_RESOLVE:
+					/*
+					 * If this is a SRV, make sure we're
+					 * asking for the target
+					 */
+					if (rr->rrs.type == T_SRV &&
+					    q->ms_a == NULL) {
+						if ((q->ms_a = calloc(1,
+						    sizeof(*q->ms_a))) == NULL)
+							err(1, "calloc");
+						strlcpy(q->ms_a->dname,
+						    rr->rdata.SRV.target,
+						    sizeof(q->ms_a->dname));
+						q->ms_a->class = C_IN;
+						q->ms_a->type = T_A;
+						LIST_INSERT_HEAD(&q->rrslist,
+						    q->ms_a, entry);
+						if (question_add(q->ms_a) ==
+						    NULL)
+							log_warnx("Can't add "
+							    "question");
+					}
 					if (control_try_answer_ms(c,
 					    q->ms_srv->dname) == 1) {
 						query_remove(q);
