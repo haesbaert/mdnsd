@@ -63,10 +63,10 @@ int		 pkt_parse_header(u_int8_t **, u_int16_t *, struct pkt *);
 ssize_t		 pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 int		 pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
 int		 pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
-int		 pkt_handleqst(struct pkt *);
-int		 pkt_should_answerq(struct pkt *, struct question *);
+int		 pkt_handle_qst(struct pkt *);
+int		 pkt_should_answer_qst(struct pkt *, struct question *);
 ssize_t		 serialize_rr(struct rr *, u_int8_t *, u_int16_t);
-ssize_t		 serialize_question(struct question *, u_int8_t *, u_int16_t);
+ssize_t		 serialize_qst(struct question *, u_int8_t *, u_int16_t);
 ssize_t		 serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN], int);
 ssize_t		 serialize_rdata(struct rr *, u_int8_t *, u_int16_t);
 int		 rr_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
@@ -384,7 +384,7 @@ pkt_process(int unused, short event, void *v_pkt)
 		TAILQ_REMOVE(&deferred_queue, pkt, entry);
 	}
 		
-	if (pkt_handleqst(pkt) == -1) {
+	if (pkt_handle_qst(pkt) == -1) {
 		log_warnx("pkt_handleqst() error");
 		pkt_cleanup(pkt);
 		free(pkt);
@@ -489,7 +489,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	pbuf  += HDR_LEN;
 	/* Append all questions, they must fit a single packet. */
 	LIST_FOREACH(qst, &pkt->qlist, entry) {
-		n = serialize_question(qst, pbuf, left);
+		n = serialize_qst(qst, pbuf, left);
 		if (n == -1 || n > left) {
 			log_warnx("pkt_send_if: "
 			    "can't serialize question section");
@@ -1039,7 +1039,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 }
 
 int
-pkt_handleqst(struct pkt *pkt)
+pkt_handle_qst(struct pkt *pkt)
 {
 	struct question		*qst;
 	struct rr		*rr;
@@ -1068,7 +1068,7 @@ pkt_handleqst(struct pkt *pkt)
 		 * probing query or we may be already listed in the known answer
 		 * supression list.
 		 */
-		if (!pkt_should_answerq(pkt, qst)) {
+		if (!pkt_should_answer_qst(pkt, qst)) {
 			LIST_REMOVE(qst, entry);
 			free(qst);
 			continue;
@@ -1126,7 +1126,7 @@ pkt_handleqst(struct pkt *pkt)
 }
 
 int
-pkt_should_answerq(struct pkt *pkt, struct question *qst)
+pkt_should_answer_qst(struct pkt *pkt, struct question *qst)
 {
 	struct rr *rr, *rrans;
 	
@@ -1361,7 +1361,7 @@ serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 }
 
 ssize_t
-serialize_question(struct question *qst, u_int8_t *buf, u_int16_t len)
+serialize_qst(struct question *qst, u_int8_t *buf, u_int16_t len)
 {
 	u_int8_t *pbuf = buf;
 	u_int16_t qclass;
