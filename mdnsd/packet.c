@@ -1104,7 +1104,8 @@ pkt_handle_qst(struct pkt *pkt)
 				/* Include a copy of question */
 				if ((lqst = calloc(1, sizeof(*lqst))) == NULL)
 					fatal("calloc");
-				lqst->flags = qst->flags;
+				/* No flags, since we don't want any bits set */
+				lqst->flags = 0;
 				lqst->rrs   = qst->rrs;
 				pkt_add_question(&sendpkt, lqst);
 				rr->cacheflush = 0;
