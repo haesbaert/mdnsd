@@ -482,8 +482,10 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	}
 	/* Copy header, field by field as we do our own calculations in
 	 * qdcount, ancount and etc... */
-	if (pkt->flags & PKT_FLAG_LEGACY)
+	if (pkt->flags & PKT_FLAG_LEGACY) {
 		h->id = pkt->h.id;
+		h->aa = 1;
+	}
 	h->qr  = pkt->h.qr;
 	left  -= HDR_LEN;
 	pbuf  += HDR_LEN;
@@ -1041,7 +1043,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 int
 pkt_handle_qst(struct pkt *pkt)
 {
-	struct question		*qst;
+	struct question		*qst, *lqst;
 	struct rr		*rr;
 	struct pkt		 sendpkt;
 	struct sockaddr_in	 dst, *pdst;
@@ -1099,9 +1101,15 @@ pkt_handle_qst(struct pkt *pkt)
 			 * the cacheflush bit and copy the qid from question.
 			 */
 			if (pkt->flags & PKT_FLAG_LEGACY) {
+				/* Include a copy of question */
+				if ((lqst = calloc(1, sizeof(*lqst))) == NULL)
+					fatal("calloc");
+				lqst->flags = qst->flags;
+				lqst->rrs   = qst->rrs;
+				pkt_add_question(&sendpkt, lqst);
 				rr->cacheflush = 0;
 				/* Draft says up to 10 */
-				rr->ttl = 5;
+				rr->ttl = 8;
 			} 
 			/* Add to response packet */
 			pkt_add_anrr(&sendpkt, rr);
