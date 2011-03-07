@@ -16,14 +16,16 @@ Setup
   
 Code
 -----------------
-  * Fix reported nmap BUG.
+  * Implement NXDOMAIN support, important for legacy queries.
+  * Do more tests with link down/up.
   * Move all mdns related globals to mdnsd structure, rename
   mdnsd_conf to mdnsd, too many scattered lists through code.
-  * Write manual pages.
   * Implement cache dump.
   * Conflict name resolution.
+  * Write manual pages. DONE.
   * Check for possible overruns when parsing packets, specially in
-  name pointers.
+  name pointers. DONE.
+  * Fix reported nmap BUG. DONE.
   * Implement controller publishing notifications. DONE
   * Publish commands in mdnsctl. DONE
   * Remove all static declarations, I'm sick of breaking lines. DONE.
