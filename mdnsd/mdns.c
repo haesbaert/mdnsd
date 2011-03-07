@@ -892,6 +892,7 @@ pge_if_fsm(int unused, short event, void *v_pge_if)
 			log_warnx("can't send probe packet "
 			    "to iface %s", iface->name);
 		if (++pge_if->if_sent < 3)  {
+			timerclear(&tv);
 			tv.tv_sec = pge_if->if_sent;
 			pge_if_fsm_restart(pge_if, &tv);
 			break;
