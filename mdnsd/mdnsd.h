@@ -54,7 +54,7 @@
 	    (qrrs)->class == (rrs)->class                            &&	\
 	    (strcmp((qrrs)->dname, (rrs)->dname)) == 0)
 
-#define RR_UNIQ(rr) (rr->cacheflush)
+#define RR_UNIQ(rr) (rr->flags & RR_FLAG_CACHEFLUSH)
 
 struct rrset {
 	LIST_ENTRY(rrset) entry;	       /* List link */
@@ -88,7 +88,6 @@ struct rr {
 	LIST_ENTRY(rr)		pentry;	/* Packet entry */
 	LIST_ENTRY(rr)		gentry;	/* Group entry */
 	struct rrset 		rrs;	/* RR tripple */
-	int			cacheflush; /* Unique/Shared record */
 	u_int32_t		ttl;	/* DNS Time to live */
 	union {
 		struct in_addr	A; 	/* IPv4 Address */
@@ -103,6 +102,9 @@ struct rr {
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
 	struct event	rev_timer;	/* cache revision timer */
 	struct timespec	age;
+	u_int 			flags;	/* RR Flags */
+#define RR_FLAG_CACHEFLUSH	0x01	/* Unique record */
+#define RR_FLAG_AUTH		0x02	/* Authority record */
 };
 
 struct pkt {
@@ -322,9 +324,9 @@ void	  pkt_add_nsrr(struct pkt *, struct rr *);
 void	  pkt_add_arrr(struct pkt *, struct rr *);
 int	  rr_rdata_cmp(struct rr *, struct rr *);
 u_int32_t rr_ttl_left(struct rr *);
-void	pktcomp_reset(int, u_int8_t *, u_int16_t);
-int	rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
-    u_int32_t, int, void *, size_t);
+void	  pktcomp_reset(int, u_int8_t *, u_int16_t);
+int	  rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
+    u_int32_t, u_int, void *, size_t);
 
 /* mdns.c */
 void		 publish_init(void);

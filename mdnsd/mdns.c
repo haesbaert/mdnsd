@@ -677,8 +677,8 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 	/* T_SRV */
 	if ((srv = calloc(1, sizeof(*srv))) == NULL)
 		fatal("calloc");
-	(void)rr_set(srv, servname, T_SRV, C_IN, TTL_SRV, 1,
-	    NULL, 0);
+	(void)rr_set(srv, servname, T_SRV, C_IN, TTL_SRV,
+	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH, NULL, 0);
 	(void)strlcpy(srv->rdata.SRV.target, ms->target,
 	    sizeof(srv->rdata.SRV.target));
 	srv->rdata.SRV.priority = ms->priority;
@@ -694,18 +694,18 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 	/* T_TXT */
 	if ((txt = calloc(1, sizeof(*txt))) == NULL)
 		fatal("calloc");
-	(void)rr_set(txt, servname, T_TXT, C_IN, TTL_TXT, 1,
-	    ms->txt, sizeof(ms->txt));
+	(void)rr_set(txt, servname, T_TXT, C_IN, TTL_TXT,
+	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH, ms->txt, sizeof(ms->txt));
 	/* T_PTR proto */
 	if ((ptr_proto = calloc(1, sizeof(*ptr_proto))) == NULL)
 		fatal("calloc");
 	(void)rr_set(ptr_proto, proto, T_PTR, C_IN, TTL_PTR,
-	    0, servname, sizeof(servname));
+	    RR_FLAG_AUTH, servname, sizeof(servname));
 	/* T_PTR services */
 	if ((ptr_services = calloc(1, sizeof(*ptr_services))) == NULL)
 		fatal("calloc");
 	(void)rr_set(ptr_services, "_services._dns-sd._udp.local",
-	    T_PTR, C_IN, TTL_PTR, 0, proto, sizeof(proto));
+	    T_PTR, C_IN, TTL_PTR, RR_FLAG_AUTH, proto, sizeof(proto));
 	
 	/* Check for conflicts */
 	if (pg_rr_in_conflict(srv)		||
@@ -1085,20 +1085,23 @@ pg_new_primary(struct iface *iface)
 	/* T_A record */
 	if ((rr = calloc(1, sizeof(*rr))) == NULL)
 		fatal("calloc");
-	rr_set(rr, conf->myname, T_A, C_IN, TTL_HNAME, 1,
+	rr_set(rr, conf->myname, T_A, C_IN, TTL_HNAME,
+	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH,
 	    &iface->addr, sizeof(iface->addr));
 	LIST_INSERT_HEAD(&pge_if->rr_list, rr, gentry);
 	/* T_PTR record reverse address */
 	if ((rr = calloc(1, sizeof(*rr))) == NULL)
 		fatal("calloc");
 	reversstr(revaddr, &iface->addr);
-	rr_set(rr, revaddr, T_PTR, C_IN, TTL_HNAME, 1,
+	rr_set(rr, revaddr, T_PTR, C_IN, TTL_HNAME,
+	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH,
 	    conf->myname, sizeof(conf->myname));
 	LIST_INSERT_HEAD(&pge_if->rr_list, rr, gentry);
 	/* T_HINFO record */
 	if ((rr = calloc(1, sizeof(*rr))) == NULL)
 		fatal("calloc");
-	rr_set(rr, conf->myname, T_HINFO, C_IN, TTL_HNAME, 1,
+	rr_set(rr, conf->myname, T_HINFO, C_IN, TTL_HNAME,
+	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH,
 	    &conf->hi, sizeof(conf->hi));
 	LIST_INSERT_HEAD(&pge_if->rr_list, rr, gentry);
 	

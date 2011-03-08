@@ -678,14 +678,14 @@ pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 int
 rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
     u_int16_t type, u_int16_t class, u_int32_t ttl,
-    int cacheflush, void *rdata, size_t rdlen)
+    u_int flags, void *rdata, size_t rdlen)
 {
 	bzero(rr, sizeof(*rr));
 
 	rr->rrs.type = type;
 	rr->rrs.class = class;
 	rr->ttl = ttl;
-	rr->cacheflush = cacheflush;
+	rr->flags = flags;
 	strlcpy(rr->rrs.dname, dname, sizeof(rr->rrs.dname));
 	
 	if (rdata != NULL) {
@@ -961,7 +961,8 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	*len -= INT16SZ;
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
-	rr->cacheflush = !!(us & CACHEFLUSH_MSK);
+	if (us & CACHEFLUSH_MSK)
+		rr->flags |= RR_FLAG_CACHEFLUSH;
 	rr->rrs.class  = us & CLASS_MSK;
 	if (rr->rrs.class != C_ANY && rr->rrs.class != C_IN) {
 		log_debug("pkt_parse_rr: %s (%s) Invalid packet class %u",
@@ -1108,7 +1109,7 @@ pkt_handle_qst(struct pkt *pkt)
 				lqst->flags = 0;
 				lqst->rrs   = qst->rrs;
 				pkt_add_question(&sendpkt, lqst);
-				rr->cacheflush = 0;
+				rr->flags &= ~RR_FLAG_CACHEFLUSH;
 				/* Draft says up to 10 */
 				rr->ttl = 8;
 			} 
@@ -1354,7 +1355,7 @@ serialize_rr(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		return (-1);
 	PUTSHORT(rr->rrs.type, pbuf);
 	us = rr->rrs.class;
-	if (rr->cacheflush)
+	if (rr->flags & RR_FLAG_CACHEFLUSH)
 		us |= CACHEFLUSH_MSK;
 	PUTSHORT(us, pbuf);
 	PUTLONG(rr->ttl, pbuf);
