@@ -33,7 +33,6 @@
 
 #define MDNSD_USER		"_mdnsd"
 #define ALL_MDNS_DEVICES	"224.0.0.251"
-#define MDNS_ADDRT		0xFB0000E0 /* the in_addr for 224.0.0.251 */
 #define MDNS_TTL		255
 #define MDNS_PORT		5353
 #define TTL_A			120
