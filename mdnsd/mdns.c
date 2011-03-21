@@ -30,28 +30,20 @@
 #include "mdnsd.h"
 #include "log.h"
 
-int		 cache_insert(struct rr *);
-int		 cache_delete(struct rr *);
-void		 cache_schedrev(struct rr *);
-void		 cache_rev(int, short, void *);
-struct rrt_node *cache_lookup_node(struct rrset *);
-
 int 		 question_cmp(struct question *, struct question *);
 struct question *question_lookup(struct rrset *);
 
-void		 rrt_dump(struct rrt_tree *);
-int		 rrt_cmp(struct rrt_node *, struct rrt_node *);
-struct rr	*rrt_lookup(struct rrt_tree *, struct rrset *);
-struct rrt_node	*rrt_lookup_node(struct rrt_tree *, struct rrset *);
+RB_HEAD(cache_tree, cache_node) cache_tree;
+RB_PROTOTYPE(cache_tree, cache_node, entry, cache_node_cmp);
+RB_GENERATE(cache_tree, cache_node, entry, cache_node_cmp);
 
-RB_GENERATE(rrt_tree,  rrt_node, entry, rrt_cmp);
 RB_HEAD(question_tree, question);
 RB_PROTOTYPE(question_tree, question, qst_entry, question_cmp);
 RB_GENERATE(question_tree, question, qst_entry, question_cmp);
 
 extern struct mdnsd_conf	*conf;
 struct question_tree		 question_tree;
-struct rrt_tree			 cache_tree;
+struct cache_tree		 cache_tree;
 
 /*
  * RR cache
@@ -61,6 +53,27 @@ void
 cache_init(void)
 {
 	RB_INIT(&cache_tree);
+}
+
+int
+cache_node_cmp(struct cache_node *a, struct cache_node *b)
+{
+	return (strcmp(a->dname, b->dname));
+}
+
+struct rr *
+cache_next_by_rrs(struct rr *rr)
+{
+	struct rr *rr_aux;
+	
+	for (rr_aux = LIST_NEXT(rr, centry);
+	     rr_aux != NULL;
+	     rr_aux = LIST_NEXT(rr, centry)) {
+		if (rrset_cmp(&rr->rrs, &rr_aux->rrs) == 0)
+			return (rr_aux);
+	}
+	
+	return (NULL);
 }
 
 int
@@ -79,7 +92,7 @@ cache_process(struct rr *rr)
 	
 	/* TODO: schedule it for 1 second */
 	if (rr->ttl == 0) {
-		cache_delete(rr);
+		cache_unlink_by_data(rr);
 		free(rr);
 		
 		return (0);
@@ -91,120 +104,187 @@ cache_process(struct rr *rr)
 	return (0);
 }
 
+struct cache_node *
+cache_lookup_dname(const char *dname)
+{
+	struct cache_node s;
+
+	bzero(&s, sizeof(s));
+	strlcpy(s.dname, dname, sizeof(s.dname));
+	
+	return (RB_FIND(cache_tree, &cache_tree, &s));
+}
+
 struct rr *
 cache_lookup(struct rrset *rrs)
 {
-	log_debug("cache_lookup %s", rrs_str(rrs));
-	return (rrt_lookup(&cache_tree, rrs));
-}
+	struct cache_node *cn;
+	struct rr *rr;
 
-struct rrt_node *
-cache_lookup_node(struct rrset *rrs)
-{
-	return (rrt_lookup_node(&cache_tree, rrs));
+	cn = cache_lookup_dname(rrs->dname);
+	if (cn == NULL)
+		return (NULL);
+	LIST_FOREACH(rr, &cn->rr_list, centry) {
+		if (rrset_cmp(&rr->rrs, rrs) == 0)
+			return (rr);
+	}
+	
+	return (NULL);
 }
 
 int
 cache_insert(struct rr *rr)
 {
-	struct rrt_node *n;
-	struct rr	*rraux;
-
-	n = cache_lookup_node(&rr->rrs);
-	/* New entry */
-	if (n == NULL) {
-		if ((n = calloc(1, sizeof(*n))) == NULL)
+	struct cache_node *cn;
+	struct rr *rraux, *next;
+	/*
+	 * If no entries, make a new node 
+	 */
+	if ((cn = cache_lookup_dname(rr->rrs.dname)) == NULL) {
+		if ((cn = calloc(1, sizeof(*cn))) == NULL)
 			fatal("calloc");
-		
-		n->rrs = rr->rrs;
-		LIST_INIT(&n->hrr);
-		LIST_INSERT_HEAD(&n->hrr, rr, centry);
-		if (RB_INSERT(rrt_tree, &cache_tree, n) != NULL)
-			fatal("rrt_insert: RB_INSERT");
-		cache_schedrev(rr);
+		(void)strlcpy(cn->dname, rr->rrs.dname, sizeof(cn->dname));
+		rr->cn = cn;
+		LIST_INIT(&cn->rr_list);
+		LIST_INSERT_HEAD(&cn->rr_list, rr, centry);
 		rr_notify_in(rr);
-
-		log_debug("cache_insert: (new) type: %s name: %s",
-		    rr_type_name(rr->rrs.type), rr->rrs.dname);
-	
+		if (RB_INSERT(cache_tree, &cache_tree, cn) != NULL)
+			fatal("cache_insert: RB_INSERT");
+		/* Don't review our own records */
+		if ((rr->flags & RR_FLAG_AUTH) == 0)
+			cache_schedrev(rr);
+		log_debug("cache_insert: (new) %s", rrs_str(&rr->rrs));
+		
 		return (0);
 	}
-
-	/* if an unique record, clean all previous and substitute */
-	if (RR_UNIQ(rr)) {
-		while ((rraux = LIST_FIRST(&n->hrr)) != NULL) {
+	/*
+	 * If this is a unique record
+	 */
+	if (rr->flags & RR_FLAG_CACHEFLUSH) {
+		/*
+		 * Make sure that this record isn't trying to screw any of our records,
+		 * like a stupid responder which won't respect conflict resolution. 
+		 */
+		/* XXX this breaks co-op responders */
+		CACHE_FOREACH_RRS(rraux, &rr->rrs) {
+			if ((rraux->flags & RR_FLAG_AUTH) == 0)
+				continue;
+			log_warnx("Bad peer, received an unique RR which is "
+			    "mine already (%s)", rrs_str(&rr->rrs));
+			free(rr);
+			
+			return (-1);
+		}
+		/* Clean up all records and substitute */
+		for (rraux = LIST_FIRST(&cn->rr_list);
+		     rraux != NULL;
+		     rraux = next) {
+			next = cache_next_by_rrs(rraux);
 			LIST_REMOVE(rraux, centry);
 			if (evtimer_pending(&rraux->rev_timer, NULL))
 				evtimer_del(&rraux->rev_timer);
+			rr_notify_out(rraux);
 			free(rraux);
 		}
-		LIST_INSERT_HEAD(&n->hrr, rr, centry);
-		cache_schedrev(rr);
+		rr->cn = cn;
+		LIST_INSERT_HEAD(&cn->rr_list, rr, centry);
 		rr_notify_in(rr);
-
-		log_debug("cache_insert: (not new, unique) type: %s name: %s",
-		    rr_type_name(rr->rrs.type), rr->rrs.dname);
 		
 		return (0);
 	}
-
-	/* rr is not unique, see if this is a cache refresh */
-	LIST_FOREACH(rraux, &n->hrr, centry) {
+	
+	/*
+	 * So this is a shared record...
+	 */
+	/* See if it's just a cache refresh */
+	CACHE_FOREACH_RRS(rraux, &rr->rrs) {
 		if (rr_rdata_cmp(rr, rraux) == 0) {
+			/* No cache refresh for our own records */
+			if (rraux->flags & RR_FLAG_AUTH) {
+				log_warnx("Bad peer, got a cache refresh for "
+				    "my own record %s", rrs_str(&rr->rrs));
+				free(rr);
+				
+				return (-1);
+			}
 			rraux->ttl = rr->ttl;
 			rraux->revision = 0;
 			cache_schedrev(rraux);
-			log_debug("cache_insert: (cache refresh) "
-			    "type: %s name: %s",
-			    rr_type_name(rr->rrs.type), rr->rrs.dname);
+			log_debug("cache_insert: (cache refresh) %s",
+			    rrs_str(&rr->rrs));
 			free(rr);
+			
 			return (0);
 		}
 	}
-
-	/* not a refresh, so add */
-	LIST_INSERT_HEAD(&n->hrr, rr, centry);
+	
+	/* Shared record, not a refresh, just add */
+	rr->cn = cn;
+	LIST_INSERT_HEAD(&cn->rr_list, rr, centry);
 	rr_notify_in(rr);
-	/* XXX: should we cache_schedrev ? */
-	cache_schedrev(rr);
-	log_debug("cache_insert: (shared) type: %s name: %s",
-	    rr_type_name(rr->rrs.type), rr->rrs.dname);
-
-
+	/* Don't review our own records */
+	if ((rr->flags & RR_FLAG_AUTH) == 0)
+		cache_schedrev(rr);
+	log_debug("cache_insert: (shared) %s",
+	    rrs_str(&rr->rrs));
+	
 	return (0);
 }
 
 int
-cache_delete(struct rr *rr)
+cache_unlink(struct rr *rr)
 {
-	struct rr	*rraux, *next;
-	struct rrt_node	*s;
-	int		 n = 0;
+	struct cache_node	*cn;
 
 	log_debug("cache_delete: type: %s name: %s", rr_type_name(rr->rrs.type),
 	    rr->rrs.dname);
-	rr_notify_out(rr);
-	s = cache_lookup_node(&rr->rrs);
-	if (s == NULL)
-		return (0);
+	cn = rr->cn;
 
-	for (rraux = LIST_FIRST(&s->hrr); rraux != NULL; rraux = next) {
-		next = LIST_NEXT(rraux, centry);
-		if (RR_UNIQ(rr) ||
+	if (evtimer_pending(&rr->rev_timer, NULL))
+		evtimer_del(&rr->rev_timer);
+	LIST_REMOVE(rr, centry);
+	rr_notify_out(rr);
+	if (LIST_EMPTY(&cn->rr_list)) {
+		RB_REMOVE(cache_tree, &cache_tree, cn);
+		free(cn);
+	}
+
+	return (0);
+}
+
+/*
+ * Lookup and delete rr from cache
+ */
+int
+cache_unlink_by_data(struct rr *rr)
+{
+	struct rr		*rraux, *next;
+	struct cache_node	*cn;
+	int			 n = 0;
+
+	cn = cache_lookup_dname(rr->rrs.dname);
+	if (cn == NULL)
+		return (0);
+	for (rraux = LIST_FIRST(&cn->rr_list); rraux != NULL; rraux = next) {
+		next = cache_next_by_rrs(rraux);
+		if (rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
+			continue;
+		if (RR_UNIQ(rraux) ||
 		    (rr_rdata_cmp(rr, rraux) == 0)) {
-			LIST_REMOVE(rraux, centry);
-			if (evtimer_pending(&rraux->rev_timer, NULL))
-				evtimer_del(&rraux->rev_timer);
-			free(rraux);
+			/* Do not unlink our own records */
+			if (rraux->flags & RR_FLAG_AUTH) {
+				log_warnx("cache_unlink_by_data: "
+				    "type: %s name: %s",
+				    rr_type_name(rraux->rrs.type),
+				    rraux->rrs.dname);
+				return (-2);
+			}
 			n++;
+			cache_unlink(rraux);
+			free(rraux);
 		}
 	}
-
-	if (LIST_EMPTY(&s->hrr)) {
-		RB_REMOVE(rrt_tree, &cache_tree, s);
-		free(s);
-	}
-
+	
 	return (n);
 }
 
@@ -271,54 +351,7 @@ cache_rev(int unused, short event, void *v_rr)
 	if (rr->revision <= 3)
 		cache_schedrev(rr);
 	else
-		cache_delete(rr);
-}
-
-/*
- * RR tree
- */
-
-void
-rrt_dump(struct rrt_tree *rrt)
-{
-	struct rr	*rr;
-	struct rrt_node *n;
-
-	log_debug("rrt_dump");
-	RB_FOREACH(n, rrt_tree, rrt) {
-		rr = LIST_FIRST(&n->hrr);
-		LIST_FOREACH(rr, &n->hrr, centry)
-		    log_debug_rr(rr);
-	}
-}
-
-struct rr *
-rrt_lookup(struct rrt_tree *rrt, struct rrset *rrs)
-{
-	struct rrt_node *tmp;
-	
-	tmp = rrt_lookup_node(rrt, rrs);
-	if (tmp != NULL)
-		return (LIST_FIRST(&tmp->hrr));
-	
-	return (NULL);
-}
-
-struct rrt_node *
-rrt_lookup_node(struct rrt_tree *rrt, struct rrset *rrs)
-{
-	struct rrt_node s;
-	
-	bzero(&s, sizeof(s));
-	s.rrs = *rrs;
-
-	return (RB_FIND(rrt_tree, rrt, &s));
-}
-
-int
-rrt_cmp(struct rrt_node *a, struct rrt_node *b)
-{
-	return (rrset_cmp(&a->rrs, &b->rrs));
+		cache_unlink_by_data(rr);
 }
 
 int
@@ -490,9 +523,7 @@ query_fsm(int unused, short event, void *v_query)
 		qst->sched.tv_sec += tosleep;
 		if (q->style == QUERY_BROWSE) {
 			/* Known Answer Supression */
-			for (rraux = cache_lookup(rrs);
-			     rraux != NULL;
-			     rraux = LIST_NEXT(rraux, centry)) {
+			CACHE_FOREACH_RRS(rraux, rrs) {
 				/* Don't include rr if it's too old */
 				if (rr_ttl_left(rraux) < rraux->ttl / 2)
 					continue;

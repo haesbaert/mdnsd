@@ -204,11 +204,9 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	/*
 	 * Look for answers in our cache
 	 */
-	rr = cache_lookup(&mlkup);
-	while (rr != NULL) {
+	CACHE_FOREACH_RRS(rr, &mlkup) {
 		if (control_send_rr(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
 			log_warnx("control_send_rr error 2");
-		rr = LIST_NEXT(rr, centry);
 	}
 
 	if (question_add(&mlkup) == NULL) {
@@ -816,7 +814,6 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 answer:
 	bzero(&ms, sizeof(ms));
 	strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
-	/* TODO revise ms.target */
 	strlcpy(ms.target, rrs.dname, sizeof(ms.target));
 	strlcpy(ms.txt, txt->rdata.TXT, sizeof(ms.txt));
 	ms.priority = srv->rdata.SRV.priority;

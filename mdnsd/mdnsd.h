@@ -56,6 +56,22 @@
 
 #define RR_UNIQ(rr) (rr->flags & RR_FLAG_CACHEFLUSH)
 
+#define CACHE_FOREACH_RRS(var, rrs)		\
+	/* struct rr *var */			\
+	/* struct rrs *rrs */			\
+	for ((var) = cache_lookup(rrs);		\
+	     (var) != NULL;			\
+	     (var) = cache_next_by_rrs(var))
+
+#define CACHE_FOREACH_DNAME(var, var2, dname)		\
+	/* struct rr *var */				\
+	/* struct cache_node *var2 */			\
+	/* char dname[MAXHOSTNAMELEN] */		\
+	for ((var2) = cache_lookup_dname(dname) &&	\
+		 (var) = LIST_FIRST((var2)->rr_list);	\
+	     (var2) != NULL && (var) != NULL;		\
+	     (var) = LIST_NEXT(var, centry))		\
+
 struct rrset {
 	LIST_ENTRY(rrset) entry;	       /* List link */
 	char            dname[MAXHOSTNAMELEN]; /* Domain Name */
@@ -63,13 +79,20 @@ struct rrset {
 	u_int16_t       class;		       /* C_IN */
 };
 
-struct rrt_node {
-	RB_ENTRY(rrt_node)      entry; 	/* Cache RBTREE link */
-	struct rrset		rrs;	/* Cache head */
-	LIST_HEAD(, rr) 	hrr;	/* List of RR in this head */
+struct cache_node {
+	RB_ENTRY(cache_node) entry; 	/* Cache RBTREE link */
+	LIST_HEAD(, rr)	     rr_list;	/* List of RR under dname */
+	char 		     dname[MAXHOSTNAMELEN]; /* domain name */
 };
-RB_HEAD(rrt_tree, rrt_node);
-RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_cmp);
+
+
+/* struct rrt_node { */
+/* 	RB_ENTRY(rrt_node)      entry; 	/\* Cache RBTREE link *\/ */
+/* 	struct rrset		rrs;	/\* Cache head *\/ */
+/* 	LIST_HEAD(, rr) 	hrr;	/\* List of RR in this head *\/ */
+/* }; */
+/* RB_HEAD(rrt_tree, rrt_node); */
+/* RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_cmp); */
 
 struct hinfo {
 	char    cpu[MAXCHARSTR]; /* Cpu name */
@@ -99,6 +122,7 @@ struct rr {
 		struct hinfo	HINFO;		       /* Host Info */
 
 	} rdata;
+	struct cache_node *cn;	   	/* Cache parent node */
 	int		revision;	/* at 80% of ttl, then 90% and 95% */
 	struct event	rev_timer;	/* cache revision timer */
 	struct timespec	age;
@@ -343,8 +367,16 @@ void		 query_remove(struct query *);
 struct question	*question_add(struct rrset *);
 void		 question_remove(struct rrset *);
 void		 cache_init(void);
+int		 cache_insert(struct rr *);
+void		 cache_schedrev(struct rr *);
+void		 cache_rev(int, short, void *);
+int		 cache_node_cmp(struct cache_node *, struct cache_node *);
 int		 cache_process(struct rr *);
 struct rr	*cache_lookup(struct rrset *);
+struct cache_node *cache_lookup_dname(const char *);
+struct rr 	*cache_next_by_rrs(struct rr *);
+int		 cache_unlink(struct rr *);
+int		 cache_unlink_by_data(struct rr *);
 int		 rrset_cmp(struct rrset *, struct rrset *);
 int		 rr_notify_in(struct rr *);
 int		 rr_notify_out(struct rr *);
