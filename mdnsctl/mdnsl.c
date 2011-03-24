@@ -486,6 +486,7 @@ mdns_connect(void)
 	if (connect(sockfd, (struct sockaddr *)&sun, sizeof(sun)) == -1) {
 		if (errno == ENOENT)
 			errno = ECONNREFUSED;
+		close(sockfd);
 		return (-1);
 	}
 
