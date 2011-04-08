@@ -537,8 +537,6 @@ query_fsm(int unused, short event, void *v_query)
 	if (clock_gettime(CLOCK_MONOTONIC, &tnow) == -1)
 		fatal("clock_gettime");
 	
-	log_debug("query_fsm");
-	
 	/*
 	 * If we're in our third call and we're still alive,
 	 * consider a failure.
