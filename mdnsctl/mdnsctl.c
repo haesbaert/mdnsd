@@ -236,8 +236,8 @@ my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
 	case MDNS_RESOLVE_SUCCESS:
 		printf("+++ %-48s %-20s %-3s\n", ms->name, ms->app, ms->proto);
 		printf(" Name: %s\n", ms->name);
-		printf(" Priority: %u\n", ms->priority);
-		printf(" Weight: %u\n", ms->weight);
+		/* printf(" Priority: %u\n", ms->priority); */
+		/* printf(" Weight: %u\n", ms->weight); */
 		printf(" Port: %u\n", ms->port);
 		printf(" Target: %s\n", ms->target);
 		printf(" Address: %s\n", inet_ntoa(ms->addr));
