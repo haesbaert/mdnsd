@@ -259,6 +259,15 @@ cache_insert(struct rr *rr)
 	/* See if it's just a cache refresh */
 	CACHE_FOREACH_RRS(rraux, &rr->rrs) {
 		if (rr_rdata_cmp(rr, rraux) == 0) {
+			/*
+			 * This is the only case where we may have shared
+			 * records sharing the exact same data as one of our
+			 * records, still not sure how to deal with this, escape
+			 * for now.
+			 */
+			if (strcmp(rr->rrs.dname,
+			    "_services._dns-sd._udp.local") == 0)
+				continue;
 			/* No cache refresh for our own records */
 			if (rraux->flags & RR_FLAG_AUTH)
 				goto bad_peer;
