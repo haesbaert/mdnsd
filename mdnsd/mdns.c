@@ -194,6 +194,9 @@ cache_insert(struct rr *rr)
 		return (-1);
 	}
 
+	/* All external RR are considered published */
+	rr->flags |= RR_FLAG_PUBLISHED;
+	
 	/*
 	 * If no entries, make a new node 
 	 */
@@ -301,10 +304,10 @@ cache_unlink(struct rr *rr, int notify)
 	LIST_REMOVE(rr, centry);
 	if (notify)
 		rr_notify_out(rr);
-	/* if (LIST_EMPTY(&cn->rr_list)) { */
-	/* 	RB_REMOVE(cache_tree, &cache_tree, cn); */
-	/* 	free(cn); */
-	/* } */
+	if (LIST_EMPTY(&cn->rr_list)) {
+		RB_REMOVE(cache_tree, &cache_tree, cn);
+		free(cn);
+	}
 
 	return (0);
 }
@@ -978,6 +981,8 @@ pge_kill(struct pge *pge)
 	pkt_init(&pkt);
 	pkt.h.qr = MDNS_RESPONSE;
 	LIST_FOREACH(rr, &pge->rr_list, gentry) {
+		if ((rr->flags & RR_FLAG_AUTH) == 0)
+			continue;
 		if ((rr->flags & RR_FLAG_PUBLISHED) == 0)
 			continue;
 		rr_notify_out(rr);
