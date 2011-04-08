@@ -16,13 +16,12 @@ Setup
   
 Code
 -----------------
+  * Really add support for multiple interfaces.
   * Implement NXDOMAIN support, important for legacy queries.
   * Do more tests with link down/up.
-  * Move all mdns related globals to mdnsd structure, rename
-  mdnsd_conf to mdnsd, too many scattered lists through code.
   * Implement cache dump.
   * Conflict name resolution.
-  * Unify cache and published RR.
+  * Unify cache and published RR. DONE.
   * Write manual pages. DONE.
   * Check for possible overruns when parsing packets, specially in
   name pointers. DONE.
