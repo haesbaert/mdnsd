@@ -33,7 +33,6 @@
 
 #define MDNSD_USER		"_mdnsd"
 #define ALL_MDNS_DEVICES	"224.0.0.251"
-#define MDNS_ADDRT		0xFB0000E0 /* the in_addr for 224.0.0.251 */
 #define MDNS_TTL		255
 #define MDNS_PORT		5353
 #define TTL_A			120
@@ -345,11 +344,10 @@ void		 publish_allrr(struct iface *);
 int		 publish_insert(struct iface *, struct rr *);
 int		 publish_delete(struct iface *, struct rr *);
 struct rr	*publish_lookupall(struct rrset *);
-void		 publish_fsm(int, short, void *_pub);
+void		 publish_fsm(int, short, void *);
 void		 query_init(void);
 void		 query_fsm(int, short, void *);
 struct query	*query_lookup(struct rrset *);
-void		 query_remove(struct query *);
 void		 query_remove(struct query *);
 struct question	*question_add(struct rrset *);
 void		 question_remove(struct rrset *);

@@ -132,7 +132,7 @@ recv_packet(int fd, short event, void *bula)
 		    CMSG_SPACE(sizeof(struct in_addr))];
 	} cmsgbuf;
 	struct sockaddr_in	 ipsrc;
-	struct in_addr		 ipdst;
+	struct in_addr		 ipdst, mdns_addr;
 	struct iovec		 iov;
 	struct msghdr		 msg;
 	struct cmsghdr		*cmsg;
@@ -148,7 +148,8 @@ recv_packet(int fd, short event, void *bula)
 		
 	if (event != EV_READ)
 		return;
-
+	
+	inet_aton(ALL_MDNS_DEVICES, &mdns_addr);
 	bzero(&msg, sizeof(msg));
 	bzero(buf, sizeof(buf));
 	bzero(&ipdst, sizeof(ipdst));
@@ -218,7 +219,7 @@ recv_packet(int fd, short event, void *bula)
 	 * source ip address in the packet matches one of our subnets, if not,
 	 * drop it.
 	 */
-	if (pkt->h.qr == MDNS_RESPONSE && ipdst.s_addr != MDNS_ADDRT) {
+	if (pkt->h.qr == MDNS_RESPONSE && ipdst.s_addr != mdns_addr.s_addr) {
 		/* if_find_iface will try to match source address */
 		if ((iface = if_find_iface(dst->sdl_index,
 		    pkt->ipsrc.sin_addr)) == NULL) {
@@ -883,6 +884,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	u_int8_t lablen;
 	int jumped = 0;
 	u_int16_t oldlen = len;
+	size_t slen;
 	u_char label[MAXLABELLEN];
 
 	/* be extra safe */
@@ -930,8 +932,13 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 		if (!jumped)
 			len--;
 
-		if (lablen == 0)
+		if (lablen == 0) {
+			/* remove the trailling dot */
+			slen = strlen(dname);
+			if (slen > 0)
+				dname[slen - 1] = '\0';
 			break;
+		}
 
 		if (lablen > (MAXHOSTNAMELEN - strlen(dname)) ||
 		    lablen > MAXLABELLEN - 1) {
@@ -961,9 +968,6 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 		log_warnx("max labels reached");
 		return (-1);
 	}
-
-	/* remove the trailling dot */
-	dname[strlen(dname) - 1] = '\0';
 
 	return (oldlen - len);
 }
