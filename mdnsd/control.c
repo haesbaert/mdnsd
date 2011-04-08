@@ -59,9 +59,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	struct rrset	 mlkup, *rrs;
 	struct rr	*rr;
 	struct query 	*q;
-	struct iface	*iface;
 	struct timeval	 tv;
-
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
 
@@ -103,19 +101,6 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 	    mlkup.class);
 	
 	/*
-	 * Look for answers in our published records.
-	 */
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		LIST_FOREACH(rr, &iface->auth_rr_list, centry) {
-			if (!ANSWERS(&mlkup, &rr->rrs))
-				continue;
-			if (control_send_rr(c, rr, IMSG_CTL_LOOKUP) == -1)
-				log_warnx("control_send_rr error 1");
-			return;
-		}
-	}
-
-	/*
 	 * Look for answers in our cache
 	 */
 	rr = cache_lookup(&mlkup);
@@ -154,7 +139,6 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	struct rrset	 mlkup, *rrs;
 	struct rr	*rr;
 	struct query 	*q;
-	struct iface	*iface;
 	struct timeval	 tv;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
@@ -190,21 +174,11 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 	    mlkup.class);
 	
 	/*
-	 * Look for answers in our published records.
-	 */
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		LIST_FOREACH(rr, &iface->auth_rr_list, centry) {
-			if (!ANSWERS(&mlkup, &rr->rrs))
-				continue;
-			if (control_send_rr(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
-				log_warnx("control_send_rr error 1");
-		}
-	}
-	
-	/*
 	 * Look for answers in our cache
 	 */
 	CACHE_FOREACH_RRS(rr, &mlkup) {
+		if ((rr->flags & RR_FLAG_PUBLISHED) == 0)
+			continue;
 		if (control_send_rr(c, rr, IMSG_CTL_BROWSE_ADD) == -1)
 			log_warnx("control_send_rr error 2");
 	}
@@ -298,7 +272,7 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 	log_debug("Resolve %s", msg);
 	
 	/*
-	 * Try get answer with our cache entries
+	 * Try getting answer withing our cache entries
 	 */
 	if (control_try_answer_ms(c, msg) == 1) {
 		log_debug("Resolve for %s all in cache", msg);
@@ -380,7 +354,7 @@ control_group_add(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	/*
 	 * Initialize group in temporary list, when user commits the group, we
-	 * will process it all. We need one group for each interface.
+	 * will process it all. 
 	 */
 	pg = pg_get(1, msg, c);
 }
@@ -399,7 +373,7 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 	memcpy(&msg, imsg->data, sizeof(msg));
 	msg.name[sizeof(msg.name) - 1] = '\0';
 	ms = &msg;
-	/* TODO deal with target, accept ourselves only for now */
+	/* XXX deal with target, accept only ourselves for now */
 	(void)strlcpy(ms->target, conf->myname, sizeof(ms->target));
 	
 	/* Group not found, or group commited */
@@ -442,13 +416,16 @@ control_group_reset(struct ctl_conn *c, struct imsg *imsg)
 	log_debug("group %s reseted", msg);
 }
 
+/*
+ * XXX revise all this, we must have a flag in group if we had a collision when
+ * adding an entry.
+ */
 void
 control_group_commit(struct ctl_conn *c, struct imsg *imsg)
 {
 	char		 msg[MAXHOSTNAMELEN];
 	struct pg	*pg;
 	struct pge	*pge;
-	struct pge_if	*pge_if;
 	struct timeval	 tv;
 	
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
@@ -490,9 +467,7 @@ control_group_commit(struct ctl_conn *c, struct imsg *imsg)
 	timerclear(&tv);
 	tv.tv_usec = RANDOM_PROBETIME;
 	LIST_FOREACH(pge, &pg->pge_list, pge_entry) {
-		LIST_FOREACH(pge_if, &pge->pge_if_list, entry) {
-			pge_if_fsm_restart(pge_if, &tv);
-		}
+		pge_fsm_restart(pge, &tv);
 	}
 }
 
@@ -765,40 +740,13 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	struct rr *srv, *txt, *a;
 	struct rrset rrs;
 	struct mdns_service ms;
-	int our = 0;
 	
 	srv = txt = a = NULL;
 	
-	log_debug("control_try_answer_ms %s", dname);
-	strlcpy(rrs.dname, dname, sizeof(rrs.dname));
-	rrs.class = C_IN;
-	rrs.type = T_SRV;
-	/* Look for answers in our published records. */
-	if ((srv = auth_lookup_rr(NULL, &rrs)) != NULL)
-		our++;
-	rrs.type = T_TXT;
-	if ((txt = auth_lookup_rr(NULL, &rrs)) != NULL)
-		our++;
-	if (srv != NULL) {
-		strlcpy(rrs.dname, srv->rdata.SRV.target,
-		    sizeof(rrs.dname));
-		rrs.type = T_A;
-		if ((a = auth_lookup_rr(NULL, &rrs)) != NULL)
-			our++;
-	}
-	if (our > 0) {
-		if (our != 3) {
-			log_warnx("control_try_answer_ms: Invalid our "
-			    "value for dname %s (%d)", dname, our);
-			return (0);
-		}
-		/* We have them all */
-		goto answer;
-	}
-
 	/*
 	 * Look for answers in our cache
 	 */
+	log_debug("control_try_answer_ms %s", dname);
 	strlcpy(rrs.dname, dname, sizeof(rrs.dname));
 	rrs.class = C_IN;
 	rrs.type = T_SRV;
@@ -811,7 +759,7 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	rrs.type = T_A;
 	if ((a = cache_lookup(&rrs)) == NULL)
 		return (0);
-answer:
+
 	bzero(&ms, sizeof(ms));
 	strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
 	strlcpy(ms.target, rrs.dname, sizeof(ms.target));
@@ -831,9 +779,8 @@ control_notify_pg(struct ctl_conn *c, struct pg *pg, int msgtype)
 {
 	log_debug("control_notify_pg %s msg %d", pg->name, msgtype);
 	
-	if (c == NULL || pg->flags & PG_FLAG_INTERNAL) {
-		log_warnx("Calling control_notify_pg() "
-		    "with NULL or wrong flags, report me!");
+	if (c == NULL) {
+		log_warnx("Calling control_notify_pg() with NULL !");
 		return (-1);
 	}
 	

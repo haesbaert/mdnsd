@@ -123,11 +123,13 @@ void
 mdnsd_shutdown(void)
 {
 	struct iface	*iface;
-	
+	struct pge	*pge;
+
 	/*
 	 * Send goodbye RR for all published records.
 	 */
-	auth_unpublish_all();
+	while ((pge = TAILQ_FIRST(&pge_queue)) != NULL)
+		pge_kill(pge);
 	
 	while ((iface = LIST_FIRST(&conf->iface_list)) != NULL) {
 		LIST_REMOVE(iface, entry);
@@ -306,6 +308,9 @@ main(int argc, char *argv[])
 	LIST_INIT(&conf->iface_list);
 	conf->no_workstation = no_workstation;
 	
+	/* init RR cache */
+	cache_init();
+
 	/* init publish queues */
 	pg_init();
 
@@ -317,9 +322,6 @@ main(int argc, char *argv[])
 	
 	/* init querier */
 	query_init();
-
-	/* init RR cache */
-	cache_init();
 
 	/* listen to kernel interface events */
 	kev_init();

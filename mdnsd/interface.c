@@ -425,12 +425,9 @@ if_new(struct kif *kif)
 		iface->dst = sain->sin_addr;
 	}
 	
-	/* init authority rr list  */
-	LIST_INIT(&iface->auth_rr_list);
-	
 	/* get the primary group for this interface */
-	iface->pg_primary = pg_new_primary(iface);
-	iface->pg_workstation = pg_new_workstation(iface);
+	iface->pge_primary = pge_new_primary(iface);
+	iface->pge_workstation = pge_new_workstation(iface);
 
 	free(ifr);
 	close(s);

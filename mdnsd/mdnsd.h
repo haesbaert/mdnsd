@@ -48,6 +48,7 @@
 #define RANDOM_PROBETIME	arc4random_uniform(250000)
 #define FIRST_QUERYTIME		(arc4random_uniform(120000) + 20000)
 #define MAXQUERYTIME		(60 * 60) /* one hour */
+#define ALL_IFACE 		(NULL)
 
 #define ANSWERS(qrrs, rrs)						\
 	((((qrrs)->type == T_ANY) || ((qrrs)->type == (rrs)->type))  && \
@@ -63,14 +64,15 @@
 	     (var) != NULL;			\
 	     (var) = cache_next_by_rrs(var))
 
-#define CACHE_FOREACH_DNAME(var, var2, dname)		\
-	/* struct rr *var */				\
-	/* struct cache_node *var2 */			\
-	/* char dname[MAXHOSTNAMELEN] */		\
-	for ((var2) = cache_lookup_dname(dname) &&	\
-		 (var) = LIST_FIRST((var2)->rr_list);	\
-	     (var2) != NULL && (var) != NULL;		\
-	     (var) = LIST_NEXT(var, centry))		\
+#define CACHE_FOREACH_DNAME(var, var2, dname)				\
+	/* struct rr *var */						\
+	/* struct cache_node *var2 */					\
+	/* char dname[MAXHOSTNAMELEN] */				\
+	for (((var2) = cache_lookup_dname(dname)),			\
+		 (var2) ?						\
+		 ((var) = LIST_FIRST(&(var2)->rr_list)) : NULL ;	\
+	     (var2) != NULL && (var) != NULL;				\
+	     (var) = LIST_NEXT(var, centry))				\
 
 struct rrset {
 	LIST_ENTRY(rrset) entry;	       /* List link */
@@ -84,15 +86,6 @@ struct cache_node {
 	LIST_HEAD(, rr)	     rr_list;	/* List of RR under dname */
 	char 		     dname[MAXHOSTNAMELEN]; /* domain name */
 };
-
-
-/* struct rrt_node { */
-/* 	RB_ENTRY(rrt_node)      entry; 	/\* Cache RBTREE link *\/ */
-/* 	struct rrset		rrs;	/\* Cache head *\/ */
-/* 	LIST_HEAD(, rr) 	hrr;	/\* List of RR in this head *\/ */
-/* }; */
-/* RB_HEAD(rrt_tree, rrt_node); */
-/* RB_PROTOTYPE(rrt_tree, rrt_node, entry, rrt_cmp); */
 
 struct hinfo {
 	char    cpu[MAXCHARSTR]; /* Cpu name */
@@ -122,13 +115,15 @@ struct rr {
 		struct hinfo	HINFO;		       /* Host Info */
 
 	} rdata;
-	struct cache_node *cn;	   	/* Cache parent node */
-	int		revision;	/* at 80% of ttl, then 90% and 95% */
-	struct event	rev_timer;	/* cache revision timer */
-	struct timespec	age;
-	u_int 			flags;	/* RR Flags */
+	struct iface		*iface;	/* Published/Received interface */
+	struct cache_node	*cn;	/* Cache parent node */
+	int			 revision; /* at 80% of ttl, then 90% and 95% */
+	struct event		 rev_timer; /* cache revision timer */
+	struct timespec		 age;	/* XXX cant remember */
+	u_int			 flags;	/* RR Flags */
 #define RR_FLAG_CACHEFLUSH	0x01	/* Unique record */
 #define RR_FLAG_AUTH		0x02	/* Authority record */
+#define RR_FLAG_PUBLISHED	0x04	/* Published record */
 };
 
 struct pkt {
@@ -182,8 +177,7 @@ struct pg {
 	struct ctl_conn 	*c;		/* Owner */
 	char 			name[MAXHOSTNAMELEN]; /* Name id */
 	u_int 			flags;		/* Misc flags */
-#define PG_FLAG_INTERNAL 0x01			/* No Owner/Controller */
-#define PG_FLAG_COMMITED 0x02			/* Controller sent commit */
+#define PG_FLAG_COMMITED 0x01			/* Controller sent commit */
 };
 
 /* Publish Group Entry types */
@@ -193,35 +187,27 @@ enum pge_type {
 	PGE_TYPE_ADDRESS	/* A Primary Address */
 };
 
-enum pge_if_state {
-	PGE_IF_STA_UNPUBLISHED,		/* Initial state */
-	PGE_IF_STA_PROBING,		/* Probing state */
-	PGE_IF_STA_ANNOUNCING,		/* Considered announced */
-	PGE_IF_STA_PUBLISHED,		/* Finished announcing */
+enum pge_state {
+	PGE_STA_UNPUBLISHED,		/* Initial state */
+	PGE_STA_PROBING,		/* Probing state */
+	PGE_STA_ANNOUNCING,		/* Considered announced */
+	PGE_STA_PUBLISHED,		/* Finished announcing */
 };
 
-/* Publish Group Entry */
 struct pge {
 	TAILQ_ENTRY(pge) 	entry;	  	/* pge_queue link */
 	LIST_ENTRY(pge)		pge_entry; 	/* Group link */
-	LIST_HEAD(, pge_if)	pge_if_list;	/* FSM list, one per iface */
+	LIST_HEAD(, rr)		rr_list;	/* Proposed records */
 	struct pg 	       *pg;		/* Parent Publish Group */
 	enum pge_type 	 	pge_type;	/* Type of this entry */
 	u_int 		 	pge_flags;	/* Misc flags */
-#define PGE_FLAG_INC_A 0x01	/* Include primary T_A record */
-};
-	
-/* Publish Group Entry per iface state */
-struct pge_if {
-	LIST_ENTRY(pge_if)	 entry;	    	/* pge_if_list link */
-	LIST_HEAD(, rr)		 rr_list;	/* Proposed records */
+#define PGE_FLAG_INC_A		0x01	/* Include primary T_A record */
+#define PGE_FLAG_INTERNAL	0x02	/* Internal pge, pg is NULL */
 	struct question 	*pqst;		/* Probing Question, may be NULL */
-	struct pge		*pge; 		/* Pointer to parent */
 	struct iface		*iface;		/* Iface to be published */
-	struct event		 if_timer;	/* FSM timer */
-	enum pge_if_state	 if_state;	/* FSM state */
-	u_int			 if_sent;	/* How many sent packets */
-	
+	struct event		 timer;		/* FSM timer */
+	enum pge_state	 	 state;		/* FSM state */
+	u_int			 sent;		/* How many sent packets */
 };
 
 /* Publish Group Queue, should hold all publishing groups */
@@ -269,9 +255,8 @@ enum iface_type {
 
 struct iface {
 	LIST_ENTRY(iface)	 entry;
-	LIST_HEAD(, rr)	       	 auth_rr_list;
-	struct pg		*pg_primary;
-	struct pg		*pg_workstation;
+	struct pge		*pge_primary;
+	struct pge		*pge_workstation;
 	char			 name[IF_NAMESIZE];
 	struct in_addr		 addr;
 	struct in_addr		 dst;
@@ -339,7 +324,9 @@ void	  recv_packet(int, short, void *);
 int	  send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
 void	  pkt_process(int, short, void *);
 int	  pkt_send_if(struct pkt *, struct iface *, struct sockaddr_in *);
-int	  pkt_send_allif(struct pkt *);
+int	  pkt_send_allif_do(struct pkt *, int);
+#define   pkt_send_allif(pkt) pkt_send_allif_do(pkt, 0)
+#define   pkt_send_allif_inc_prim(pkt) pkt_send_allif_do(pkt, 1)
 void	  pkt_init(struct pkt *);
 void	  pkt_cleanup(struct pkt *);
 void	  pkt_add_question(struct pkt *, struct question *);
@@ -368,6 +355,7 @@ struct question	*question_add(struct rrset *);
 void		 question_remove(struct rrset *);
 void		 cache_init(void);
 int		 cache_insert(struct rr *);
+int		 cache_insert_auth(struct rr *);
 void		 cache_schedrev(struct rr *);
 void		 cache_rev(int, short, void *);
 int		 cache_node_cmp(struct cache_node *, struct cache_node *);
@@ -375,8 +363,8 @@ int		 cache_process(struct rr *);
 struct rr	*cache_lookup(struct rrset *);
 struct cache_node *cache_lookup_dname(const char *);
 struct rr 	*cache_next_by_rrs(struct rr *);
-int		 cache_unlink(struct rr *);
-int		 cache_unlink_by_data(struct rr *);
+int		 cache_unlink(struct rr *, int);
+int		 cache_unlink_by_data(struct rr *, int);
 int		 rrset_cmp(struct rrset *, struct rrset *);
 int		 rr_notify_in(struct rr *);
 int		 rr_notify_out(struct rr *);
@@ -384,19 +372,16 @@ struct rr	*rr_dup(struct rr *);
 struct question *question_dup(struct question *);
 void		 pg_init(void);
 void		 pg_publish_byiface(struct iface *);
-struct pg 	*pg_new_primary(struct iface *);
-struct pg 	*pg_new_workstation(struct iface *);
 struct pg	*pg_get(int, char [MAXHOSTNAMELEN], struct ctl_conn *);
 void		 pg_kill(struct pg *);
 int		 pg_published(struct pg *);
-int		 pg_rr_in_conflict(struct rr *);
 struct pge	*pge_from_ms(struct pg *, struct mdns_service *, struct iface *);
 void		 pge_kill(struct pge *);
-void		 pge_if_fsm(int, short, void *);
-void		 pge_if_fsm_restart(struct pge_if *, struct timeval *);
-void		 pge_if_send_goodbye(struct pge_if *);
-struct rr *	 auth_lookup_rr(struct iface *, struct rrset *);
-void		 auth_unpublish_all(void);
+void		 pge_fsm(int, short, void *);
+void		 pge_fsm_restart(struct pge *, struct timeval *);
+struct pge 	*pge_new_primary(struct iface *);
+struct pge 	*pge_new_workstation(struct iface *);
+struct rr *	 get_prim_a(struct iface *);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;

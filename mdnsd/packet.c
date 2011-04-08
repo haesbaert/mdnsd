@@ -595,20 +595,51 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	return (0);
 }
 
-int
-pkt_send_allif(struct pkt *pkt)
+struct rr *
+get_prim_a(struct iface *iface)
 {
-	struct iface	*iface = NULL;
-	int		 succ  = 0;
+	struct rr *rr;
+	struct pge *pge;
+
+	pge = iface->pge_primary;
+	
+	LIST_FOREACH(rr, &pge->rr_list, gentry) {
+		if (rr->rrs.type != T_A)
+			continue;
+		return (rr);
+	}
+	
+	return (NULL);
+}
+
+int
+pkt_send_allif_do(struct pkt *pkt, int inc_prim)
+{
+	struct iface	*iface;
+	struct rr	*rr;
+	int		 succ = 0;
+	
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		/* XXX this is so wrong.... */
+		if (inc_prim) {
+			if ((rr = get_prim_a(iface)) == NULL)
+				log_warnx("T_A not found for "
+				    "primary pge. Not including T_A !");
+			else
+				pkt_add_anrr(pkt, rr);
+		}
 		if (pkt_send_if(pkt, iface, NULL) == -1)
 			log_warnx("Can't send packet through %s", iface->name);
 		else
 			succ++;
+		/* XXX this is so wrong.... */
+		if (inc_prim && rr != NULL)
+			LIST_REMOVE(rr, pentry);
 	}
 	/* If we couldn't send to a single iface, consider an error */
 	if (succ == 0)
 		return (-1);
+
 	return (0);
 }
 
@@ -1045,9 +1076,10 @@ int
 pkt_handle_qst(struct pkt *pkt)
 {
 	struct question		*qst, *lqst;
-	struct rr		*rr;
+	struct rr		*rr, *rrcopy;
 	struct pkt		 sendpkt;
 	struct sockaddr_in	 dst, *pdst;
+	struct cache_node 	 *cn;
 
 	/* TODO: Mdns draft 6.3 Duplicate Question Suppression */
 	
@@ -1089,14 +1121,19 @@ pkt_handle_qst(struct pkt *pkt)
 		}
 
 		/*
-		 * XXX: O(n), make this a tree some day.
+		 * CACHE_FOREACH_DNAME instead of CACHE_FOREACH_RRS so that in
+		 * future we can do conflict resolving. Which needs to answer a
+		 * T_ANY.
 		 */
-		LIST_FOREACH(rr, &pkt->iface->auth_rr_list, centry) {
+		CACHE_FOREACH_DNAME(rr, cn, qst->rrs.dname) {
+			/* XXX must take iface into account */
+			if ((rr->flags & RR_FLAG_AUTH) == 0 ||
+			    (rr->flags & RR_FLAG_PUBLISHED) == 0)
+				continue;
 			if (!ANSWERS(&qst->rrs, &rr->rrs))
 				continue;
-			
 			/* Make a copy since we may modify if PKT_F_LEGACY */
-			rr = rr_dup(rr);
+			rrcopy = rr_dup(rr);
 			/*
 			 * If this is a legacy question, get a copy rr, remove
 			 * the cacheflush bit and copy the qid from question.
@@ -1109,12 +1146,12 @@ pkt_handle_qst(struct pkt *pkt)
 				lqst->flags = 0;
 				lqst->rrs   = qst->rrs;
 				pkt_add_question(&sendpkt, lqst);
-				rr->flags &= ~RR_FLAG_CACHEFLUSH;
+				rrcopy->flags &= ~RR_FLAG_CACHEFLUSH;
 				/* Draft says up to 10 */
-				rr->ttl = 8;
+				rrcopy->ttl = 8;
 			} 
 			/* Add to response packet */
-			pkt_add_anrr(&sendpkt, rr);
+			pkt_add_anrr(&sendpkt, rrcopy);
 		}
 		
 		LIST_REMOVE(qst, entry);
@@ -1138,7 +1175,8 @@ pkt_handle_qst(struct pkt *pkt)
 int
 pkt_should_answer_qst(struct pkt *pkt, struct question *qst)
 {
-	struct rr *rr, *rrans;
+	struct rr *rr, *rrans = NULL;
+	struct cache_node *cn;
 	
 	/*
 	 * If this packet isn't a query, don't even think of answering.
@@ -1163,7 +1201,14 @@ pkt_should_answer_qst(struct pkt *pkt, struct question *qst)
 	 * supression list, that is, check that the answer isn't in the answer
 	 * section with a ttl at least half the original value. 
 	 */
-	rrans = auth_lookup_rr(pkt->iface, &qst->rrs);
+	CACHE_FOREACH_DNAME(rrans, cn, qst->rrs.dname) {
+		/* XXX must take iface into account */
+		if ((rrans->flags & RR_FLAG_AUTH) == 0)
+			continue;
+		if (!ANSWERS(&qst->rrs, &rrans->rrs))
+			continue;
+		break;
+	}
 	/* We've no answers for it, we should try to answer, but we
 	 * already know we can't so return 0, this is a speed hack. */
 	if (rrans == NULL)
