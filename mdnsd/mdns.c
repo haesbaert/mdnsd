@@ -804,7 +804,7 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 	if (cache_insert_auth(srv) < 0)
 		goto bad;
 	if (cache_insert_auth(txt) < 0) {
-		/* cache_unlink(srv, 0); */
+		cache_unlink(srv, 0);
 		goto bad;
 	}
 	if (cache_insert_auth(ptr_proto) < 0) {
