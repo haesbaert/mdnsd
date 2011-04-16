@@ -55,6 +55,7 @@
 	    (strcmp((qrrs)->dname, (rrs)->dname)) == 0)
 
 #define RR_UNIQ(rr) (rr->flags & RR_FLAG_CACHEFLUSH)
+#define RR_AUTH(rr) (rr->auth_refcount > 0)
 
 #define CACHE_FOREACH_RRS(var, rrs)		\
 	/* struct rr *var */			\
@@ -101,7 +102,6 @@ struct srv {
 struct rr {
 	LIST_ENTRY(rr)		centry;	/* Cache entry */
 	LIST_ENTRY(rr)		pentry;	/* Packet entry */
-	LIST_ENTRY(rr)		gentry;	/* Group entry */
 	struct rrset 		rrs;	/* RR tripple */
 	u_int32_t		ttl;	/* DNS Time to live */
 	union {
@@ -116,13 +116,13 @@ struct rr {
 	} rdata;
 	struct iface		*iface;	/* Published/Received interface */
 	struct cache_node	*cn;	/* Cache parent node */
+	int			 auth_refcount; /* Number of pges holding us */
 	int			 revision; /* at 80% of ttl, then 90% and 95% */
 	struct event		 rev_timer; /* cache revision timer */
 	struct timespec		 age;	/* XXX cant remember */
 	u_int			 flags;	/* RR Flags */
 #define RR_FLAG_CACHEFLUSH	0x01	/* Unique record */
-#define RR_FLAG_AUTH		0x02	/* Authority record */
-#define RR_FLAG_PUBLISHED	0x04	/* Published record */
+#define RR_FLAG_PUBLISHED	0x02	/* Published record */
 };
 
 struct pkt {
@@ -131,9 +131,9 @@ struct pkt {
 #define PKT_FLAG_LEGACY 0x1		/* Legacy unicast packet */
 	HEADER			h;	/* Packet header */
 	LIST_HEAD(, question) 	qlist;	/* Question section */
-	LIST_HEAD(, rr)       	anlist;	/* Answer section */
-	LIST_HEAD(, rr)       	nslist;	/* Authority section */
-	LIST_HEAD(, rr)       	arlist;	/* Additional section */
+	LIST_HEAD(, rr)	      	anlist;	/* Answer section */
+	LIST_HEAD(, rr)	      	nslist;	/* Authority section */
+	LIST_HEAD(, rr)	      	arlist;	/* Additional section */
 	struct sockaddr_in	ipsrc;	/* Received ipsource */
 	struct event		timer;	/* Timer for truncated pkts */
 	struct iface 	       *iface;  /* Received interface */
@@ -193,20 +193,22 @@ enum pge_state {
 	PGE_STA_PUBLISHED,		/* Finished announcing */
 };
 
+#define PGE_RR_MAX 8
 struct pge {
-	TAILQ_ENTRY(pge) 	entry;	  	/* pge_queue link */
-	LIST_ENTRY(pge)		pge_entry; 	/* Group link */
-	LIST_HEAD(, rr)		rr_list;	/* Proposed records */
-	struct pg 	       *pg;		/* Parent Publish Group */
-	enum pge_type 	 	pge_type;	/* Type of this entry */
-	u_int 		 	pge_flags;	/* Misc flags */
-#define PGE_FLAG_INC_A		0x01	/* Include primary T_A record */
-#define PGE_FLAG_INTERNAL	0x02	/* Internal pge, pg is NULL */
-	struct question 	*pqst;		/* Probing Question, may be NULL */
-	struct iface		*iface;		/* Iface to be published */
-	struct event		 timer;		/* FSM timer */
-	enum pge_state	 	 state;		/* FSM state */
-	u_int			 sent;		/* How many sent packets */
+	TAILQ_ENTRY(pge) entry;	  	/* pge_queue link */
+	LIST_ENTRY(pge)	 pge_entry; 	/* Group link */
+	struct pg 	 *pg;		/* Parent Publish Group */
+	enum pge_type 	  pge_type;	/* Type of this entry */
+	u_int 		  pge_flags;	/* Misc flags */
+#define PGE_FLAG_INC_A	  0x01		/* Include primary T_A record */
+#define PGE_FLAG_INTERNAL 0x02		/* Internal pge, pg is NULL */
+	struct question  *pqst;		/* Probing Question, may be NULL */
+	struct rr 	 *rr[PGE_RR_MAX]; /* Array of to publish rr */
+	int 		  nrr;		/* Members in rr array */
+	struct iface	 *iface;	/* Iface to be published */
+	struct event	  timer;	/* FSM timer */
+	enum pge_state	  state;	/* FSM state */
+	u_int		  sent;	/* How many sent packets */
 };
 
 /* Publish Group Queue, should hold all publishing groups */
@@ -319,7 +321,7 @@ int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t, pid_t,
 
 /* packet.c */
 void	  packet_init(void);
-void	  recv_packet(int, short, void *);   
+void	  recv_packet(int, short, void *);
 int	  send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
 void	  pkt_process(int, short, void *);
 int	  pkt_send_if(struct pkt *, struct iface *, struct sockaddr_in *);
@@ -353,7 +355,7 @@ struct question	*question_add(struct rrset *);
 void		 question_remove(struct rrset *);
 void		 cache_init(void);
 int		 cache_insert(struct rr *);
-int		 cache_insert_auth(struct rr *);
+int		 cache_delete(struct rr *);
 void		 cache_schedrev(struct rr *);
 void		 cache_rev(int, short, void *);
 int		 cache_node_cmp(struct cache_node *, struct cache_node *);
@@ -361,8 +363,6 @@ int		 cache_process(struct rr *);
 struct rr	*cache_lookup(struct rrset *);
 struct cache_node *cache_lookup_dname(const char *);
 struct rr 	*cache_next_by_rrs(struct rr *);
-int		 cache_unlink(struct rr *, int);
-int		 cache_unlink_by_data(struct rr *, int);
 int		 rrset_cmp(struct rrset *, struct rrset *);
 int		 rr_notify_in(struct rr *);
 int		 rr_notify_out(struct rr *);
@@ -380,6 +380,10 @@ void		 pge_fsm_restart(struct pge *, struct timeval *);
 struct pge 	*pge_new_primary(struct iface *);
 struct pge 	*pge_new_workstation(struct iface *);
 struct rr *	 get_prim_a(struct iface *);
+struct rr *	 auth_get(struct rr *);
+void		 auth_release(struct rr *);
+int		 rr_send_goodbye(struct rr *);
+
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
@@ -387,6 +391,6 @@ int     control_send_rr(struct ctl_conn *, struct rr *, int);
 int	control_send_ms(struct ctl_conn *, struct mdns_service *, int);
 int     control_try_answer_ms(struct ctl_conn *, char[MAXHOSTNAMELEN]);
 int    	control_notify_pg(struct ctl_conn *, struct pg *, int);
-				    
+
 
 #endif /* _MDNSD_H_ */

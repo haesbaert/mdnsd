@@ -84,7 +84,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		    mlkup.class);
 		return;
 	}
-	
+
 	/* Check if control has this query already, if so don't do anything */
 	LIST_FOREACH(q, &c->qlist, entry) {
 		if (q->style != QUERY_LOOKUP)
@@ -99,7 +99,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 
 	log_debug("looking up %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
-	
+
 	/*
 	 * Look for answers in our cache
 	 */
@@ -115,7 +115,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 		log_warnx("Can't add question for %s (%s)", rrs_str(&mlkup));
 		return;
 	}
-	
+
 	/* cache miss */
 	if ((q = calloc(1, sizeof(*q))) == NULL)
 		fatal("calloc");
@@ -158,7 +158,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		    mlkup.class);
 		return;
 	}
-	
+
 	/* Check if control has this query already, if so don't do anything */
 	LIST_FOREACH(q, &c->qlist, entry) {
 		if (q->style != QUERY_BROWSE)
@@ -169,10 +169,10 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 			return;
 		}
 	}
-	
+
 	log_debug("Browse add %s (%s %d)", mlkup.dname, rr_type_name(mlkup.type),
 	    mlkup.class);
-	
+
 	/*
 	 * Look for answers in our cache
 	 */
@@ -187,7 +187,7 @@ control_browse_add(struct ctl_conn *c, struct imsg *imsg)
 		log_warnx("Can't add question for %s", rrs_str(&mlkup));
 		return;
 	}
-	
+
 	if ((q = calloc(1, sizeof(*q))) == NULL)
 		fatal("calloc");
 	if ((rrs = calloc(1, sizeof(*rrs))) == NULL)
@@ -228,7 +228,7 @@ control_browse_del(struct ctl_conn *c, struct imsg *imsg)
 		    mlkup.class);
 		return;
 	}
-	
+
 	LIST_FOREACH(q, &c->qlist, entry) {
 		if (q->style != QUERY_BROWSE)
 			continue;
@@ -237,9 +237,9 @@ control_browse_del(struct ctl_conn *c, struct imsg *imsg)
 		query_remove(q);
 		return;
 	}
-	
+
 	log_warnx("Trying to remove non existant query");
-}	
+}
 
 void
 control_resolve(struct ctl_conn *c, struct imsg *imsg)
@@ -249,7 +249,7 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 	struct rr		*srv_cache;
 	struct query		*q;
 	struct timeval		 tv;
-	
+
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_resolve: Invalid msg len");
 		return;
@@ -257,7 +257,7 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 
 	memcpy(msg, imsg->data, sizeof(msg));
 	msg[sizeof(msg) - 1] = '\0';
-	
+
 	/* Check if control has this query already, if so don't do anything */
 	LIST_FOREACH(q, &c->qlist, entry) {
 		if (q->style != QUERY_RESOLVE)
@@ -268,9 +268,9 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 			return;
 		}
 	}
-	
+
 	log_debug("Resolve %s", msg);
-	
+
 	/*
 	 * Try getting answer withing our cache entries
 	 */
@@ -278,7 +278,7 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 		log_debug("Resolve for %s all in cache", msg);
 		return;
 	}
-	
+
 	/*
 	 * If we got here we need to make a query.
 	 */
@@ -292,12 +292,12 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 	tv.tv_usec = FIRST_QUERYTIME;
 	evtimer_set(&q->timer, query_fsm, q);
 	evtimer_add(&q->timer, &tv);
-	
+
 	if ((rrs_srv = calloc(1, sizeof(*rrs_srv))) == NULL)
 		err(1, "calloc");
 	if ((rrs_txt = calloc(1, sizeof(*rrs_txt))) == NULL)
 		err(1, "calloc");
-	
+
 	if (strlcpy(rrs_srv->dname, msg, sizeof(rrs_srv->dname)) >=
 	    sizeof(rrs_srv->dname)) {
 		log_warnx("control_resolve: msg too long, dropping");
@@ -323,7 +323,7 @@ control_resolve(struct ctl_conn *c, struct imsg *imsg)
 		q->ms_a = rrs_a;
 		LIST_INSERT_HEAD(&q->rrslist, rrs_a, entry);
 	}
-	
+
 	LIST_FOREACH(rrs_aux, &q->rrslist, entry) {
 		if (question_add(rrs_aux) == NULL) {
 			log_warnx("control_resolve: question_add error");
@@ -338,7 +338,7 @@ control_group_add(struct ctl_conn *c, struct imsg *imsg)
 {
 	char		 msg[MAXHOSTNAMELEN];
 	struct pg	*pg;
-	
+
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_group_add: Invalid group len");
 		return;
@@ -354,7 +354,7 @@ control_group_add(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	/*
 	 * Initialize group in temporary list, when user commits the group, we
-	 * will process it all. 
+	 * will process it all.
 	 */
 	pg = pg_get(1, msg, c);
 }
@@ -365,7 +365,7 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 	struct pg		*pg;
 	struct pge		*pge;
 	struct mdns_service	 msg, *ms;
-	
+
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_group_add_service: Invalid group len");
 		return;
@@ -375,7 +375,7 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 	ms = &msg;
 	/* XXX deal with target, accept only ourselves for now */
 	(void)strlcpy(ms->target, conf->myname, sizeof(ms->target));
-	
+
 	/* Group not found, or group commited */
 	pg = pg_get(0, ms->name, c);
 	if (pg == NULL ||
@@ -383,7 +383,7 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 		log_warnx("Controller trying to add service to invalid group");
 		return;
 	}
-	
+
 	/* TODO implement iface option in ms */
 	if ((pge = pge_from_ms(pg, ms, NULL)) == NULL) {
 		log_warnx("pge_from_ms Failed");
@@ -396,7 +396,7 @@ control_group_reset(struct ctl_conn *c, struct imsg *imsg)
 {
 	char		 msg[MAXHOSTNAMELEN];
 	struct pg	*pg;
-	
+
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_group_reset: Invalid group len");
 		return;
@@ -412,7 +412,7 @@ control_group_reset(struct ctl_conn *c, struct imsg *imsg)
 	}
 
 	pg_kill(pg);
-	
+
 	log_debug("group %s reseted", msg);
 }
 
@@ -427,14 +427,14 @@ control_group_commit(struct ctl_conn *c, struct imsg *imsg)
 	struct pg	*pg;
 	struct pge	*pge;
 	struct timeval	 tv;
-	
+
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_group_commit: Invalid group len");
 		return;
 	}
 	memcpy(msg, imsg->data, sizeof(msg));
 	msg[sizeof(msg) - 1] = '\0';
-	
+
 	/* Check if we have the group under our control. */
 	pg = pg_get(0, msg, c);
 	if (pg == NULL) {
@@ -451,7 +451,7 @@ control_group_commit(struct ctl_conn *c, struct imsg *imsg)
 			    IMSG_CTL_GROUP_ERR_COLLISION);
 			return;
 		}
-		
+
 		control_notify_pg(c, pg,
 		    IMSG_CTL_GROUP_ERR_NOT_FOUND);
 		return;
@@ -462,8 +462,8 @@ control_group_commit(struct ctl_conn *c, struct imsg *imsg)
 	 */
 
 	/* Mark we got a commit */
-	pg->flags |= PG_FLAG_COMMITED; 
-	
+	pg->flags |= PG_FLAG_COMMITED;
+
 	timerclear(&tv);
 	tv.tv_usec = RANDOM_PROBETIME;
 	LIST_FOREACH(pge, &pg->pge_list, pge_entry) {
@@ -561,7 +561,7 @@ control_accept(int listenfd, short event, void *bula)
 		close(connfd);
 		return;
 	}
-	
+
 	LIST_INIT(&c->qlist);
 	imsg_init(&c->iev.ibuf, connfd);
 	c->iev.handler = control_dispatch_imsg;
@@ -569,7 +569,7 @@ control_accept(int listenfd, short event, void *bula)
 	event_set(&c->iev.ev, c->iev.ibuf.fd, c->iev.events,
 	    c->iev.handler, &c->iev);
 	event_add(&c->iev.ev, NULL);
-	
+
 	TAILQ_INSERT_TAIL(&ctl_conns, c, entry);
 }
 
@@ -719,7 +719,7 @@ control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
 	log_debug("control_send_rr (%s) %s", rr_type_name(rr->rrs.type),
 	    rr->rrs.dname);
-	
+
 	return (mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr)));
 }
 
@@ -740,9 +740,9 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	struct rr *srv, *txt, *a;
 	struct rrset rrs;
 	struct mdns_service ms;
-	
+
 	srv = txt = a = NULL;
-	
+
 	/*
 	 * Look for answers in our cache
 	 */
@@ -770,7 +770,7 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	ms.addr = a->rdata.A;
 	if (control_send_ms(c, &ms, IMSG_CTL_RESOLVE) == -1)
 		log_warnx("control_send_ms error");
-	
+
 	return (1);
 }
 
@@ -778,12 +778,12 @@ int
 control_notify_pg(struct ctl_conn *c, struct pg *pg, int msgtype)
 {
 	log_debug("control_notify_pg %s msg %d", pg->name, msgtype);
-	
+
 	if (c == NULL) {
 		log_warnx("Calling control_notify_pg() with NULL !");
 		return (-1);
 	}
-	
+
 	return (mdnsd_imsg_compose_ctl(c, msgtype, pg->name,
 	    sizeof(pg->name)));
 }

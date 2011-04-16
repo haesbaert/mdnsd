@@ -116,7 +116,7 @@ send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
 	if (sendto(iface->fd, pkt, len, 0,
 	    (struct sockaddr *)dst, sizeof(*dst)) == -1) {
 		log_warn("send_packet: error sending packet on interface "
-                         "%s, len %zd", iface->name, len);
+			 "%s, len %zd", iface->name, len);
 		return (-1);
 	}
 
@@ -145,10 +145,10 @@ recv_packet(int fd, short event, void *bula)
 	u_int8_t		*pbuf;
 	u_int16_t		 i, len;
 	ssize_t			 r;
-		
+
 	if (event != EV_READ)
 		return;
-	
+
 	inet_aton(ALL_MDNS_DEVICES, &mdns_addr);
 	bzero(&msg, sizeof(msg));
 	bzero(buf, sizeof(buf));
@@ -193,9 +193,9 @@ recv_packet(int fd, short event, void *bula)
 		return;
 
 	len = (u_int16_t)r;
-	
+
 	/* Check the packet is not from one of the local interfaces */
-	LIST_FOREACH(iface, &conf->iface_list, entry) 
+	LIST_FOREACH(iface, &conf->iface_list, entry)
 		if (iface->addr.s_addr == ipsrc.sin_addr.s_addr)
 			return;
 
@@ -212,7 +212,7 @@ recv_packet(int fd, short event, void *bula)
 		free(pkt);
 		return;
 	}
-	
+
 	/*
 	 * Multicastdns draft 4. Source Address check.
 	 * If a response packet was sent to an unicast address, check if the
@@ -240,11 +240,11 @@ recv_packet(int fd, short event, void *bula)
 		}
 	/* Save the received interface */
 	pkt->iface = iface;
-	
+
 	/* Check if this is a legacy dns packet */
 	if (ntohs(pkt->ipsrc.sin_port) != MDNS_PORT)
 		pkt->flags |= PKT_FLAG_LEGACY;
-	
+
 	/* Parse question section */
 	if (pkt->h.qr == MDNS_QUERY)
 		for (i = 0; i < pkt->h.qdcount; i++)
@@ -291,9 +291,9 @@ recv_packet(int fd, short event, void *bula)
 
 		LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	}
-	
+
 	/* XXX: If we droped an RR our packet counts may be wrong. */
-	
+
 	if (len != 0) {
 		log_warnx("Couldn't read all packet, %u bytes left", len);
 		log_warnx("ancount %d, nscount %d, arcount %d",
@@ -302,7 +302,7 @@ recv_packet(int fd, short event, void *bula)
 		free(pkt);
 		return;
 	}
-	
+
 	/*
 	 * Packet parsing done, our pkt structure is complete.
 	 */
@@ -317,7 +317,7 @@ recv_packet(int fd, short event, void *bula)
 	    pkt->h.qdcount == 0 && pkt->h.arcount == 0 &&
 	    pkt->h.nscount == 0 && pkt->h.ancount > 0) {
 		struct pkt *dpkt, *match = NULL;
-		
+
 		TAILQ_FOREACH(dpkt, &deferred_queue, entry) {
 			/* XXX: Should we compare source port as well ? */
 			if (dpkt->ipsrc.sin_addr.s_addr !=
@@ -346,7 +346,7 @@ recv_packet(int fd, short event, void *bula)
 			    "but no match", inet_ntoa(pkt->ipsrc.sin_addr),
 			    ntohs(pkt->ipsrc.sin_port));
 	}
-	
+
 	/*
 	 * Mdns Draft 7.2 Multi-Packet Known Answer Supression
 	 * A Multicast DNS Responder seeing a Multicast DNS Query with the TC
@@ -360,7 +360,7 @@ recv_packet(int fd, short event, void *bula)
 	 * answer record.  Check if this packet was truncated, due to too many
 	 * Known Answer Supression entries, if so, defer processing
 	 */
-	
+
 	if (pkt->h.qr == MDNS_QUERY && pkt->h.tc) {
 		TAILQ_INSERT_TAIL(&deferred_queue, pkt, entry);
 		timerclear(&tv);
@@ -368,7 +368,7 @@ recv_packet(int fd, short event, void *bula)
 		evtimer_add(&pkt->timer, &tv);
 		return;
 	}
-	
+
 	/* Use 0 as event as our processing wasn't deferred */
 	pkt_process(-1, 0, pkt);
 }
@@ -378,23 +378,21 @@ pkt_process(int unused, short event, void *v_pkt)
 {
 	struct pkt	*pkt = v_pkt;
 	struct rr	*rr;
-	
+
 	if (event == EV_TIMEOUT) {
 		log_debug("pkt deferred from %s:%u",
 		    inet_ntoa(pkt->ipsrc.sin_addr), ntohs(pkt->ipsrc.sin_port));
 		TAILQ_REMOVE(&deferred_queue, pkt, entry);
 	}
-		
+
 	if (pkt_handle_qst(pkt) == -1) {
 		log_warnx("pkt_handleqst() error");
 		pkt_cleanup(pkt);
 		free(pkt);
 		return;
 	}
-	
-		
+
 	/* Clear all authority section */
-	/* Mark all probe questions, so we don't try to answer them below */
 	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
 		LIST_REMOVE(rr, pentry);
 		free(rr);
@@ -429,7 +427,7 @@ pkt_process(int unused, short event, void *v_pkt)
 		}
 		break;
 	}
-	
+
 	/* Sanity check, every section must be empty. */
 	if (!LIST_EMPTY(&pkt->qlist))
 		log_warnx("Unprocessed question in Question Section");
@@ -439,10 +437,10 @@ pkt_process(int unused, short event, void *v_pkt)
 		log_warnx("Unprocessed rr in Authority Section");
 	if (!LIST_EMPTY(&pkt->arlist))
 		log_warnx("Unprocessed rr in Additional Section");
-	
+
 	pkt_cleanup(pkt);
 	free(pkt);
-	
+
 }
 
 int
@@ -566,7 +564,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 		pbuf += n;
 		left -= n;
 	}
-	
+
 	/* Append all authorities, they must fit a single packet. */
 	LIST_FOREACH(rr, &pkt->nslist, pentry) {
 		n = serialize_rr(rr, pbuf, left);
@@ -577,7 +575,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 		pbuf += n;
 		left -= n;
 	}
-	
+
 	/* Append all additionals, they must fit a single packet. */
 	LIST_FOREACH(rr, &pkt->arlist, pentry) {
 		n = serialize_rr(rr, pbuf, left);
@@ -601,15 +599,17 @@ get_prim_a(struct iface *iface)
 {
 	struct rr *rr;
 	struct pge *pge;
+	int i;
 
 	pge = iface->pge_primary;
-	
-	LIST_FOREACH(rr, &pge->rr_list, gentry) {
+
+	for (i = 0; i < pge->nrr; i++) {
+		rr = pge->rr[i];
 		if (rr->rrs.type != T_A)
 			continue;
 		return (rr);
 	}
-	
+
 	return (NULL);
 }
 
@@ -619,7 +619,7 @@ pkt_send_allif_do(struct pkt *pkt, int inc_prim)
 	struct iface	*iface;
 	struct rr	*rr;
 	int		 succ = 0;
-	
+
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		/* XXX this is so wrong.... */
 		if (inc_prim) {
@@ -659,7 +659,7 @@ pkt_cleanup(struct pkt *pkt)
 {
 	struct rr	*rr;
 	struct question *qst;
-	
+
 	while ((qst = LIST_FIRST(&pkt->qlist)) != NULL) {
 		LIST_REMOVE(qst, entry);
 		free(qst);
@@ -719,7 +719,7 @@ rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
 	rr->ttl = ttl;
 	rr->flags = flags;
 	strlcpy(rr->rrs.dname, dname, sizeof(rr->rrs.dname));
-	
+
 	if (rdata != NULL) {
 		if (rdlen > sizeof(rr->rdata)) {
 			log_debug("rr_set: Invalid rdlen %zd", rdlen);
@@ -738,44 +738,10 @@ rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 		return (-1);
 	if (rra->rrs.class != rrb->rrs.class)
 		return (-1);
-	
-	switch (rra->rrs.type) {
-	case T_A:
-		return (rra->rdata.A.s_addr == rrb->rdata.A.s_addr);
-		break;		/* NOTREACHED */
-	case T_CNAME:
-	case T_PTR:
-	case T_NS:
-	case T_TXT:
-		return strcmp((char *) &rra->rdata, (char *) &rrb->rdata);
-		break;		/* NOTREACHED */
-	case T_SRV:
-		if (rra->rdata.SRV.priority > rrb->rdata.SRV.priority)
-			return (1);
-		if (rra->rdata.SRV.priority < rrb->rdata.SRV.priority)
-			return (-1);
-		if (rra->rdata.SRV.weight > rrb->rdata.SRV.weight)
-			return (1);
-		if (rra->rdata.SRV.weight < rrb->rdata.SRV.weight)
-			return (-1);
-		if (rra->rdata.SRV.port > rrb->rdata.SRV.port)
-			return (1);
-		if (rra->rdata.SRV.port < rrb->rdata.SRV.port)
-			return (-1);
-		return strcmp(rra->rdata.SRV.target, rrb->rdata.SRV.target);
-	case T_HINFO:
-		if (strcmp(rra->rdata.HINFO.cpu, rrb->rdata.HINFO.cpu) != 0)
-			return (strcmp(rra->rdata.HINFO.cpu,
-			    rrb->rdata.HINFO.cpu));
-		if (strcmp(rra->rdata.HINFO.os, rrb->rdata.HINFO.os) != 0)
-			return (strcmp(rra->rdata.HINFO.os,
-			    rrb->rdata.HINFO.os));
-	default:
-		log_warnx("Unknown rr->type (%d), can't compare",
-		    rra->rrs.type);
-		fatalx("Fatal, won't accept bogus comparisons");
-		break;
-	}
+
+	return (memcmp(&rra->rdata, &rrb->rdata,
+	    sizeof(rra->rdata)));
+
 }
 
 u_int32_t
@@ -783,11 +749,11 @@ rr_ttl_left(struct rr *rr)
 {
 	struct timespec tnow;
 	struct timespec tr;
-	    
+
 	if (clock_gettime(CLOCK_MONOTONIC, &tnow))
 		fatal("clock_gettime");
 	timespecsub(&tnow, &rr->age, &tr);
-	
+
 	return (rr->ttl - (u_int32_t)tr.tv_sec);
 }
 
@@ -799,7 +765,7 @@ rr_dup(struct rr *rr)
 	if ((rdup = malloc(sizeof(*rdup))) == NULL)
 		fatal("malloc");
 	memcpy(rdup, rr, sizeof(*rdup));
-	
+
 	return (rdup);
 }
 
@@ -836,7 +802,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 
 	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
-	
+
 	n = pkt_parse_dname(*pbuf, *len, qst->rrs.dname);
 	if (n == -1) {
 		free(qst);
@@ -857,7 +823,7 @@ pkt_parse_question(u_int8_t **pbuf, u_int16_t *len, struct pkt *pkt)
 		qst->flags |= QST_FLAG_UNIRESP;
 		qst->rrs.class = us;
 	} else { /* Normal MDNS packets */
-		if (us & UNIRESP_MSK) 
+		if (us & UNIRESP_MSK)
 			qst->flags |= QST_FLAG_UNIRESP;
 		/* Get the class */
 		qst->rrs.class = us & CLASS_MSK;
@@ -911,7 +877,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 			buf = pktcomp.start + ncoff;
 			jumped = 1;
 		}
-		
+
 		/*
 		 * XXX No support for multiple pointers yet.
 		 */
@@ -928,7 +894,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 			log_warnx("Invalid lablen, too big");
 			return (-1);
 		}
-			
+
 		if (!jumped)
 			len--;
 
@@ -1086,13 +1052,13 @@ pkt_handle_qst(struct pkt *pkt)
 	struct cache_node 	 *cn;
 
 	/* TODO: Mdns draft 6.3 Duplicate Question Suppression */
-	
+
 	pkt_init(&sendpkt);
 	sendpkt.h.qr = MDNS_RESPONSE;
 	sendpkt.iface = pkt->iface;
 	bzero(&dst, sizeof(dst));
 	pdst = NULL;
-	
+
 	/* If legacy packet, we must copy id and answer as unicast dns  */
 	if (pkt->flags & PKT_FLAG_LEGACY) {
 		sendpkt.flags = pkt->flags;
@@ -1100,7 +1066,7 @@ pkt_handle_qst(struct pkt *pkt)
 		dst = pkt->ipsrc;
 		pdst = &dst;
 	}
-		
+
 	while ((qst = LIST_FIRST(&pkt->qlist)) != NULL) {
 		/*
 		 * Discard questions which shouldn't be handled, can be a
@@ -1112,7 +1078,7 @@ pkt_handle_qst(struct pkt *pkt)
 			free(qst);
 			continue;
 		}
-		
+
 		/*
 		 * XXX: This assumes that every question came from the same
 		 * packet, hence, the same source. It also assumes QU questions
@@ -1131,7 +1097,7 @@ pkt_handle_qst(struct pkt *pkt)
 		 */
 		CACHE_FOREACH_DNAME(rr, cn, qst->rrs.dname) {
 			/* XXX must take iface into account */
-			if ((rr->flags & RR_FLAG_AUTH) == 0 ||
+			if (!RR_AUTH(rr) ||
 			    (rr->flags & RR_FLAG_PUBLISHED) == 0)
 				continue;
 			if (!ANSWERS(&qst->rrs, &rr->rrs))
@@ -1153,15 +1119,15 @@ pkt_handle_qst(struct pkt *pkt)
 				rrcopy->flags &= ~RR_FLAG_CACHEFLUSH;
 				/* Draft says up to 10 */
 				rrcopy->ttl = 8;
-			} 
+			}
 			/* Add to response packet */
 			pkt_add_anrr(&sendpkt, rrcopy);
 		}
-		
+
 		LIST_REMOVE(qst, entry);
 		free(qst);
 	}
-	
+
 	/*
 	 * If we have answers, send it.
 	 */
@@ -1169,7 +1135,7 @@ pkt_handle_qst(struct pkt *pkt)
 		if (pkt_send_if(&sendpkt, sendpkt.iface, pdst) == -1)
 			log_warnx("Can't send packet to"
 			    "%s", pkt->iface->name);
-	
+
 	/* Cleanup our pkt since the RRs were dupped */
 	pkt_cleanup(&sendpkt);
 
@@ -1181,7 +1147,7 @@ pkt_should_answer_qst(struct pkt *pkt, struct question *qst)
 {
 	struct rr *rr, *rrans = NULL;
 	struct cache_node *cn;
-	
+
 	/*
 	 * If this packet isn't a query, don't even think of answering.
 	 */
@@ -1197,17 +1163,18 @@ pkt_should_answer_qst(struct pkt *pkt, struct question *qst)
 	 * this question resides in the packet authority section, we're not
 	 * supposed to answer.
 	 */
-	LIST_FOREACH(rr, &pkt->nslist, pentry)
+	LIST_FOREACH(rr, &pkt->nslist, pentry) {
 		if (ANSWERS(&qst->rrs, &rr->rrs))
 			return (0);
+	}
 	/*
 	 * Check if the answer we would give isn't already in the known answer
 	 * supression list, that is, check that the answer isn't in the answer
-	 * section with a ttl at least half the original value. 
+	 * section with a ttl at least half the original value.
 	 */
 	CACHE_FOREACH_DNAME(rrans, cn, qst->rrs.dname) {
 		/* XXX must take iface into account */
-		if ((rrans->flags & RR_FLAG_AUTH) == 0)
+		if (!RR_AUTH(rrans))
 			continue;
 		if (!ANSWERS(&qst->rrs, &rrans->rrs))
 			continue;
@@ -1228,7 +1195,7 @@ pkt_should_answer_qst(struct pkt *pkt, struct question *qst)
 		else
 			return (0);
 	}
-	
+
 	return (1);
 }
 
@@ -1252,16 +1219,16 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN],
 	u_int8_t tlen;
 	u_int8_t *pbuf = buf;
 	struct namecomp *nc;
-	
+
 	/* Try to compress this name */
-	
+
 	if (compress &&
 	    (nc = pktcomp_lookup(dname)) != NULL) {
 		PUTSHORT(nc->offset, pbuf);
 		len -= INT16SZ;
 		return (pbuf - buf);
 	}
-	
+
 	do {
 		if ((end = strchr(dbuf, '.')) == NULL) {
 			if ((end = strchr(dbuf, '\0')) == NULL)
@@ -1282,7 +1249,7 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN],
 		return (-1);
 	*pbuf++ = '\0';		/* null terminate dname */
 	len--;
-	
+
 	/*
 	 * Add dname to name compression, buf - pktcomp->start, should give us
 	 * the correct offset in the current packet.
@@ -1291,7 +1258,7 @@ serialize_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN],
 		if (pktcomp_add(dname, (u_int16_t) (buf - pktcomp.start))
 		    == -1)
 			log_warnx("pktcomp_add error: %s", dname);
-	
+
 	return (pbuf - buf);
 }
 
@@ -1437,7 +1404,7 @@ serialize_qst(struct question *qst, u_int8_t *buf, u_int16_t len)
 	if (len < 4)	/* must fit type, class */
 		return (-1);
 	PUTSHORT(qst->rrs.type, pbuf);
-	
+
 	qclass = qst->rrs.class;
 	if (qst->flags & QST_FLAG_UNIRESP)
 		qclass = qst->rrs.class | UNIRESP_MSK;
@@ -1469,7 +1436,7 @@ void
 pktcomp_reset(int first, u_int8_t *start, u_int16_t len)
 {
 	struct namecomp *nc;
-	
+
 	while ((nc = LIST_FIRST(&pktcomp.namecomp_list)) != NULL) {
 		LIST_REMOVE(nc, entry);
 		free(nc);
@@ -1488,7 +1455,7 @@ pktcomp_add(char dname[MAXHOSTNAMELEN], u_int16_t offset)
 	strlcpy(nc->dname, dname, sizeof(nc->dname));
 	nc->offset = offset | NAMECOMP_MSK;
 	LIST_INSERT_HEAD(&pktcomp.namecomp_list, nc, entry);
-	
+
 	return (0);
 }
 
@@ -1496,12 +1463,12 @@ struct namecomp *
 pktcomp_lookup(char dname[MAXHOSTNAMELEN])
 {
 	struct namecomp *nc;
-	
+
 	LIST_FOREACH(nc, &pktcomp.namecomp_list, entry) {
 		if (strcmp(nc->dname, dname) == 0)
 			return (nc);
 	}
-	
+
 	return (NULL);
 }
 
@@ -1524,4 +1491,3 @@ charstr(char dest[MAXCHARSTR], u_int8_t *buf, u_int16_t len)
 
 	return (tocpy + 1);
 }
-

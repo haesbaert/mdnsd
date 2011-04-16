@@ -72,36 +72,8 @@ cache_next_by_rrs(struct rr *rr)
 		if (rrset_cmp(&rr->rrs, &rr_aux->rrs) == 0)
 			return (rr_aux);
 	}
-	
+
 	return (NULL);
-}
-
-int
-cache_process(struct rr *rr)
-{
-	evtimer_set(&rr->rev_timer, cache_rev, rr);
-	if (clock_gettime(CLOCK_MONOTONIC, &rr->age) == -1)
-		fatal("clock_gettime");
-	/*
-	 * If ttl is 0 this is a Goodbye RR. cache_delete() will look for all
-	 * corresponding RR in our cache and remove/free them. This rr isn't in
-	 * cache, therefore cache_delete() won't free it, this is the only
-	 * special case when we call cache_delete() on a rr that isn't in *
-	 * cache.
-	 */
-	
-	/* TODO: schedule it for 1 second */
-	if (rr->ttl == 0) {
-		cache_unlink_by_data(rr, 1);
-		free(rr);
-		
-		return (0);
-	}
-	
-	if (cache_insert(rr) == -1)
-		return (-1);
-
-	return (0);
 }
 
 struct cache_node *
@@ -111,7 +83,7 @@ cache_lookup_dname(const char *dname)
 
 	bzero(&s, sizeof(s));
 	strlcpy(s.dname, dname, sizeof(s.dname));
-	
+
 	return (RB_FIND(cache_tree, &cache_tree, &s));
 }
 
@@ -128,229 +100,198 @@ cache_lookup(struct rrset *rrs)
 		if (rrset_cmp(&rr->rrs, rrs) == 0)
 			return (rr);
 	}
-	
+
 	return (NULL);
 }
 
+/* Process an external rr */
+/* TODO must know if this is a probe ?? */
 int
-cache_insert_auth(struct rr *rr)
+cache_process(struct rr *rr)
 {
-	struct cache_node	*cn;
-	struct rr		*rraux;
+	struct cache_node *cn = NULL;
+	struct rr *rr_aux, *next;
+
+	if (rr->rrs.type != T_A && rr->rrs.type != T_HINFO)
+		return (0);
 
 	/* Sanity check */
-	if ((rr->flags & RR_FLAG_AUTH) == 0) {
-		log_warnx("cache_insert_auth on non auth rr");
+	if (RR_AUTH(rr)) {
+		log_warnx("cache_process on auth rr");
 		return (-1);
 	}
-	
-	/*
-	 * If no entries, make a new node 
-	 */
-	if ((cn = cache_lookup_dname(rr->rrs.dname)) == NULL) {
-		if ((cn = calloc(1, sizeof(*cn))) == NULL)
-			fatal("calloc");
-		(void)strlcpy(cn->dname, rr->rrs.dname, sizeof(cn->dname));
-		rr->cn = cn;
-		LIST_INIT(&cn->rr_list);
-		LIST_INSERT_HEAD(&cn->rr_list, rr, centry);
-		if (RB_INSERT(cache_tree, &cache_tree, cn) != NULL)
-			fatal("cache_insert_auth: RB_INSERT");
-		log_debug("cache_insert_auth: (new) %s", rrs_str(&rr->rrs));
-		
-		return (0);
-	}
+
+	/* Consider received RR as published */
+	rr->flags |= RR_FLAG_PUBLISHED;
+
+	/* Record receiving time */
+	evtimer_set(&rr->rev_timer, cache_rev, rr);
+	if (clock_gettime(CLOCK_MONOTONIC, &rr->age) == -1)
+		fatal("clock_gettime");
 
 	/*
-	 * If this is a unique record
+	 * If no entries go forward and insert
 	 */
-	if (RR_UNIQ(rr)) {
-		CACHE_FOREACH_RRS(rraux, &rr->rrs) {
-			log_warnx("cache_insert_auth: Auth conflict (%s)",
-			    rrs_str(&rr->rrs));
-			return (-2);
+	if ((cn = cache_lookup_dname(rr->rrs.dname)) == NULL)
+		return (cache_insert(rr));
+
+	/*
+	 * Check if we already have a matching RR which is ours.
+	 */
+	for (rr_aux = cache_lookup(&rr->rrs);
+	     rr_aux != NULL;
+	     rr_aux = next) {
+		next = cache_next_by_rrs(rr_aux);
+		if (rrset_cmp(&rr->rrs, &rr_aux->rrs) != 0)
+			continue;
+
+		if (RR_AUTH(rr_aux)) {
+			/* Same rdata */
+			if (rr_rdata_cmp(rr, rr_aux) == 0) {
+				/*
+				 * This may be a goodbye, defend our RR batman.
+				 */
+				if (rr->ttl <= rr_aux->ttl / 2) {
+					/* TODO defend our record */
+					log_warnx("cache_process: defend %s",
+					    rrs_str(&rr->rrs));
+				} else {
+					/* TODO Cancel possible deletion */
+					log_warnx("cache_process: recover %s",
+					    rrs_str(&rr->rrs));
+					return (0);
+				}
+				return (0);
+			}
+			/*
+			 * RDATA isn't equal, if either we, or they are unique,
+			 * this is a conflict.
+			 */
+			if (RR_UNIQ(rr) || RR_UNIQ(rr_aux)) {
+				log_warnx("cache_process: conflict for %s",
+				    rrs_str(&rr->rrs));
+				return (-1);
+			}
+		}
+		else { /* Not ours */
+			/* Same rdata */
+			if (rr_rdata_cmp(rr, rr_aux) == 0) {
+				/* A goodbye RR */
+				if (rr->ttl == 0) {
+					log_warnx("cache_process: goodbye %s",
+					    rrs_str(&rr->rrs));
+					cache_delete(rr_aux);
+					return (0);
+				}
+				/* Cache refresh */
+				log_warnx("cache_process: refresh %s",
+				    rrs_str(&rr->rrs));
+				rr_aux->ttl = rr->ttl;
+				rr_aux->revision = 0;
+				cache_schedrev(rr_aux);
+
+				return (0);
+			}
 		}
 	}
-	
-	/*
-	 * Just link it up, no conflicts, we trust our stuff.
-	 */
-	rr->cn = cn;
-	LIST_INSERT_HEAD(&cn->rr_list, rr, centry);
-	log_debug("cache_insert_auth: (new) %s", rrs_str(&rr->rrs));
-	
-	return (0);
+	/* Got a goodbye for a record we don't have */
+	if (rr->ttl == 0)
+		return (0);
+
+	return (cache_insert(rr));
 }
 
 int
 cache_insert(struct rr *rr)
 {
-	struct cache_node	*cn;
-	struct rr		*rraux, *next;
-	
-	/* Sanity check */
-	if ((rr->flags & RR_FLAG_AUTH)) {
-		log_warnx("cache_insert on auth rr");
-		return (-1);
-	}
-
-	/* All external RR are considered published */
-	rr->flags |= RR_FLAG_PUBLISHED;
-	
+	struct cache_node *cn;
+	struct rr *rr_aux, *next;
 	/*
-	 * If no entries, make a new node 
+	 * If no entries, make a new node
 	 */
 	if ((cn = cache_lookup_dname(rr->rrs.dname)) == NULL) {
 		if ((cn = calloc(1, sizeof(*cn))) == NULL)
 			fatal("calloc");
-		(void)strlcpy(cn->dname, rr->rrs.dname, sizeof(cn->dname));
+		(void)strlcpy(cn->dname, rr->rrs.dname,
+		    sizeof(cn->dname));
 		rr->cn = cn;
 		LIST_INIT(&cn->rr_list);
-		LIST_INSERT_HEAD(&cn->rr_list, rr, centry);
-		rr_notify_in(rr);
 		if (RB_INSERT(cache_tree, &cache_tree, cn) != NULL)
-			fatal("cache_insert: RB_INSERT");
-		cache_schedrev(rr);
-		log_debug("cache_insert: (new) %s", rrs_str(&rr->rrs));
-		
-		return (0);
+			fatal("cache_process: RB_INSERT");
 	}
 
 	/*
-	 * If this is a unique record
+	 * If this is a unique record, we must disregard everything we know so
+	 * far about that RRSet.
 	 */
 	if (RR_UNIQ(rr)) {
-		/*
-		 * Make sure that this record isn't trying to screw any of our records,
-		 * like a stupid responder which won't respect conflict resolution. 
-		 */
-		/* XXX this breaks co-op responders */
-		CACHE_FOREACH_RRS(rraux, &rr->rrs) {
-			if ((rraux->flags & RR_FLAG_AUTH) == 0)
-				continue;
-			goto bad_peer;
-		}
 		/* Clean up all records and substitute */
-		for (rraux = LIST_FIRST(&cn->rr_list);
-		     rraux != NULL;
-		     rraux = next) {
-			next = cache_next_by_rrs(rraux);
-			
-			if (rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
+		for (rr_aux = cache_lookup(&rr->rrs);
+		     rr_aux != NULL;
+		     rr_aux = next) {
+			next = cache_next_by_rrs(rr_aux);
+			if (rrset_cmp(&rr->rrs, &rr_aux->rrs) != 0)
 				continue;
-			/*
-			 * Don't touch our records
-			 */
-			if (rraux->flags & RR_FLAG_AUTH)
-				goto bad_peer;
-			cache_unlink(rraux, 1);
-			free(rraux);
+			/* This should not happen */
+			if (RR_AUTH(rr))
+				fatalx("cache_process: Unexpected auth");
+			log_debug("cache_delete 1");
+			if (cache_delete(rr_aux) == 1)
+				break;
 		}
-		rr->cn = cn;
-		LIST_INSERT_HEAD(&cn->rr_list, rr, centry);
-		rr_notify_in(rr);
-		
-		return (0);
-	}
-	
-	/*
-	 * So this is a shared record...
-	 */
-	/* See if it's just a cache refresh */
-	CACHE_FOREACH_RRS(rraux, &rr->rrs) {
-		if (rr_rdata_cmp(rr, rraux) == 0) {
-			/*
-			 * This is the only case where we may have shared
-			 * records sharing the exact same data as one of our
-			 * records, still not sure how to deal with this, escape
-			 * for now.
-			 */
-			if (strcmp(rr->rrs.dname,
-			    "_services._dns-sd._udp.local") == 0)
-				continue;
-			/* No cache refresh for our own records */
-			if (rraux->flags & RR_FLAG_AUTH)
-				goto bad_peer;
-			rraux->ttl	= rr->ttl;
-			rraux->revision = 0;
-			cache_schedrev(rraux);
-			log_debug("cache_insert: (cache refresh) %s",
-			    rrs_str(&rr->rrs));
-			free(rr);
-			
-			return (0);
+		/* cache_delete() may free cn, so we need to lookup again */
+		/* XXX make a function for this */
+		if ((cn = cache_lookup_dname(rr->rrs.dname)) == NULL) {
+			if ((cn = calloc(1, sizeof(*cn))) == NULL)
+				fatal("calloc");
+			(void)strlcpy(cn->dname, rr->rrs.dname,
+			    sizeof(cn->dname));
+			LIST_INIT(&cn->rr_list);
+			if (RB_INSERT(cache_tree, &cache_tree, cn) != NULL)
+				fatal("cache_process: RB_INSERT");
 		}
+		log_debug("cache_insert: (new, cleaned up) (%p) %s",
+		    rr, rrs_str(&rr->rrs));
+		/* Go on, cn is fine now. */
 	}
-	
-	/* Shared record, not a refresh, just add */
+
+	if (cn == NULL)
+		fatalx("cache_insert: cn is NULL !");
 	rr->cn = cn;
 	LIST_INSERT_HEAD(&cn->rr_list, rr, centry);
-	rr_notify_in(rr);
-	cache_schedrev(rr);
-	log_debug("cache_insert: (shared) %s",
-	    rrs_str(&rr->rrs));
-	
+	if (rr->flags & RR_FLAG_PUBLISHED)
+		rr_notify_in(rr);
+
+	/* Only do revisions for external RR */
+	if (!RR_AUTH(rr))
+		cache_schedrev(rr);
+
 	return (0);
-	
-bad_peer:
-	log_warnx("Bad peer, received my own rr record %s",
-	    rrs_str(&rr->rrs));
-	free(rr);
-	return (-3);
 }
 
 int
-cache_unlink(struct rr *rr, int notify)
+cache_delete(struct rr *rr)
 {
-	struct cache_node	*cn;
+	struct cache_node *cn;
 
-	log_debug("cache_delete: type: %s name: %s", rr_type_name(rr->rrs.type),
-	    rr->rrs.dname);
-	
+	log_debug("cache_delete: %s", rrs_str(&rr->rrs));
+	if (rr->flags & RR_FLAG_PUBLISHED &&
+	    RR_AUTH(rr))
+		rr_send_goodbye(rr);
+	rr_notify_out(rr);
 	cn = rr->cn;
 	if (evtimer_pending(&rr->rev_timer, NULL))
 		evtimer_del(&rr->rev_timer);
 	LIST_REMOVE(rr, centry);
-	if (notify)
-		rr_notify_out(rr);
+	free(rr);
 	if (LIST_EMPTY(&cn->rr_list)) {
 		RB_REMOVE(cache_tree, &cache_tree, cn);
 		free(cn);
+
+		return (1);	/* cache_node freed */
 	}
 
 	return (0);
-}
-
-/*
- * Lookup and delete rr from cache
- */
-/* XXX should not be called for our records, done in pge_kill() */
-int
-cache_unlink_by_data(struct rr *rr, int notify)
-{
-	struct rr		*rraux, *next;
-	struct cache_node	*cn;
-	int			 n = 0;
-
-	cn = cache_lookup_dname(rr->rrs.dname);
-	if (cn == NULL)
-		return (0);
-	for (rraux = LIST_FIRST(&cn->rr_list); rraux != NULL; rraux = next) {
-		log_debug("cache_unlink_by_data");
-		next = cache_next_by_rrs(rraux);
-		if (rraux->flags & RR_FLAG_AUTH)
-			continue;
-		if (rrset_cmp(&rr->rrs, &rraux->rrs) != 0)
-			continue;
-		if (RR_UNIQ(rraux) ||
-		    (rr_rdata_cmp(rr, rraux) == 0)) {
-			n++;
-			cache_unlink(rraux, notify);
-			free(rraux);
-		}
-	}
-	
-	return (n);
 }
 
 void
@@ -416,7 +357,50 @@ cache_rev(int unused, short event, void *v_rr)
 	if (rr->revision <= 3)
 		cache_schedrev(rr);
 	else
-		cache_unlink_by_data(rr, 1);
+		cache_delete(rr);
+}
+
+void
+auth_release(struct rr *rr)
+{
+	/* Sanity check */
+	if (!RR_AUTH(rr))
+		fatalx("auth_release on non auth rr");
+	/* Decrement reference count */
+	if (--rr->auth_refcount > 0)
+		return;
+	cache_delete(rr);
+}
+
+struct rr *
+auth_get(struct rr *rr)
+{
+	struct rr *rr_cache;
+
+	CACHE_FOREACH_RRS(rr_cache, &rr->rrs) {
+		/* Have an entry already */
+		if (rr_rdata_cmp(rr, rr_cache) == 0) {
+			rr_cache->auth_refcount++;
+			return (rr_cache);
+		}
+		/*
+		 * Not the same, only ok if not UNIQ.
+		 */
+		if (RR_UNIQ(rr_cache) || RR_UNIQ(rr)) {
+			log_warnx("auth_get: conflict for %s (1)",
+			    rrs_str(&rr->rrs));
+			return (NULL);
+		}
+	}
+
+	/* Duplicate and insert */
+	rr_cache = rr_dup(rr);
+	rr_cache->auth_refcount = 1;
+
+	if (cache_insert(rr_cache) == 0)
+		return (rr_cache);
+
+	return (NULL);
 }
 
 int
@@ -448,10 +432,10 @@ struct question *
 question_lookup(struct rrset *rrs)
 {
 	struct question qst;
-	
+
 	bzero(&qst, sizeof(qst));
 	qst.rrs = *rrs;
-	
+
 	return (RB_FIND(question_tree, &question_tree, &qst));
 }
 
@@ -473,7 +457,7 @@ question_add(struct rrset *rrs)
 	qst->rrs = *rrs;
 	if (RB_INSERT(question_tree, &question_tree, qst) != NULL)
 		fatal("question_add: RB_INSERT");
-	
+
 	return (qst);
 }
 
@@ -497,7 +481,7 @@ void
 query_remove(struct query *q)
 {
 	struct rrset *rrs;
-	
+
 	LIST_REMOVE(q, entry);
 	while ((rrs = LIST_FIRST(&q->rrslist)) != NULL) {
 		question_remove(rrs);
@@ -526,7 +510,7 @@ query_fsm(int unused, short event, void *v_query)
 	q = v_query;
 	pkt_init(&pkt);
 	pkt.h.qr = MDNS_QUERY;
-	
+
 	/* This will send at seconds 0, 1, 2, 4, 8, 16... */
 	tosleep = (2 << q->count) - (1 << q->count);
 	if (tosleep > MAXQUERYTIME)
@@ -536,7 +520,7 @@ query_fsm(int unused, short event, void *v_query)
 
 	if (clock_gettime(CLOCK_MONOTONIC, &tnow) == -1)
 		fatal("clock_gettime");
-	
+
 	/*
 	 * If we're in our third call and we're still alive,
 	 * consider a failure.
@@ -549,7 +533,7 @@ query_fsm(int unused, short event, void *v_query)
 		query_remove(q);
 		return;
 	}
-	
+
 	if (q->style == QUERY_RESOLVE && q->count == 3) {
 		log_debug("query_resolve failed");
 		bzero(&nullms, sizeof(nullms));
@@ -571,14 +555,14 @@ query_fsm(int unused, short event, void *v_query)
 			/* XXX: we leak memory */
 			return;
 		}
-		
+
 		/* Can't send question before schedule */
 		if (timespeccmp(&tnow, &qst->sched, <)) {
 			log_debug("question for %s before schedule",
 			    rrs_str(rrs));
 			continue;
 		}
-		
+
 		pkt_add_question(&pkt, qst);
 		qst->sent++;
 		qst->lastsent = tnow;
@@ -618,7 +602,7 @@ question_dup(struct question *qst)
 	if ((qdup = malloc(sizeof(*qdup))) == NULL)
 		fatal("malloc");
 	memcpy(qdup, qst, sizeof(*qdup));
-	
+
 	return (qdup);
 }
 
@@ -630,18 +614,18 @@ rr_notify_in(struct rr *rr)
 	struct question		*qst;
 	struct rrset		*rrs;
 	int			 query_done;
-	
+
 	/* See if we have a question matching this rr */
 	if ((qst = question_lookup(&rr->rrs)) == NULL)
 		return (0);
-	
+
 	/* Loop through controllers and check who wants it */
 	TAILQ_FOREACH(c, &ctl_conns, entry) {
 		for (q = LIST_FIRST(&c->qlist); q != NULL; q = nq) {
 			nq = LIST_NEXT(q, entry);
 			query_done = 0;
 			LIST_FOREACH(rrs, &q->rrslist, entry) {
-				
+
 				if (rrset_cmp(rrs, &rr->rrs) != 0)
 					continue;
 				/*
@@ -691,13 +675,13 @@ rr_notify_in(struct rr *rr)
 					log_warnx("Unknown query style");
 					return (-1);
 				}
-				
+
 				if (query_done)
 					break;
 			}
 		}
 	}
-	
+
 	return (0);
 }
 
@@ -711,7 +695,7 @@ rr_notify_out(struct rr *rr)
 
 	if ((qst = question_lookup(&rr->rrs)) == NULL)
 		return (0);
-	
+
 	TAILQ_FOREACH(c, &ctl_conns, entry) {
 		LIST_FOREACH(q, &c->qlist, entry) {
 			if (q->style != QUERY_BROWSE)
@@ -736,13 +720,17 @@ struct pge *
 pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 {
 	struct pge	*pge;
-	struct rr	*srv, *txt, *rr, *ptr_proto, *ptr_services;
+	struct rr	srv, txt, ptr_proto, ptr_services;
 	struct question *qst;
 	char		 servname[MAXHOSTNAMELEN], proto[MAXHOSTNAMELEN];
-	
-	srv = txt = rr = ptr_proto = ptr_services = NULL;
+
+
 	qst = NULL;
-	
+	bzero(&srv, sizeof(srv));
+	bzero(&txt, sizeof(txt));
+	bzero(&ptr_proto, sizeof(ptr_proto));
+	bzero(&ptr_services, sizeof(ptr_services));
+
 	if (snprintf(servname, sizeof(servname),
 	    "%s._%s._%s.local",  ms->name, ms->app, ms->proto)
 	    >= (int)sizeof(servname)) {
@@ -756,43 +744,35 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 		return (NULL);
 	}
 	/* T_SRV */
-	if ((srv = calloc(1, sizeof(*srv))) == NULL)
-		fatal("calloc");
-	(void)rr_set(srv, servname, T_SRV, C_IN, TTL_SRV,
-	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH, NULL, 0);
-	(void)strlcpy(srv->rdata.SRV.target, ms->target,
-	    sizeof(srv->rdata.SRV.target));
-	srv->rdata.SRV.priority = ms->priority;
-	srv->rdata.SRV.weight = ms->weight;
-	srv->rdata.SRV.port = ms->port;
+	(void)rr_set(&srv, servname, T_SRV, C_IN, TTL_SRV,
+	    RR_FLAG_CACHEFLUSH, NULL, 0);
+	(void)strlcpy(srv.rdata.SRV.target, ms->target,
+	    sizeof(srv.rdata.SRV.target));
+	srv.rdata.SRV.priority = ms->priority;
+	srv.rdata.SRV.weight = ms->weight;
+	srv.rdata.SRV.port = ms->port;
+	/* T_TXT */
+	(void)rr_set(&txt, servname, T_TXT, C_IN, TTL_TXT,
+	    RR_FLAG_CACHEFLUSH,
+	    ms->txt, sizeof(ms->txt));
+	/* T_PTR proto */
+	(void)rr_set(&ptr_proto, proto, T_PTR, C_IN, TTL_PTR,
+	    0, servname, sizeof(servname));
+	/* T_PTR services */
+	(void)rr_set(&ptr_services, "_services._dns-sd._udp.local",
+	    T_PTR, C_IN, TTL_PTR, 0, proto, sizeof(proto));
+
 	/* Question */
 	if ((qst = calloc(1, sizeof(*qst))) == NULL)
 		fatal("calloc");
 	qst->rrs.type  = T_ANY;
 	qst->rrs.class = C_IN;
-	(void)strlcpy(qst->rrs.dname, srv->rrs.dname,
+	(void)strlcpy(qst->rrs.dname, srv.rrs.dname,
 	    sizeof(qst->rrs.dname));
-	/* T_TXT */
-	if ((txt = calloc(1, sizeof(*txt))) == NULL)
-		fatal("calloc");
-	(void)rr_set(txt, servname, T_TXT, C_IN, TTL_TXT,
-	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH,
-	    ms->txt, sizeof(ms->txt));
-	/* T_PTR proto */
-	if ((ptr_proto = calloc(1, sizeof(*ptr_proto))) == NULL)
-		fatal("calloc");
-	(void)rr_set(ptr_proto, proto, T_PTR, C_IN, TTL_PTR,
-	    RR_FLAG_AUTH, servname, sizeof(servname));
-	/* T_PTR services */
-	if ((ptr_services = calloc(1, sizeof(*ptr_services))) == NULL)
-		fatal("calloc");
-	(void)rr_set(ptr_services, "_services._dns-sd._udp.local",
-	    T_PTR, C_IN, TTL_PTR, RR_FLAG_AUTH, proto, sizeof(proto));
-	
+
 	/* Alloc and init pge structure */
 	if ((pge = calloc(1, sizeof(*pge))) == NULL)
 		fatal("calloc");
-	LIST_INIT(&pge->rr_list);
 	pge->pg		= pg;
 	pge->pge_type   = PGE_TYPE_SERVICE;
 	pge->pge_flags |= PGE_FLAG_INC_A;
@@ -800,30 +780,28 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 	pge->state	= PGE_STA_UNPUBLISHED;
 	evtimer_set(&pge->timer, pge_fsm, pge);
 	pge->pqst = qst;
-	/* Insert everyone in cache */
-	if (cache_insert_auth(srv) < 0)
+	/* Insert everyone in auth */
+	if ((pge->rr[0] = auth_get(&srv)) == NULL)
 		goto bad;
-	if (cache_insert_auth(txt) < 0) {
-		cache_unlink(srv, 0);
-		goto bad;
-	}
-	if (cache_insert_auth(ptr_proto) < 0) {
-		cache_unlink(srv, 0);
-		cache_unlink(txt, 0);
+	pge->nrr++;
+	if ((pge->rr[1] = auth_get(&txt)) == NULL) {
+		auth_release(pge->rr[0]);
 		goto bad;
 	}
-	if (cache_insert_auth(ptr_services) < 0) {
-		cache_unlink(ptr_proto, 0);
-		cache_unlink(srv, 0);
-		cache_unlink(txt, 0);
+	pge->nrr++;
+	if ((pge->rr[2] = auth_get(&ptr_proto)) == NULL) {
+		auth_release(pge->rr[0]);
+		auth_release(pge->rr[1]);
 		goto bad;
 	}
-	
-	/* If we got here, we're fine, so link them */
-	LIST_INSERT_HEAD(&pge->rr_list, srv, gentry);
-	LIST_INSERT_HEAD(&pge->rr_list, txt, gentry);
-	LIST_INSERT_HEAD(&pge->rr_list, ptr_proto, gentry);
-	LIST_INSERT_HEAD(&pge->rr_list, ptr_services, gentry);
+	pge->nrr++;
+	if ((pge->rr[3] = auth_get(&ptr_services)) == NULL) {
+		auth_release(pge->rr[0]);
+		auth_release(pge->rr[1]);
+		auth_release(pge->rr[2]);
+		goto bad;
+	}
+	pge->nrr++;
 
 	/*
 	 * If we got here, all is fine and we can link pge
@@ -831,17 +809,13 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 	TAILQ_INSERT_TAIL(&pge_queue, pge, entry);
 	if (pg != NULL)
 		LIST_INSERT_HEAD(&pg->pge_list, pge, pge_entry);
-	
+
 	return (pge);
-	
+
 bad:
-	free(srv);
-	free(txt);
-	free(ptr_proto);
-	free(ptr_services);
 	free(pge->pqst);
 	free(pge);
-	
+
 	return (NULL);
 }
 
@@ -858,12 +832,11 @@ pge_fsm(int unused, short event, void *v_pge)
 {
 	struct pg	*pg;
 	struct pge	*pge, *pge_primary;
-	struct rr	*rr;
 	struct iface	*iface;
 	struct timeval	 tv;
 	struct pkt	 pkt;
-	int		 inc_prim;
-	
+	int		 inc_prim, i;
+
 	pge = v_pge;
 	pg  = pge->pg;
 	/*
@@ -878,12 +851,12 @@ pge_fsm(int unused, short event, void *v_pge)
 				timerclear(&tv);
 				tv.tv_sec = 1;
 				pge_fsm_restart(pge, &tv);
-				
+
 				return;
 			}
 		}
 	}
-		
+
 	switch (pge->state){
 	case PGE_STA_UNPUBLISHED:
 		pge->state = PGE_STA_PROBING;
@@ -904,9 +877,9 @@ pge_fsm(int unused, short event, void *v_pge)
 				pge->pqst->flags &= ~QST_FLAG_UNIRESP;
 			pkt_add_question(&pkt, pge->pqst);
 		}
-		/* Add the RRs in the ns section */
-		LIST_FOREACH(rr, &pge->rr_list, gentry)
-			pkt_add_nsrr(&pkt, rr);
+		/* Add the RRs in the NS section */
+		for (i = 0; i < pge->nrr; i++)
+			pkt_add_nsrr(&pkt, pge->rr[i]);
 		if (pkt_send_allif(&pkt) == -1)
 			log_warnx("can't send probe packet");
 		/* Probing done, start announcing */
@@ -917,9 +890,10 @@ pge_fsm(int unused, short event, void *v_pge)
 			/*
 			 * Consider records published
 			 */
-			LIST_FOREACH(rr, &pge->rr_list, gentry) {
-				rr->flags |= RR_FLAG_PUBLISHED;
-				rr_notify_in(rr);
+			for (i = 0; i < pge->nrr; i++) {
+				if ((pge->rr[i]->flags & RR_FLAG_PUBLISHED) == 0)
+					rr_notify_in(pge->rr[i]);
+				pge->rr[i]->flags |= RR_FLAG_PUBLISHED;
 			}
 		}
 		timerclear(&tv);
@@ -935,8 +909,8 @@ pge_fsm(int unused, short event, void *v_pge)
 		pkt_init(&pkt);
 		pkt.h.qr = MDNS_RESPONSE;
 		/* Add the RRs in the AN secion */
-		LIST_FOREACH(rr, &pge->rr_list, gentry)
-			pkt_add_anrr(&pkt, rr);
+		for (i = 0; i < pge->nrr; i++)
+			pkt_add_anrr(&pkt, pge->rr[i]);
 		/*
 		 * PGE_FLAG_INC_A, we should add our primary A resource record
 		 * to the packet. We must look for the A record on our primary
@@ -973,37 +947,24 @@ pge_fsm(int unused, short event, void *v_pge)
 void
 pge_kill(struct pge *pge)
 {
+	int i;
 	struct rr *rr;
 	struct pg *pg;
-	struct pkt pkt;
 
 	pg = pge->pg;
 	/* Stop pge machine */
 	if (evtimer_pending(&pge->timer, NULL))
 		evtimer_del(&pge->timer);
-	
+
 	/*
-	 * Send a goodbye for published records
+	 * Release our records.
 	 */
-	pkt_init(&pkt);
-	pkt.h.qr = MDNS_RESPONSE;
-	LIST_FOREACH(rr, &pge->rr_list, gentry) {
-		if ((rr->flags & RR_FLAG_AUTH) == 0)
+	for (i = 0; i < pge->nrr; i++) {
+		rr = pge->rr[i];
+		if (rr == NULL)
 			continue;
-		if ((rr->flags & RR_FLAG_PUBLISHED) == 0)
-			continue;
-		rr_notify_out(rr);
-		rr->ttl = 0;
-		pkt_add_anrr(&pkt, rr);
-	}
-	if (pkt_send_allif(&pkt) == -1)
-		log_warnx("can't send goodbye packet "
-		    "to iface");
-	/* Free Resource Records */
-	while ((rr = LIST_FIRST(&pge->rr_list)) != NULL) {
-		LIST_REMOVE(rr, gentry);
-		cache_unlink(rr, 0);
-		free(rr);
+		auth_release(rr);
+		pge->rr[i] = NULL;
 	}
 	/*
 	 * Unlink pge
@@ -1027,10 +988,10 @@ pg_publish_byiface(struct iface *iface)
 {
 	struct pge	*pge;
 	struct timeval	 tv;
-	
+
 	timerclear(&tv);
 	tv.tv_usec = RANDOM_PROBETIME;
-	
+
 	TAILQ_FOREACH(pge, &pge_queue, entry) {
 		/* XXX this is so wrong.... */
 		if (pge->iface == ALL_IFACE || pge->iface == iface)
@@ -1042,12 +1003,12 @@ struct pg *
 pg_get(int alloc, char name[MAXHOSTNAMELEN], struct ctl_conn *c)
 {
 	struct pg *pg;
-	
+
 	TAILQ_FOREACH(pg, &pg_queue, entry) {
 		if (pg->c == c && strcmp(pg->name, name) == 0)
 			return (pg);
 	}
-	
+
 	if (!alloc)
 		return (NULL);
 	if ((pg = calloc(1, sizeof(*pg))) == NULL)
@@ -1057,7 +1018,7 @@ pg_get(int alloc, char name[MAXHOSTNAMELEN], struct ctl_conn *c)
 	pg->flags = 0;
 	LIST_INIT(&pg->pge_list);
 	TAILQ_INSERT_TAIL(&pg_queue, pg, entry);
-	
+
 	return (pg);
 }
 
@@ -1066,9 +1027,9 @@ pge_new_primary(struct iface *iface)
 {
 	struct pge	*pge;
 	struct question	*qst;
-	struct rr	*rr;
+	struct rr	 rr;
 	char		 revaddr[MAXHOSTNAMELEN];
-	
+
 	if ((pge = calloc(1, sizeof(*pge))) == NULL)
 		fatal("calloc");
 	pge->pge_flags = PGE_FLAG_INTERNAL;
@@ -1077,7 +1038,6 @@ pge_new_primary(struct iface *iface)
 	pge->state     = PGE_STA_UNPUBLISHED;
 	pge->iface     = iface;
 	evtimer_set(&pge->timer, pge_fsm, pge);
-	LIST_INIT(&pge->rr_list);
 	/* Link to global pge */
 	TAILQ_INSERT_TAIL(&pge_queue, pge, entry);
 	/* Set up primary question */
@@ -1089,34 +1049,31 @@ pge_new_primary(struct iface *iface)
 	pge->pqst = qst;
 	/* Must add T_A, T_PTR(rev) and T_HINFO */
 	/* T_A record */
-	if ((rr = calloc(1, sizeof(*rr))) == NULL)
-		fatal("calloc");
-	rr_set(rr, conf->myname, T_A, C_IN, TTL_HNAME,
-	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH,
+	bzero(&rr, sizeof(rr));
+	rr_set(&rr, conf->myname, T_A, C_IN, TTL_HNAME,
+	    RR_FLAG_CACHEFLUSH,
 	    &iface->addr, sizeof(iface->addr));
-	LIST_INSERT_HEAD(&pge->rr_list, rr, gentry);
-	if (cache_insert_auth(rr) < 0)
+	if ((pge->rr[0] = auth_get(&rr)) == NULL)
 		goto bad;
+	pge->nrr++;
 	/* T_PTR record reverse address */
-	if ((rr = calloc(1, sizeof(*rr))) == NULL)
-		fatal("calloc");
+	bzero(&rr, sizeof(rr));
 	reversstr(revaddr, &iface->addr);
-	rr_set(rr, revaddr, T_PTR, C_IN, TTL_HNAME,
-	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH,
+	rr_set(&rr, revaddr, T_PTR, C_IN, TTL_HNAME,
+	    RR_FLAG_CACHEFLUSH,
 	    conf->myname, sizeof(conf->myname));
-	LIST_INSERT_HEAD(&pge->rr_list, rr, gentry);
-	if (cache_insert_auth(rr) < 0)
+	if ((pge->rr[1] = auth_get(&rr)) == NULL)
 		goto bad;
+	pge->nrr++;
 	/* T_HINFO record */
-	if ((rr = calloc(1, sizeof(*rr))) == NULL)
-		fatal("calloc");
-	rr_set(rr, conf->myname, T_HINFO, C_IN, TTL_HNAME,
-	    RR_FLAG_CACHEFLUSH | RR_FLAG_AUTH,
+	bzero(&rr, sizeof(rr));
+	rr_set(&rr, conf->myname, T_HINFO, C_IN, TTL_HNAME,
+	    RR_FLAG_CACHEFLUSH,
 	    &conf->hi, sizeof(conf->hi));
-	LIST_INSERT_HEAD(&pge->rr_list, rr, gentry);
-	if (cache_insert_auth(rr) < 0)
+	if ((pge->rr[2] = auth_get(&rr)) == NULL)
 		goto bad;
-	
+	pge->nrr++;
+
 	return (pge);
 bad:
 	log_warnx("Can't init primary group for iface %s", iface->name);
@@ -1130,7 +1087,7 @@ pge_new_workstation(struct iface *iface)
 	struct mdns_service	 ms;
 	struct pge		*pge;
 	char			 myname[MAXLABELLEN], *cp;
-	
+
 	/* Build our service */
 	bzero(&ms, sizeof(ms));
 	ms.port = 9;	/* workstation stuff */
@@ -1148,9 +1105,9 @@ pge_new_workstation(struct iface *iface)
 
 	pge = pge_from_ms(NULL, &ms, iface);
 	pge->pge_flags |= PGE_FLAG_INTERNAL;
-	
+
 	return (pge);
-}	
+}
 
 /*
  * Reset/Cleanup/Unpublish a group.
@@ -1162,7 +1119,7 @@ pg_kill(struct pg *pg)
 
 	while ((pge = LIST_FIRST(&pg->pge_list)) != NULL)
 		pge_kill(pge);
-		
+
 	TAILQ_REMOVE(&pg_queue, pg, entry);
 	log_debug("group %s unpublished", pg->name);
 	free(pg);
@@ -1175,11 +1132,38 @@ int
 pg_published(struct pg *pg)
 {
 	struct pge	*pge;
-	
+
 	LIST_FOREACH(pge, &pg->pge_list, pge_entry) {
 		if (pge->state != PGE_STA_PUBLISHED)
 			return (0);
 	}
-	
+
 	return (1);
+}
+
+int
+rr_send_goodbye(struct rr *rr)
+{
+	struct pkt	pkt;
+	u_int32_t	old_ttl;
+	int		r = 0;
+
+	if ((rr->flags & RR_FLAG_PUBLISHED) == 0)
+		return (0);
+	old_ttl = rr->ttl;
+	/*
+	 * Send a goodbye for published records
+	 */
+	pkt_init(&pkt);
+	pkt.h.qr = MDNS_RESPONSE;
+	rr->ttl = 0;
+	pkt_add_anrr(&pkt, rr);
+	if (pkt_send_allif(&pkt) == -1) {
+		r = -1;
+		log_warnx("can't send goodbye packet "
+		    "to iface");
+	}
+	rr->ttl = old_ttl;
+
+	return (r);
 }
