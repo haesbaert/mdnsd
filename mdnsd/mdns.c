@@ -871,7 +871,7 @@ pge_fsm(int unused, short event, void *v_pge)
 		pkt.h.qr = MDNS_QUERY;
 		if (pge->pqst != NULL) {
 			/* Unicast question ? */
-			if (pge->sent >= 2)
+			if (pge->sent < 2)
 				pge->pqst->flags |= QST_FLAG_UNIRESP;
 			else
 				pge->pqst->flags &= ~QST_FLAG_UNIRESP;
