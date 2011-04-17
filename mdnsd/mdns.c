@@ -148,9 +148,9 @@ cache_process(struct rr *rr)
 				 * This may be a goodbye, defend our RR batman.
 				 */
 				if (rr->ttl <= rr_aux->ttl / 2) {
-					/* TODO defend our record */
-					log_warnx("cache_process: defend %s",
+					log_warnx("cache_process: defending %s",
 					    rrs_str(&rr->rrs));
+					rr_send_an(rr_aux);
 				} else {
 					/* TODO Cancel possible deletion */
 					log_warnx("cache_process: recover %s",
@@ -1140,7 +1140,6 @@ pg_published(struct pg *pg)
 int
 rr_send_goodbye(struct rr *rr)
 {
-	struct pkt	pkt;
 	u_int32_t	old_ttl;
 	int		r = 0;
 
@@ -1150,16 +1149,26 @@ rr_send_goodbye(struct rr *rr)
 	/*
 	 * Send a goodbye for published records
 	 */
-	pkt_init(&pkt);
-	pkt.h.qr = MDNS_RESPONSE;
 	rr->ttl = 0;
-	pkt_add_anrr(&pkt, rr);
-	if (pkt_send_allif(&pkt) == -1) {
-		r = -1;
-		log_warnx("can't send goodbye packet "
-		    "to iface");
-	}
+	r	= rr_send_an(rr);
 	rr->ttl = old_ttl;
 
 	return (r);
+}
+
+int
+rr_send_an(struct rr *rr)
+{
+	struct pkt pkt;
+
+	pkt_init(&pkt);
+	pkt.h.qr = MDNS_RESPONSE;
+	pkt_add_anrr(&pkt, rr);
+	if (pkt_send_allif(&pkt) == -1) {
+		log_warnx("rr_send_an error %s", rrs_str(&rr->rrs));
+
+		return (-1);
+	}
+
+	return (0);
 }

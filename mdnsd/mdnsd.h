@@ -383,6 +383,7 @@ struct rr *	 get_prim_a(struct iface *);
 struct rr *	 auth_get(struct rr *);
 void		 auth_release(struct rr *);
 int		 rr_send_goodbye(struct rr *);
+int		 rr_send_an(struct rr *);
 
 
 /* control.c */
