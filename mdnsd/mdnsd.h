@@ -118,7 +118,7 @@ struct rr {
 	struct cache_node	*cn;	/* Cache parent node */
 	int			 auth_refcount; /* Number of pges holding us */
 	int			 revision; /* at 80% of ttl, then 90% and 95% */
-	struct event		 rev_timer; /* cache revision timer */
+	struct event		 timer; /* revision timer */
 	struct timespec		 age;	/* XXX cant remember */
 	u_int			 flags;	/* RR Flags */
 #define RR_FLAG_CACHEFLUSH	0x01	/* Unique record */

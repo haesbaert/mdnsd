@@ -121,7 +121,7 @@ cache_process(struct rr *rr)
 	rr->flags |= RR_FLAG_PUBLISHED;
 
 	/* Record receiving time */
-	evtimer_set(&rr->rev_timer, cache_rev, rr);
+	evtimer_set(&rr->timer, cache_rev, rr);
 	if (clock_gettime(CLOCK_MONOTONIC, &rr->age) == -1)
 		fatal("clock_gettime");
 
@@ -276,8 +276,8 @@ cache_delete(struct rr *rr)
 		rr_send_goodbye(rr);
 	rr_notify_out(rr);
 	cn = rr->cn;
-	if (evtimer_pending(&rr->rev_timer, NULL))
-		evtimer_del(&rr->rev_timer);
+	if (evtimer_pending(&rr->timer, NULL))
+		evtimer_del(&rr->timer);
 	LIST_REMOVE(rr, centry);
 	free(rr);
 	if (LIST_EMPTY(&cn->rr_list)) {
@@ -325,9 +325,9 @@ cache_schedrev(struct rr *rr)
 
 	rr->revision++;
 
-	if (evtimer_pending(&rr->rev_timer, NULL))
-		evtimer_del(&rr->rev_timer);
-	if (evtimer_add(&rr->rev_timer, &tv) == -1)
+	if (evtimer_pending(&rr->timer, NULL))
+		evtimer_del(&rr->timer);
+	if (evtimer_add(&rr->timer, &tv) == -1)
 		fatal("rrt_sched_rev");
 }
 
