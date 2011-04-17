@@ -105,15 +105,11 @@ cache_lookup(struct rrset *rrs)
 }
 
 /* Process an external rr */
-/* TODO must know if this is a probe ?? */
 int
 cache_process(struct rr *rr)
 {
 	struct cache_node *cn = NULL;
 	struct rr *rr_aux, *next;
-
-	if (rr->rrs.type != T_A && rr->rrs.type != T_HINFO)
-		return (0);
 
 	/* Sanity check */
 	if (RR_AUTH(rr)) {
