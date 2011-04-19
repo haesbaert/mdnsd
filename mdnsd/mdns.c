@@ -362,10 +362,10 @@ auth_release(struct rr *rr)
 	/* Sanity check */
 	if (!RR_AUTH(rr))
 		fatalx("auth_release on non auth rr");
-	/* Decrement reference count */
-	if (--rr->auth_refcount > 0)
-		return;
-	cache_delete(rr);
+	if (rr->auth_refcount == 1)
+		cache_delete(rr);
+	else
+		rr->auth_refcount--;
 }
 
 struct rr *
