@@ -64,7 +64,6 @@ ssize_t		 pkt_parse_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN]);
 int		 pkt_parse_rr(u_int8_t **, u_int16_t *, struct rr *);
 int		 pkt_parse_question(u_int8_t **, u_int16_t *, struct pkt *);
 int		 pkt_handle_qst(struct pkt *);
-int		 pkt_should_answer_qst(struct pkt *, struct question *);
 ssize_t		 serialize_rr(struct rr *, u_int8_t *, u_int16_t);
 ssize_t		 serialize_qst(struct question *, u_int8_t *, u_int16_t);
 ssize_t		 serialize_dname(u_int8_t *, u_int16_t, char [MAXHOSTNAMELEN], int);
@@ -385,19 +384,6 @@ pkt_process(int unused, short event, void *v_pkt)
 		TAILQ_REMOVE(&deferred_queue, pkt, entry);
 	}
 
-	if (pkt_handle_qst(pkt) == -1) {
-		log_warnx("pkt_handleqst() error");
-		pkt_cleanup(pkt);
-		free(pkt);
-		return;
-	}
-
-	/* Clear all authority section */
-	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
-		LIST_REMOVE(rr, pentry);
-		free(rr);
-	}
-
 	/* Process all answers */
 	/*
 	 * The answer section for query packets is not authoritative,
@@ -406,13 +392,9 @@ pkt_process(int unused, short event, void *v_pkt)
 	 */
 	switch (pkt->h.qr) {
 	case MDNS_QUERY:
-		while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
-			LIST_REMOVE(rr, pentry);
-			free(rr);
-		}
-		while ((rr = LIST_FIRST(&pkt->arlist)) != NULL) {
-			LIST_REMOVE(rr, pentry);
-			free(rr);
+		if (pkt_handle_qst(pkt) == -1) {
+			log_warnx("pkt_handle_qst error");
+			goto bad;
 		}
 		break;
 	case MDNS_RESPONSE:
@@ -428,6 +410,12 @@ pkt_process(int unused, short event, void *v_pkt)
 		break;
 	}
 
+	/* Clear all authority section */
+	while((rr = LIST_FIRST(&pkt->nslist)) != NULL) {
+		LIST_REMOVE(rr, pentry);
+		free(rr);
+	}
+
 	/* Sanity check, every section must be empty. */
 	if (!LIST_EMPTY(&pkt->qlist))
 		log_warnx("Unprocessed question in Question Section");
@@ -437,7 +425,7 @@ pkt_process(int unused, short event, void *v_pkt)
 		log_warnx("Unprocessed rr in Authority Section");
 	if (!LIST_EMPTY(&pkt->arlist))
 		log_warnx("Unprocessed rr in Additional Section");
-
+bad:
 	pkt_cleanup(pkt);
 	free(pkt);
 
@@ -1046,10 +1034,11 @@ int
 pkt_handle_qst(struct pkt *pkt)
 {
 	struct question		*qst, *lqst;
-	struct rr		*rr, *rrcopy;
+	struct rr		*rr, *rrcopy, *rr_aux;
 	struct pkt		 sendpkt;
 	struct sockaddr_in	 dst, *pdst;
-	struct cache_node 	 *cn;
+	struct cache_node 	*cn;
+	int 			 probe;
 
 	/* TODO: Mdns draft 6.3 Duplicate Question Suppression */
 
@@ -1069,17 +1058,6 @@ pkt_handle_qst(struct pkt *pkt)
 
 	while ((qst = LIST_FIRST(&pkt->qlist)) != NULL) {
 		/*
-		 * Discard questions which shouldn't be handled, can be a
-		 * probing query or we may be already listed in the known answer
-		 * supression list.
-		 */
-		if (!pkt_should_answer_qst(pkt, qst)) {
-			LIST_REMOVE(qst, entry);
-			free(qst);
-			continue;
-		}
-
-		/*
 		 * XXX: This assumes that every question came from the same
 		 * packet, hence, the same source. It also assumes QU questions
 		 * may not be mixed up with QM questions, maybe this flag should
@@ -1090,18 +1068,65 @@ pkt_handle_qst(struct pkt *pkt)
 			pdst = &dst;
 		}
 
+		/* Check if it's a probe */
+		probe = 0;
+		LIST_FOREACH(rr, &pkt->nslist, pentry) {
+			if (ANSWERS(&qst->rrs, &rr->rrs))
+				probe = 1;
+		}
+
 		/*
 		 * CACHE_FOREACH_DNAME instead of CACHE_FOREACH_RRS so that in
 		 * future we can do conflict resolving. Which needs to answer a
 		 * T_ANY.
 		 */
 		CACHE_FOREACH_DNAME(rr, cn, qst->rrs.dname) {
-			/* XXX must take iface into account */
-			if (!RR_AUTH(rr) ||
-			    (rr->flags & RR_FLAG_PUBLISHED) == 0)
+			/* Look only for authority records */
+			if (!RR_AUTH(rr))
 				continue;
+			/* RR must answer question */
 			if (!ANSWERS(&qst->rrs, &rr->rrs))
 				continue;
+			/* If not a probe, skip unpublished */
+			if (!probe &&
+			    ((rr->flags & RR_FLAG_PUBLISHED) == 0))
+				continue;
+			/* Sanity check */
+			if (probe && pkt->flags & PKT_FLAG_LEGACY) {
+				log_warnx("Packet considered probe and legacy, "
+				    "dropping (%s)", rrs_str(&qst->rrs));
+				return (-1);
+			}
+			/*
+			 * If this is a probe and we have a conflict record
+			 * which isn't published yet, do a conflict tie break.
+			 */
+			if (probe && rr->flags & RR_FLAG_PUBLISHED) {
+				log_warnx("Conflict tie break for %s",
+				    rrs_str(&rr->rrs));
+				; /* TODO Tie break */
+				return (-1);
+			}
+
+			/*
+			 * So we have an answer, see if we're listed in the
+			 * known answer supression list
+			 */
+			if (!probe) {
+				LIST_FOREACH(rr_aux, &pkt->anlist, pentry) {
+					if (rr_rdata_cmp(rr, rr_aux) != 0)
+						break;
+					if (rr_aux->ttl < (rr->ttl / 2))
+						break;
+					/* Supress this answer */
+					goto skip_answer;
+				}
+			}
+			/* If we got here we're commited to answering */
+			if (probe)
+				log_warnx("Simple conflict for %s",
+				    rrs_str(&rr->rrs));
+
 			/* Make a copy since we may modify if PKT_F_LEGACY */
 			rrcopy = rr_dup(rr);
 			/*
@@ -1122,8 +1147,8 @@ pkt_handle_qst(struct pkt *pkt)
 			}
 			/* Add to response packet */
 			pkt_add_anrr(&sendpkt, rrcopy);
+		 skip_answer: ;
 		}
-
 		LIST_REMOVE(qst, entry);
 		free(qst);
 	}
@@ -1140,63 +1165,6 @@ pkt_handle_qst(struct pkt *pkt)
 	pkt_cleanup(&sendpkt);
 
 	return (0);
-}
-
-int
-pkt_should_answer_qst(struct pkt *pkt, struct question *qst)
-{
-	struct rr *rr, *rrans = NULL;
-	struct cache_node *cn;
-
-	/*
-	 * If this packet isn't a query, don't even think of answering.
-	 */
-	if (pkt->h.qr == MDNS_RESPONSE)
-		return (0);
-	/*
-	 * If this is a legacy pkt, we must answer
-	 */
-	if (pkt->flags & PKT_FLAG_LEGACY)
-		return (1);
-	/*
-	 * If this question belongs to a probe packet, that is, if an answer to
-	 * this question resides in the packet authority section, we're not
-	 * supposed to answer.
-	 */
-	LIST_FOREACH(rr, &pkt->nslist, pentry) {
-		if (ANSWERS(&qst->rrs, &rr->rrs))
-			return (0);
-	}
-	/*
-	 * Check if the answer we would give isn't already in the known answer
-	 * supression list, that is, check that the answer isn't in the answer
-	 * section with a ttl at least half the original value.
-	 */
-	CACHE_FOREACH_DNAME(rrans, cn, qst->rrs.dname) {
-		/* XXX must take iface into account */
-		if (!RR_AUTH(rrans))
-			continue;
-		if (!ANSWERS(&qst->rrs, &rrans->rrs))
-			continue;
-		break;
-	}
-	/* We've no answers for it, we should try to answer, but we
-	 * already know we can't so return 0, this is a speed hack. */
-	if (rrans == NULL)
-		return (0);
-	/* So we have an answer, see if we're listed in the known answer
-	   supression list */
-	LIST_FOREACH(rr, &pkt->anlist, pentry) {
-		/* will compare type/class/data */
-		if (rr_rdata_cmp(rr, rrans) != 0)
-			continue;
-		if (rr->ttl < (rrans->ttl / 2))
-			return (1);
-		else
-			return (0);
-	}
-
-	return (1);
 }
 
 int
