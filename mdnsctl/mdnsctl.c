@@ -66,21 +66,21 @@ main(int argc, char *argv[])
 	int			sockfd;
 	struct mdns		mdns;
 	struct mdns_service	ms;
-	
+
 	/* parse options */
 	if ((res = parse(argc - 1, argv + 1)) == NULL)
 		exit(1);
-	
+
 	if ((sockfd = mdns_open(&mdns)) == -1)
 		err(1, "mdns_open");
-	
+
 	mdns_set_lookup_A_hook(&mdns, my_lookup_A_hook);
 	mdns_set_lookup_PTR_hook(&mdns, my_lookup_PTR_hook);
 	mdns_set_lookup_HINFO_hook(&mdns, my_lookup_HINFO_hook);
 	mdns_set_browse_hook(&mdns, my_browse_hook);
 	mdns_set_resolve_hook(&mdns, my_resolve_hook);
 	mdns_set_group_hook(&mdns, my_group_hook);
-	
+
 	/* process user request */
 	switch (res->action) {
 	case NONE:
@@ -95,7 +95,7 @@ main(int argc, char *argv[])
 		if (res->flags & F_HINFO)
 			if (mdns_lookup_HINFO(&mdns, res->hostname) == -1)
 				err(1, "mdns_lookup_A");
-		
+
 		if (res->flags & F_PTR)
 			if (mdns_lookup_PTR(&mdns, res->hostname) == -1)
 				err(1, "mdns_lookup_A");
@@ -126,7 +126,7 @@ main(int argc, char *argv[])
 
 	for (; ;) {
 		ssize_t n;
-		
+
 		n = mdns_read(&mdns);
 		fflush(stdout);
 		if (n == -1)
@@ -154,7 +154,7 @@ my_lookup_A_hook(struct mdns *m, int ev, const char *host, struct in_addr a)
 		errx(1, "Unhandled event");
 		break;	/* NOTREACHED */
 	}
-	
+
 	res->flags &= ~F_A;
 }
 
@@ -172,7 +172,7 @@ my_lookup_PTR_hook(struct mdns *m, int ev, const char *name, const char *ptr)
 		errx(1, "Unhandled event");
 		break;	/* NOTREACHED */
 	}
-	
+
 	res->flags &= ~F_PTR;
 }
 
@@ -192,7 +192,7 @@ my_lookup_HINFO_hook(struct mdns *m, int ev, const char *name, const char *cpu,
 		errx(1, "Unhandled event");
 		break;	/* NOTREACHED */
 	}
-	
+
 	res->flags &= ~F_HINFO;
 }
 
@@ -256,14 +256,17 @@ my_group_hook(struct mdns *m, int ev, const char *group)
 	case MDNS_GROUP_ERR_COLLISION:
 		printf("Group %s got a collision, not published\n",
 		    group);
+		exit(1);
 		break;
 	case MDNS_GROUP_ERR_NOT_FOUND:
 		printf("Group %s not found, this is an internal error,"
 		    " please report\n", group);
+		exit(1);
 		break;
 	case MDNS_GROUP_ERR_DOUBLE_ADD:
 		printf("Group %s got a double add, ignore for now...\n",
 		    group);
+		exit(1);
 		break;
 	case MDNS_GROUP_PROBING:
 		printf("Group %s is probing...\n", group);
