@@ -1108,7 +1108,7 @@ pkt_handle_qst(struct pkt *pkt)
 			 * If this is a probe and we have a conflict record
 			 * which isn't published yet, do a conflict tie break.
 			 */
-			if (probe && rr->flags & RR_FLAG_PUBLISHED) {
+			if (probe && (rr->flags & RR_FLAG_PUBLISHED) == 0) {
 				log_warnx("Conflict tie break for %s",
 				    rrs_str(&rr->rrs));
 				; /* TODO Tie break */
