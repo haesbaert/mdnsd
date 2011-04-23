@@ -376,17 +376,17 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 	/* XXX deal with target, accept only ourselves for now */
 	(void)strlcpy(ms->target, conf->myname, sizeof(ms->target));
 
-	/* Group not found, or group commited */
+	/* Group not found, or not newgroup commited */
 	pg = pg_get(0, ms->name, c);
 	if (pg == NULL ||
-	    (pg != NULL && pg->flags & PG_FLAG_COMMITED)) {
+	    (pg != NULL && pg->state != PG_STA_NEW)) {
 		log_warnx("Controller trying to add service to invalid group");
 		return;
 	}
 
-	/* TODO implement iface option in ms */
 	if ((pge = pge_from_ms(pg, ms, NULL)) == NULL) {
-		log_warnx("pge_from_ms Failed");
+		/* XXX assume collision */
+		pg->state = PG_STA_COLLISION;
 		return;
 	}
 }
@@ -457,12 +457,16 @@ control_group_commit(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	}
 
-	/*
-	 * If we got here, the world is a nice place and we can go on.
-	 */
+	/* Check if we got a collision */
+	if (pg->state == PG_STA_COLLISION) {
+		control_notify_pg(pg->c, pg,
+		    IMSG_CTL_GROUP_ERR_COLLISION);
+		pg_kill(pg);
+		return;
+	}
 
 	/* Mark we got a commit */
-	pg->flags |= PG_FLAG_COMMITED;
+	pg->state = PG_STA_COMMITED;
 
 	timerclear(&tv);
 	tv.tv_usec = RANDOM_PROBETIME;

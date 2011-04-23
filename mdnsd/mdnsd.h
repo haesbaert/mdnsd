@@ -169,6 +169,11 @@ struct query {
 	struct rrset		*br_ptr; /* The PTR in QUERY_BROWSE */
 };
 
+enum pg_state {
+	PG_STA_NEW,
+	PG_STA_COMMITED,
+	PG_STA_COLLISION
+};
 /* Publish Group */
 struct pg {
 	TAILQ_ENTRY(pg) 	entry; 		/* pg_queue link */
@@ -176,7 +181,7 @@ struct pg {
 	struct ctl_conn 	*c;		/* Owner */
 	char 			name[MAXHOSTNAMELEN]; /* Name id */
 	u_int 			flags;		/* Misc flags */
-#define PG_FLAG_COMMITED 0x01			/* Controller sent commit */
+	enum pg_state		state;		/* enum pg_state */
 };
 
 /* Publish Group Entry types */
@@ -201,14 +206,14 @@ struct pge {
 	enum pge_type 	  pge_type;	/* Type of this entry */
 	u_int 		  pge_flags;	/* Misc flags */
 #define PGE_FLAG_INC_A	  0x01		/* Include primary T_A record */
-#define PGE_FLAG_INTERNAL 0x02		/* Internal pge, pg is NULL */
+#define PGE_FLAG_INTERNAL 0x02		/* TODO: kill and test for pg */
 	struct question  *pqst;		/* Probing Question, may be NULL */
 	struct rr 	 *rr[PGE_RR_MAX]; /* Array of to publish rr */
 	int 		  nrr;		/* Members in rr array */
 	struct iface	 *iface;	/* Iface to be published */
 	struct event	  timer;	/* FSM timer */
 	enum pge_state	  state;	/* FSM state */
-	u_int		  sent;	/* How many sent packets */
+	u_int		  sent;		/* How many sent packets */
 };
 
 /* Publish Group Queue, should hold all publishing groups */
@@ -379,12 +384,14 @@ void		 pge_fsm(int, short, void *);
 void		 pge_fsm_restart(struct pge *, struct timeval *);
 struct pge 	*pge_new_primary(struct iface *);
 struct pge 	*pge_new_workstation(struct iface *);
+void		 pge_conflict_revert_probe(struct pge *);
+void		 pge_conflict_drop(struct pge *);
 struct rr *	 get_prim_a(struct iface *);
 struct rr *	 auth_get(struct rr *);
 void		 auth_release(struct rr *);
 int		 rr_send_goodbye(struct rr *);
 int		 rr_send_an(struct rr *);
-
+void		 conflict_resolve_by_rr(struct rr *);
 
 /* control.c */
 TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;

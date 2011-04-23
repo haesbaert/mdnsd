@@ -166,6 +166,7 @@ cache_process(struct rr *rr)
 			if (RR_UNIQ(rr) || RR_UNIQ(rr_aux)) {
 				log_warnx("cache_process: conflict for %s",
 				    rrs_str(&rr->rrs));
+				conflict_resolve_by_rr(rr_aux);
 				return (-1);
 			}
 		}
@@ -1173,4 +1174,76 @@ rr_send_an(struct rr *rr)
 	}
 
 	return (0);
+}
+
+void
+conflict_resolve_by_rr(struct rr *rr)
+{
+	struct pge *pge, *next;
+	int i;
+
+	for (pge = TAILQ_FIRST(&pge_queue); pge != NULL; pge = next) {
+		next = TAILQ_NEXT(pge, entry);
+		for (i = 0; i < pge->nrr; i++) {
+			if (rr != pge->rr[i])
+				continue;
+			/*
+			 * If unpublished or probing, give up !
+			 */
+			if (pge->state < PGE_STA_ANNOUNCING)
+				pge_conflict_drop(pge);
+			else /* Reset to probing state */
+				pge_conflict_revert_probe(pge);
+		}
+	}
+}
+
+/*
+ * Drop this pge
+ */
+void
+pge_conflict_drop(struct pge *pge)
+{
+	int i;
+	struct pg *pg;
+	struct rr *rr;
+
+	log_debug("pge_conflict_drop: %p", pge);
+
+	if (pge->pge_flags & PGE_FLAG_INTERNAL)
+		return;		/* TODO */
+
+	pg = pge->pg;
+	control_notify_pg(pg->c, pg, IMSG_CTL_GROUP_ERR_COLLISION);
+	LIST_FOREACH(pge, &pg->pge_list, pge_entry) {
+		for (i = 0; i < pge->nrr; i++) {
+			rr = pge->rr[i];
+			/* Prevent a goodbye */
+			rr->flags &= ~RR_FLAG_PUBLISHED;
+		}
+	}
+
+	pg_kill(pg);
+}
+
+void
+pge_conflict_revert_probe(struct pge *pge)
+{
+	struct timeval tv;
+	struct rr *rr;
+	int i;
+
+	log_debug("pge_conflict_revert_probe: %p", pge);
+
+	timerclear(&tv);
+	pge->state	= PGE_STA_PROBING;
+	pge->sent	= 0;
+
+	for (i = 0; i < pge->nrr; i++) {
+		rr = pge->rr[i];
+		/* Stop answering for these RR */
+		rr->flags &= ~RR_FLAG_PUBLISHED;
+	}
+	/* Restart the machine */
+	pge_fsm_restart(pge, &tv);
 }
