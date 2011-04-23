@@ -726,6 +726,8 @@ pge_from_ms(struct pg *pg, struct mdns_service *ms, struct iface *iface)
 	bzero(&txt, sizeof(txt));
 	bzero(&ptr_proto, sizeof(ptr_proto));
 	bzero(&ptr_services, sizeof(ptr_services));
+	bzero(proto, sizeof(proto));
+	bzero(servname, sizeof(servname));
 
 	if (snprintf(servname, sizeof(servname),
 	    "%s._%s._%s.local",  ms->name, ms->app, ms->proto)

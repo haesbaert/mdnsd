@@ -396,8 +396,15 @@ pkt_process(int unused, short event, void *v_pkt)
 			log_warnx("pkt_handle_qst error");
 			goto bad;
 		}
+		/* Clear all answer section (KNA) */
+		while((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			free(rr);
+		}
+
 		break;
 	case MDNS_RESPONSE:
+		/* Process answer section */
 		while ((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			cache_process(rr);
@@ -1115,7 +1122,7 @@ pkt_handle_qst(struct pkt *pkt)
 			if (!probe) {
 				LIST_FOREACH(rr_aux, &pkt->anlist, pentry) {
 					if (rr_rdata_cmp(rr, rr_aux) != 0)
-						break;
+						continue;
 					if (rr_aux->ttl < (rr->ttl / 2))
 						break;
 					/* Supress this answer */
