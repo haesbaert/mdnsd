@@ -1121,12 +1121,11 @@ pkt_handle_qst(struct pkt *pkt)
 			 */
 			if (!probe) {
 				LIST_FOREACH(rr_aux, &pkt->anlist, pentry) {
-					if (rr_rdata_cmp(rr, rr_aux) != 0)
-						continue;
-					if (rr_aux->ttl < (rr->ttl / 2))
-						break;
-					/* Supress this answer */
-					goto skip_answer;
+					if (rr_rdata_cmp(rr, rr_aux) == 0 &&
+					    rr_aux->ttl > (rr->ttl / 2)) {
+						/* Supress this answer */
+						goto supress;
+					}
 				}
 			}
 			/* If we got here we're commited to answering */
@@ -1154,7 +1153,7 @@ pkt_handle_qst(struct pkt *pkt)
 			}
 			/* Add to response packet */
 			pkt_add_anrr(&sendpkt, rrcopy);
-		 skip_answer: ;
+		 supress: ;
 		}
 		LIST_REMOVE(qst, entry);
 		free(qst);
