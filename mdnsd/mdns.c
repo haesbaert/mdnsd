@@ -275,7 +275,8 @@ cache_delete(struct rr *rr)
 	if (rr->flags & RR_FLAG_PUBLISHED &&
 	    RR_AUTH(rr))
 		rr_send_goodbye(rr);
-	rr_notify_out(rr);
+	if (rr->flags & RR_FLAG_PUBLISHED)
+		rr_notify_out(rr);
 	cn = rr->cn;
 	if (evtimer_pending(&rr->timer, NULL))
 		evtimer_del(&rr->timer);
