@@ -1204,9 +1204,7 @@ conflict_resolve_by_rr(struct rr *rr)
 void
 pge_conflict_drop(struct pge *pge)
 {
-	int i;
 	struct pg *pg;
-	struct rr *rr;
 
 	log_debug("pge_conflict_drop: %p", pge);
 
@@ -1215,14 +1213,6 @@ pge_conflict_drop(struct pge *pge)
 
 	pg = pge->pg;
 	control_notify_pg(pg->c, pg, IMSG_CTL_GROUP_ERR_COLLISION);
-	LIST_FOREACH(pge, &pg->pge_list, pge_entry) {
-		for (i = 0; i < pge->nrr; i++) {
-			rr = pge->rr[i];
-			/* Prevent a goodbye */
-			rr->flags &= ~RR_FLAG_PUBLISHED;
-		}
-	}
-
 	pg_kill(pg);
 }
 
