@@ -95,12 +95,7 @@ MDNSCTL
 
 How do I use this thing ?
 -------------------------
-     Get the source from http://github.com/haesbaert/mdnsd
-     Add user and group _mdnsd
-     Compile and install mdnsd and mdnsctl
-     Make sure you have proper multicast setup (man 7 netstart), or
-     just delete the default reject route:
-          route delete 224/4
+     Install it from openbsd ports (net/openmdns)
      
      Run mdnsd on the desired interface: mdnsd -d rl0
      Play with mdnsctl:
