@@ -839,6 +839,7 @@ pge_fsm(int unused, short event, void *v_pge)
 
 	pge = v_pge;
 	pg  = pge->pg;
+
 	/*
 	 * In order to publish services and addresses we must first make sure
 	 * our primary address has been sucessfully published, if not, we delay
@@ -987,15 +988,13 @@ void
 pg_publish_byiface(struct iface *iface)
 {
 	struct pge	*pge;
-	struct timeval	 tv;
-
-	timerclear(&tv);
-	tv.tv_usec = RANDOM_PROBETIME;
 
 	TAILQ_FOREACH(pge, &pge_queue, entry) {
 		/* XXX this is so wrong.... */
-		if (pge->iface == ALL_IFACE || pge->iface == iface)
-			pge_fsm_restart(pge, &tv);
+		if (pge->iface == ALL_IFACE || pge->iface == iface) {
+			/* XXX must be a random probe time */
+			pge_revert_probe(pge);
+		}
 	}
 }
 
@@ -1193,8 +1192,11 @@ conflict_resolve_by_rr(struct rr *rr)
 			 */
 			if (pge->state < PGE_STA_ANNOUNCING)
 				pge_conflict_drop(pge);
-			else /* Reset to probing state */
-				pge_conflict_revert_probe(pge);
+			else {/* Reset to probing state */
+				log_warnx("Got a conflict revert to probe, "
+				    "HIGHLY experimental");
+				pge_revert_probe(pge);
+			}
 		}
 	}
 }
@@ -1220,13 +1222,11 @@ pge_conflict_drop(struct pge *pge)
 }
 
 void
-pge_conflict_revert_probe(struct pge *pge)
+pge_revert_probe(struct pge *pge)
 {
 	struct timeval tv;
 	struct rr *rr;
 	int i;
-
-	log_debug("pge_conflict_revert_probe: %p", pge);
 
 	timerclear(&tv);
 	pge->state	= PGE_STA_PROBING;
@@ -1235,6 +1235,7 @@ pge_conflict_revert_probe(struct pge *pge)
 	for (i = 0; i < pge->nrr; i++) {
 		rr = pge->rr[i];
 		/* Stop answering for these RR */
+		/* XXX not sure about this */
 		rr->flags &= ~RR_FLAG_PUBLISHED;
 	}
 	/* Restart the machine */

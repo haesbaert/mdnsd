@@ -384,7 +384,7 @@ void		 pge_fsm(int, short, void *);
 void		 pge_fsm_restart(struct pge *, struct timeval *);
 struct pge 	*pge_new_primary(struct iface *);
 struct pge 	*pge_new_workstation(struct iface *);
-void		 pge_conflict_revert_probe(struct pge *);
+void		 pge_revert_probe(struct pge *);
 void		 pge_conflict_drop(struct pge *);
 struct rr *	 get_prim_a(struct iface *);
 struct rr *	 auth_get(struct rr *);

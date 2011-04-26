@@ -204,7 +204,7 @@ fetchifs(int ifindex)
 					    MIN(sizeof(kif->k.ea),
 					    sdl->sdl_alen));
 				}
-					
+
 				/* string already terminated via calloc() */
 			}
 		kif_insert(kif);
@@ -282,18 +282,19 @@ kev_dispatch_msg(int fd, short event, void *bula)
 				if_fsm(iface, IF_EVT_UP);
 			else
 				if_fsm(iface, IF_EVT_DOWN);
-
 			break;
 		case RTM_IFANNOUNCE:
 			log_debug("RTM_IFANNOUNCE");
 			break;
 		case RTM_NEWADDR:
-			/* TODO */
+			/* XXX this is SO wrong */
+			if_fsm(iface, IF_EVT_UP);
 			log_debug("RTM_NEWADDR");
 			break;
 		case RTM_DELADDR:
-			/* TODO */
+			/* XXX this is SO wrong */
 			log_debug("RTM_DELADDR");
+			if_fsm(iface, IF_EVT_DOWN);
 			break;
 		default:
 			/* ignore for now */

@@ -204,8 +204,8 @@ if_act_reset(struct iface *iface)
 	case IF_TYPE_BROADCAST:
 		inet_aton(ALL_MDNS_DEVICES, &addr);
 		if (if_leave_group(iface, &addr)) {
-		log_warn("if_act_reset: error leaving group %s, "
-		    "interface %s", inet_ntoa(addr), iface->name);
+			log_warn("if_act_reset: error leaving group %s, "
+			    "interface %s", inet_ntoa(addr), iface->name);
 		}
 		break;
 	default:
@@ -251,7 +251,7 @@ if_set_opt(int fd)
 		log_warn("if_set_opt: error setting IP_RECVIF");
 		return (-1);
 	}
-	
+
 	if (setsockopt(fd, IPPROTO_IP, IP_RECVDSTADDR, &yes,
 	    sizeof(int)) < 0) {
 		log_warn("if_set_opt: error setting IP_RECVDSTADDR");
@@ -404,7 +404,7 @@ if_new(struct kif *kif)
 	iface->media_type = kif->media_type;
 	iface->baudrate = kif->baudrate;
 	iface->ea = kif->ea;
-	
+
 	/* get address */
 	if (ioctl(s, SIOCGIFADDR, ifr) < 0)
 		err(1, "if_new: cannot get address");
@@ -424,7 +424,7 @@ if_new(struct kif *kif)
 		sain = (struct sockaddr_in *)&ifr->ifr_addr;
 		iface->dst = sain->sin_addr;
 	}
-	
+
 	/* get the primary group for this interface */
 	iface->pge_primary = pge_new_primary(iface);
 	if (conf->no_workstation == 0)
@@ -435,4 +435,3 @@ if_new(struct kif *kif)
 
 	return (iface);
 }
-
