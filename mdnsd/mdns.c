@@ -1209,8 +1209,10 @@ pge_conflict_drop(struct pge *pge)
 
 	log_debug("pge_conflict_drop: %p", pge);
 
-	if (pge->pge_flags & PGE_FLAG_INTERNAL)
-		return;		/* TODO */
+	if (pge->pge_flags & PGE_FLAG_INTERNAL) {
+		log_warnx("conflict for internal pge, unimplemented");
+		return;
+	}
 
 	pg = pge->pg;
 	control_notify_pg(pg->c, pg, IMSG_CTL_GROUP_ERR_COLLISION);
