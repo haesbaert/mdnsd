@@ -301,12 +301,12 @@ struct iface	*if_new(struct kif *);
 void		 if_set_recvbuf(int);
 
 struct mdnsd_conf {
-	LIST_HEAD(, iface)	iface_list;
-	int			mdns_sock;
-	struct event		ev_mdns;
-	struct hinfo		hi;
-	char			myname[MAXHOSTNAMELEN];
-	int 			no_workstation;
+	LIST_HEAD(, iface)	iface_list; /* Our interface list */
+	int			mdns_sock;  /* MDNS socket bound to udp 5353 */
+	struct event		ev_mdns;    /* MDNS socket event */
+	struct hinfo		hi;	    /* MDNS Host Info */
+	char			myname[MAXHOSTNAMELEN]; /* Hostname */
+	int 			no_workstation;	/* Don't publish workstation */
 };
 
 /* kiface.c */
