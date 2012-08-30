@@ -612,7 +612,7 @@ int
 pkt_send_allif_do(struct pkt *pkt, int inc_prim)
 {
 	struct iface	*iface;
-	struct rr	*rr;
+	struct rr	*rr = NULL;
 	int		 succ = 0;
 
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
