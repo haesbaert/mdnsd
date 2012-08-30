@@ -510,7 +510,7 @@ ibuf_send_imsg(struct imsgbuf *ibuf, u_int32_t type,
 
 	imsg_close(ibuf, wbuf);
 
-	if (msgbuf_write(&ibuf->w))
+	if (msgbuf_write(&ibuf->w) == -1)
 		return (-1);
 
 	return (0);
