@@ -448,6 +448,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	HEADER			*h;
 	u_int8_t		*pbuf;
 	ssize_t			 n, left;
+	int 			 inaddrany;
 
 	inet_aton(ALL_MDNS_DEVICES, &all_mdns.sin_addr);
 	all_mdns.sin_port   = htons(MDNS_PORT);
@@ -509,7 +510,16 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 
 		in_retry = 0;
 	retry:
+		/*
+		 * Have to patch T_A if INADDR_ANY with the correct interface
+		 * address.
+		 */
+		inaddrany = RR_INADDRANY(rr);
+		if (inaddrany)
+			rr->rdata.A.s_addr = iface->addr.s_addr;
 		n = serialize_rr(rr, pbuf, left);
+		if (inaddrany)
+			rr->rdata.A.s_addr = INADDR_ANY;
 		/* Unexpected n */
 		if (n > left) {
 			log_warnx("No space left on packet for an section.");
@@ -562,7 +572,12 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 
 	/* Append all authorities, they must fit a single packet. */
 	LIST_FOREACH(rr, &pkt->nslist, pentry) {
+		inaddrany = RR_INADDRANY(rr);
+		if (inaddrany)
+			rr->rdata.A.s_addr = iface->addr.s_addr;
 		n = serialize_rr(rr, pbuf, left);
+		if (inaddrany)
+			rr->rdata.A.s_addr = INADDR_ANY;
 		if (n == -1 || n > left) {
 			return (-1);
 		}
@@ -573,7 +588,12 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 
 	/* Append all additionals, they must fit a single packet. */
 	LIST_FOREACH(rr, &pkt->arlist, pentry) {
+		inaddrany = RR_INADDRANY(rr);
+		if (inaddrany)
+			rr->rdata.A.s_addr = iface->addr.s_addr;
 		n = serialize_rr(rr, pbuf, left);
+		if (inaddrany)
+			rr->rdata.A.s_addr = INADDR_ANY;
 		if (n == -1 || n > left) {
 			return (-1);
 		}
@@ -596,7 +616,7 @@ get_prim_a(struct iface *iface)
 	struct pge *pge;
 	int i;
 
-	pge = iface->pge_primary;
+	pge = conf->pge_primary;
 
 	for (i = 0; i < pge->nrr; i++) {
 		rr = pge->rr[i];
@@ -618,6 +638,10 @@ pkt_send_allif_do(struct pkt *pkt, int inc_prim)
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		/* XXX this is so wrong.... */
 		if (inc_prim) {
+			/*
+			 * XXX this can be fixed now that we don't have a
+			 * pge per interface.
+			 */
 			if ((rr = get_prim_a(iface)) == NULL)
 				log_warnx("T_A not found for "
 				    "primary pge. Not including T_A !");
@@ -729,14 +753,27 @@ rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
 int
 rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 {
+	struct iface *iface;
+	
 	if (rra->rrs.type != rrb->rrs.type)
 		return (-1);
 	if (rra->rrs.class != rrb->rrs.class)
 		return (-1);
 
-	return (memcmp(&rra->rdata, &rrb->rdata,
-	    sizeof(rra->rdata)));
+	/*
+	 * Special case, if this is a T_A record and the address is INADDR_ANY,
+	 * we must compare agains all our interface addresses.
+	 */
+	if (RR_INADDRANY(rra) || RR_INADDRANY(rra)) {
+		LIST_FOREACH(iface, &conf->iface_list, entry) {
+			if (iface->addr.s_addr == rra->rdata.A.s_addr)
+				return (0);
+			if (iface->addr.s_addr == rrb->rdata.A.s_addr)
+				return (0);
+		}
+	}
 
+	return (memcmp(&rra->rdata, &rrb->rdata, sizeof(rra->rdata)));
 }
 
 u_int32_t
@@ -983,6 +1020,10 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 		}
 		GETLONG(ul, buf);
 		rr->rdata.A.s_addr = htonl(ul);
+		if (rr->rdata.A.s_addr == INADDR_ANY) {
+			log_warnx("Invalid T_A record with ip address 0.0.0.0");
+			return (-1);
+		}
 		break;
 	case T_HINFO:
 		if ((n = charstr(rr->rdata.HINFO.cpu, *pbuf, rdlen)) == -1)

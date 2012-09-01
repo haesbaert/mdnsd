@@ -426,7 +426,6 @@ if_new(struct kif *kif)
 	}
 
 	/* get the primary group for this interface */
-	iface->pge_primary = pge_new_primary(iface);
 	if (conf->no_workstation == 0)
 		iface->pge_workstation = pge_new_workstation(iface);
 

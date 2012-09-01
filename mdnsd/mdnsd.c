@@ -317,6 +317,9 @@ main(int argc, char *argv[])
 	/* init interfaces and names */
 	conf_init_ifaces(argc, argv);
 
+	/* Create primary pge */
+	pge_initprimary();
+
 	/* init some packet internals */
 	packet_init();
 	

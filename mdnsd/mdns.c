@@ -832,7 +832,6 @@ pge_fsm(int unused, short event, void *v_pge)
 {
 	struct pg	*pg;
 	struct pge	*pge, *pge_primary;
-	struct iface	*iface;
 	struct timeval	 tv;
 	struct pkt	 pkt;
 	int		 inc_prim, i;
@@ -843,18 +842,17 @@ pge_fsm(int unused, short event, void *v_pge)
 	/*
 	 * In order to publish services and addresses we must first make sure
 	 * our primary address has been sucessfully published, if not, we delay
-	 * publication for a second.
+	 * publication for a second. We don't really need this if the service is
+	 * not on our local address.
 	 */
 	if (pge->pge_type == PGE_TYPE_SERVICE) {
-		LIST_FOREACH(iface, &conf->iface_list, entry) {
-			pge_primary = iface->pge_primary;
-			if (pge_primary->state < PGE_STA_ANNOUNCING) {
-				timerclear(&tv);
-				tv.tv_sec = 1;
-				pge_fsm_restart(pge, &tv);
-
-				return;
-			}
+		pge_primary = conf->pge_primary;
+		if (pge_primary->state < PGE_STA_ANNOUNCING) {
+			timerclear(&tv);
+			tv.tv_sec = 1;
+			pge_fsm_restart(pge, &tv);
+			
+			return;
 		}
 	}
 
@@ -1021,21 +1019,24 @@ pg_get(int alloc, char name[MAXHOSTNAMELEN], struct ctl_conn *c)
 	return (pg);
 }
 
-struct pge *
-pge_new_primary(struct iface *iface)
+void
+pge_initprimary(void)
 {
 	struct pge	*pge;
 	struct question	*qst;
+	struct iface 	*iface;
 	struct rr	 rr;
 	char		 revaddr[MAXHOSTNAMELEN];
+	struct in_addr	 inaddrany;
 
-	if ((pge = calloc(1, sizeof(*pge))) == NULL)
+	if ((conf->pge_primary = calloc(1, sizeof(*pge))) == NULL)
 		fatal("calloc");
+	pge 	       = conf->pge_primary;
 	pge->pge_flags = PGE_FLAG_INTERNAL;
 	pge->pg	       = NULL;
 	pge->sent      = 0;
 	pge->state     = PGE_STA_UNPUBLISHED;
-	pge->iface     = iface;
+	pge->iface     = NULL;
 	evtimer_set(&pge->timer, pge_fsm, pge);
 	/* Link to global pge */
 	TAILQ_INSERT_TAIL(&pge_queue, pge, entry);
@@ -1048,34 +1049,34 @@ pge_new_primary(struct iface *iface)
 	pge->pqst = qst;
 	/* Must add T_A, T_PTR(rev) and T_HINFO */
 	/* T_A record */
+	inaddrany.s_addr = INADDR_ANY;
 	bzero(&rr, sizeof(rr));
 	rr_set(&rr, conf->myname, T_A, C_IN, TTL_HNAME,
 	    RR_FLAG_CACHEFLUSH,
-	    &iface->addr, sizeof(iface->addr));
-	if ((pge->rr[0] = auth_get(&rr)) == NULL)
+	    &inaddrany, sizeof(inaddrany));
+	if ((pge->rr[pge->nrr++] = auth_get(&rr)) == NULL)
 		goto bad;
-	pge->nrr++;
-	/* T_PTR record reverse address */
-	bzero(&rr, sizeof(rr));
-	reversstr(revaddr, &iface->addr);
-	rr_set(&rr, revaddr, T_PTR, C_IN, TTL_HNAME,
-	    RR_FLAG_CACHEFLUSH,
-	    conf->myname, sizeof(conf->myname));
-	if ((pge->rr[1] = auth_get(&rr)) == NULL)
-		goto bad;
-	pge->nrr++;
+	/* T_PTR record reverse address, one for every address */
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		bzero(&rr, sizeof(rr));
+		reversstr(revaddr, &iface->addr);
+		rr_set(&rr, revaddr, T_PTR, C_IN, TTL_HNAME,
+		    RR_FLAG_CACHEFLUSH,
+		    conf->myname, sizeof(conf->myname));
+		if ((pge->rr[pge->nrr++] = auth_get(&rr)) == NULL)
+			goto bad;
+	}
 	/* T_HINFO record */
 	bzero(&rr, sizeof(rr));
 	rr_set(&rr, conf->myname, T_HINFO, C_IN, TTL_HNAME,
 	    RR_FLAG_CACHEFLUSH,
 	    &conf->hi, sizeof(conf->hi));
-	if ((pge->rr[2] = auth_get(&rr)) == NULL)
+	if ((pge->rr[pge->nrr++] = auth_get(&rr)) == NULL)
 		goto bad;
-	pge->nrr++;
 
-	return (pge);
+	return;
 bad:
-	log_warnx("Can't init primary group for iface %s", iface->name);
+	log_warnx("Can't init primary addresses");
 	fatalx("internal error");
 }
 

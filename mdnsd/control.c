@@ -721,10 +721,21 @@ session_socket_blockmode(int fd, enum blockmodes bm)
 int
 control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
+	int r;
+	int inaddrany = RR_INADDRANY(rr);
+	
 	log_debug("control_send_rr (%s) %s", rr_type_name(rr->rrs.type),
 	    rr->rrs.dname);
 
-	return (mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr)));
+
+	/* Patch up T_A with the first interface address */
+	if (inaddrany)
+		rr->rdata.A.s_addr = LIST_FIRST(&conf->iface_list)->addr.s_addr;
+	r = mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr));
+	if (inaddrany)
+		rr->rdata.A.s_addr = INADDR_ANY;
+	
+	return (r);
 }
 
 int

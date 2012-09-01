@@ -54,8 +54,10 @@
 	    (qrrs)->class == (rrs)->class                            &&	\
 	    (strcmp((qrrs)->dname, (rrs)->dname)) == 0)
 
-#define RR_UNIQ(rr) (rr->flags & RR_FLAG_CACHEFLUSH)
-#define RR_AUTH(rr) (rr->auth_refcount > 0)
+#define RR_UNIQ(rr) ((rr)->flags & RR_FLAG_CACHEFLUSH)
+#define RR_AUTH(rr) ((rr)->auth_refcount > 0)
+#define RR_INADDRANY(rr)						\
+	((rr)->rrs.type == T_A && (rr)->rdata.A.s_addr == INADDR_ANY)
 
 #define CACHE_FOREACH_RRS(var, rrs)		\
 	/* struct rr *var */			\
@@ -105,7 +107,9 @@ struct rr {
 	struct rrset 		rrs;	/* RR tripple */
 	u_int32_t		ttl;	/* DNS Time to live */
 	union {
-		struct in_addr	A; 	/* IPv4 Address */
+		/* IPv4 Address, if INADDR_ANY, use the interface address, this
+		 * is how we can have the same RR with multiple addresses */
+		struct in_addr	A; 	
 		char		CNAME[MAXHOSTNAMELEN]; /* CNAME */
 		char		PTR[MAXHOSTNAMELEN];   /* PTR */
 		char		NS[MAXHOSTNAMELEN];    /* Name server */
@@ -114,7 +118,6 @@ struct rr {
 		struct hinfo	HINFO;		       /* Host Info */
 
 	} rdata;
-	struct iface		*iface;	/* Published/Received interface */
 	struct cache_node	*cn;	/* Cache parent node */
 	int			 auth_refcount; /* Number of pges holding us */
 	int			 revision; /* at 80% of ttl, then 90% and 95% */
@@ -198,7 +201,7 @@ enum pge_state {
 	PGE_STA_PUBLISHED,		/* Finished announcing */
 };
 
-#define PGE_RR_MAX 8
+#define PGE_RR_MAX 32
 struct pge {
 	TAILQ_ENTRY(pge) entry;	  	/* pge_queue link */
 	LIST_ENTRY(pge)	 pge_entry; 	/* Group link */
@@ -261,7 +264,6 @@ enum iface_type {
 
 struct iface {
 	LIST_ENTRY(iface)	 entry;
-	struct pge		*pge_primary;
 	struct pge		*pge_workstation;
 	char			 name[IF_NAMESIZE];
 	struct in_addr		 addr;
@@ -306,6 +308,7 @@ struct mdnsd_conf {
 	struct event		ev_mdns;    /* MDNS socket event */
 	struct hinfo		hi;	    /* MDNS Host Info */
 	char			myname[MAXHOSTNAMELEN]; /* Hostname */
+	struct pge	       *pge_primary;/* Primary pge addresses */
 	int 			no_workstation;	/* Don't publish workstation */
 };
 
@@ -382,7 +385,7 @@ struct pge	*pge_from_ms(struct pg *, struct mdns_service *, struct iface *);
 void		 pge_kill(struct pge *);
 void		 pge_fsm(int, short, void *);
 void		 pge_fsm_restart(struct pge *, struct timeval *);
-struct pge 	*pge_new_primary(struct iface *);
+void 		 pge_initprimary(void);
 struct pge 	*pge_new_workstation(struct iface *);
 void		 pge_revert_probe(struct pge *);
 void		 pge_conflict_drop(struct pge *);
