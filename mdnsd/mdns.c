@@ -924,7 +924,7 @@ pge_fsm(int unused, short event, void *v_pge)
 
 		if (pge->pge_flags & PGE_FLAG_INC_A) {
 			LIST_REMOVE(conf->pge_primary->rr[PGE_RR_PRIM], pentry);
-			pkt->h.ancount--; /* XXX */
+			pkt.h.ancount--; /* XXX */
 		}
 		
 		if (++pge->sent < 3)  {
