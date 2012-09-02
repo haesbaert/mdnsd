@@ -727,7 +727,6 @@ control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 	log_debug("control_send_rr (%s) %s", rr_type_name(rr->rrs.type),
 	    rr->rrs.dname);
 
-
 	/* Patch up T_A with the first interface address */
 	if (inaddrany)
 		rr->rdata.A.s_addr = LIST_FIRST(&conf->iface_list)->addr.s_addr;
@@ -782,7 +781,11 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	ms.priority = srv->rdata.SRV.priority;
 	ms.weight = srv->rdata.SRV.weight;
 	ms.port = srv->rdata.SRV.port;
-	ms.addr = a->rdata.A;
+	/* Patch up T_A with the first interface address */
+	if (RR_INADDRANY(a))
+		ms.addr = LIST_FIRST(&conf->iface_list)->addr;
+	else
+		ms.addr = a->rdata.A;
 	if (control_send_ms(c, &ms, IMSG_CTL_RESOLVE) == -1)
 		log_warnx("control_send_ms error");
 
