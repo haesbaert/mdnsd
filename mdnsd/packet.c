@@ -439,7 +439,7 @@ bad:
 }
 
 int
-pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
+pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 {
 	struct sockaddr_in	 all_mdns;
 	static u_int8_t		 buf[MAXPACKET];
@@ -459,7 +459,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	if (pdst == NULL)
 		pdst = &all_mdns;
 	if (iface->mtu > MAXPACKET) {
-		log_warnx("pkt_send_if: insane mtu");
+		log_warnx("pkt_sendto: insane mtu");
 		return (-1);
 	}
 	bzero(buf, sizeof(buf));
@@ -468,11 +468,11 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	pbuf = buf;
 	pktcomp_reset(0, buf, left);
 	/*
-	 * Every packet must have a header, we assume pkt_send_if will only be
+	 * Every packet must have a header, we assume pkt_sendto will only be
 	 * called for full packets, that is, packets that require a header.
 	 */
 	if (left < HDR_LEN) {
-		log_warnx("pkt_send_if: left < HDR_LEN");
+		log_warnx("pkt_sendto: left < HDR_LEN");
 		return (-1);
 	}
 	/* Copy header, field by field as we do our own calculations in
@@ -488,7 +488,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	LIST_FOREACH(qst, &pkt->qlist, entry) {
 		n = serialize_qst(qst, pbuf, left);
 		if (n == -1 || n > left) {
-			log_warnx("pkt_send_if: "
+			log_warnx("pkt_sendto: "
 			    "can't serialize question section");
 			return (-1);
 		}
@@ -559,7 +559,7 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 			pbuf  += HDR_LEN;
 			/* Avoid a possible stupid infinite loop */
 			if (in_retry) {
-				log_warnx("pkt_send_if: failing on retry");
+				log_warnx("pkt_sendto: failing on retry");
 				return (-1);
 			}
 			in_retry = 1;
@@ -610,14 +610,17 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 }
 
 int
-pkt_send_allif(struct pkt *pkt)
+pkt_send(struct pkt *pkt, struct iface *iface)
 {
-	struct iface	*iface;
+	struct iface	*iface2;
 	int		 succ = 0;
 
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		if (pkt_send_if(pkt, iface, NULL) == -1)
-			log_warnx("Can't send packet through %s", iface->name);
+	if (iface != ALL_IFACE)
+		return (pkt_sendto(pkt, iface, NULL));
+
+	LIST_FOREACH(iface2, &conf->iface_list, entry) {
+		if (pkt_sendto(pkt, iface2, NULL) == -1)
+			log_warnx("Can't send packet through %s", iface2->name);
 		else
 			succ++;
 	}
@@ -1169,7 +1172,7 @@ pkt_handle_qst(struct pkt *pkt)
 	 * If we have answers, send it.
 	 */
 	if (sendpkt.h.ancount > 0)
-		if (pkt_send_if(&sendpkt, sendpkt.iface, pdst) == -1)
+		if (pkt_sendto(&sendpkt, sendpkt.iface, pdst) == -1)
 			log_warnx("Can't send packet to"
 			    "%s", pkt->iface->name);
 

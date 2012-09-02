@@ -384,7 +384,7 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 		return;
 	}
 
-	if ((pge = pge_from_ms(pg, ms, NULL)) == NULL) {
+	if ((pge = pge_from_ms(pg, ms, ALL_IFACE)) == NULL) {
 		/* XXX assume collision */
 		pg->state = PG_STA_COLLISION;
 		return;

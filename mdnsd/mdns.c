@@ -348,7 +348,7 @@ cache_rev(int unused, short event, void *v_rr)
 		pkt_init(&pkt);
 		pkt.h.qr = MDNS_QUERY;
 		pkt_add_question(&pkt, qst);
-		if (pkt_send_allif(&pkt) == -1)
+		if (pkt_send(&pkt, ALL_IFACE) == -1)
 			log_warnx("can't send packet to all interfaces");
 	}
 
@@ -578,7 +578,7 @@ query_fsm(int unused, short event, void *v_query)
 	}
 
 	if (pkt.h.qdcount > 0)
-		if (pkt_send_allif(&pkt) == -1)
+		if (pkt_send(&pkt, ALL_IFACE) == -1)
 			log_warnx("can't send packet to all interfaces");
 	q->count++;
 	if (evtimer_pending(&q->timer, NULL))
@@ -879,7 +879,8 @@ pge_fsm(int unused, short event, void *v_pge)
 		/* Add the RRs in the NS section */
 		for (i = 0; i < pge->nrr; i++)
 			pkt_add_nsrr(&pkt, pge->rr[i]);
-		if (pkt_send_allif(&pkt) == -1)
+		/* Always probe for all interfaces, this is safer */
+		if (pkt_send(&pkt, ALL_IFACE) == -1)
 			log_warnx("can't send probe packet");
 		/* Probing done, start announcing */
 		if (++pge->sent == 3) {
@@ -917,8 +918,8 @@ pge_fsm(int unused, short event, void *v_pge)
 		if (pge->pge_flags & PGE_FLAG_INC_A)
 			pkt_add_anrr(&pkt, conf->pge_primary->rr[PGE_RR_PRIM]);
 
-		if (pkt_send_allif(&pkt) == -1) {
-			log_warnx("can't send probe packet");
+		if (pkt_send(&pkt, ALL_IFACE) == -1) {
+			log_warnx("can't send announce packet");
 			return;
 		}
 
@@ -1044,7 +1045,7 @@ pge_initprimary(void)
 	pge->pg	       = NULL;
 	pge->sent      = 0;
 	pge->state     = PGE_STA_UNPUBLISHED;
-	pge->iface     = NULL;
+	pge->iface     = ALL_IFACE;
 	evtimer_set(&pge->timer, pge_fsm, pge);
 	/* Link to global pge */
 	TAILQ_INSERT_TAIL(&pge_queue, pge, entry);
@@ -1176,7 +1177,7 @@ rr_send_an(struct rr *rr)
 	pkt_init(&pkt);
 	pkt.h.qr = MDNS_RESPONSE;
 	pkt_add_anrr(&pkt, rr);
-	if (pkt_send_allif(&pkt) == -1) {
+	if (pkt_send(&pkt, ALL_IFACE) == -1) {
 		log_warnx("rr_send_an error %s", rrs_str(&rr->rrs));
 
 		return (-1);
