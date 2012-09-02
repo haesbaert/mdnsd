@@ -834,7 +834,7 @@ pge_fsm(int unused, short event, void *v_pge)
 	struct pge	*pge, *pge_primary;
 	struct timeval	 tv;
 	struct pkt	 pkt;
-	int		 inc_prim, i;
+	int		 i;
 
 	pge = v_pge;
 	pg  = pge->pg;
@@ -912,13 +912,19 @@ pge_fsm(int unused, short event, void *v_pge)
 			pkt_add_anrr(&pkt, pge->rr[i]);
 		/*
 		 * PGE_FLAG_INC_A, we should add our primary A resource record
-		 * to the packet. We must look for the A record on our primary
+		 * to the packet.
 		 */
-		inc_prim = !!(pge->pge_flags & PGE_FLAG_INC_A);
-		if (pkt_send_allif_do(&pkt, inc_prim) == -1) {
+		if (pge->pge_flags & PGE_FLAG_INC_A)
+			pkt_add_anrr(&pkt, conf->pge_primary->rr[PGE_RR_PRIM]);
+
+		if (pkt_send_allif(&pkt) == -1) {
 			log_warnx("can't send probe packet");
 			return;
 		}
+
+		if (pge->pge_flags & PGE_FLAG_INC_A)
+			LIST_REMOVE(conf->pge_primary->rr[PGE_RR_PRIM], pentry);
+		
 		if (++pge->sent < 3)  {
 			timerclear(&tv);
 			tv.tv_sec = pge->sent;
@@ -1048,7 +1054,7 @@ pge_initprimary(void)
 	qst->rrs.class = C_IN;
 	pge->pqst = qst;
 	/* Must add T_A, T_PTR(rev) and T_HINFO */
-	/* T_A record */
+	/* T_A record, NOTE: must be first to match PGE_RR_PRIM */
 	inaddrany.s_addr = INADDR_ANY;
 	bzero(&rr, sizeof(rr));
 	rr_set(&rr, conf->myname, T_A, C_IN, TTL_HNAME,

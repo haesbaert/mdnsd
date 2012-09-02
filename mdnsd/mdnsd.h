@@ -212,6 +212,7 @@ struct pge {
 #define PGE_FLAG_INTERNAL 0x02		/* TODO: kill and test for pg */
 	struct question  *pqst;		/* Probing Question, may be NULL */
 	struct rr 	 *rr[PGE_RR_MAX]; /* Array of to publish rr */
+#define PGE_RR_PRIM 0			/* The T_A record for primary address */
 	int 		  nrr;		/* Members in rr array */
 	struct iface	 *iface;	/* Iface to be published */
 	struct event	  timer;	/* FSM timer */
@@ -333,9 +334,7 @@ void	  recv_packet(int, short, void *);
 int	  send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
 void	  pkt_process(int, short, void *);
 int	  pkt_send_if(struct pkt *, struct iface *, struct sockaddr_in *);
-int	  pkt_send_allif_do(struct pkt *, int);
-#define   pkt_send_allif(pkt) pkt_send_allif_do(pkt, 0)
-#define   pkt_send_allif_inc_prim(pkt) pkt_send_allif_do(pkt, 1)
+int	  pkt_send_allif(struct pkt *);
 void	  pkt_init(struct pkt *);
 void	  pkt_cleanup(struct pkt *);
 void	  pkt_add_question(struct pkt *, struct question *);
@@ -389,7 +388,6 @@ void 		 pge_initprimary(void);
 struct pge 	*pge_new_workstation(struct iface *);
 void		 pge_revert_probe(struct pge *);
 void		 pge_conflict_drop(struct pge *);
-struct rr *	 get_prim_a(struct iface *);
 struct rr *	 auth_get(struct rr *);
 void		 auth_release(struct rr *);
 int		 rr_send_goodbye(struct rr *);

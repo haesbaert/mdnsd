@@ -609,52 +609,17 @@ pkt_send_if(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	return (0);
 }
 
-struct rr *
-get_prim_a(struct iface *iface)
-{
-	struct rr *rr;
-	struct pge *pge;
-	int i;
-
-	pge = conf->pge_primary;
-
-	for (i = 0; i < pge->nrr; i++) {
-		rr = pge->rr[i];
-		if (rr->rrs.type != T_A)
-			continue;
-		return (rr);
-	}
-
-	return (NULL);
-}
-
 int
-pkt_send_allif_do(struct pkt *pkt, int inc_prim)
+pkt_send_allif(struct pkt *pkt)
 {
 	struct iface	*iface;
-	struct rr	*rr = NULL;
 	int		 succ = 0;
 
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		/* XXX this is so wrong.... */
-		if (inc_prim) {
-			/*
-			 * XXX this can be fixed now that we don't have a
-			 * pge per interface.
-			 */
-			if ((rr = get_prim_a(iface)) == NULL)
-				log_warnx("T_A not found for "
-				    "primary pge. Not including T_A !");
-			else
-				pkt_add_anrr(pkt, rr);
-		}
 		if (pkt_send_if(pkt, iface, NULL) == -1)
 			log_warnx("Can't send packet through %s", iface->name);
 		else
 			succ++;
-		/* XXX this is so wrong.... */
-		if (inc_prim && rr != NULL)
-			LIST_REMOVE(rr, pentry);
 	}
 	/* If we couldn't send to a single iface, consider an error */
 	if (succ == 0)
