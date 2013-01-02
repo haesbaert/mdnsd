@@ -1,0 +1,5 @@
+mdnsctl/mdnsctl
+mdnsd/mdnsd
+*.o
+*.manlint
+cscope.*
