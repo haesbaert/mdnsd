@@ -732,7 +732,7 @@ rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 	 * Special case, if this is a T_A record and the address is INADDR_ANY,
 	 * we must compare agains all our interface addresses.
 	 */
-	if (RR_INADDRANY(rra) || RR_INADDRANY(rra)) {
+	if (RR_INADDRANY(rra) || RR_INADDRANY(rrb)) {
 		LIST_FOREACH(iface, &conf->iface_list, entry) {
 			if (iface->addr.s_addr == rra->rdata.A.s_addr)
 				return (0);
