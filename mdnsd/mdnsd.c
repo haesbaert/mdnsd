@@ -83,8 +83,10 @@ conf_init_ifaces(int argc, char *argv[])
 			continue;
 		}
 
-		found++;
 		iface = if_new(k);
+		if (iface == NULL)
+			continue;
+		found++;
 		LIST_INSERT_HEAD(&conf->iface_list, iface, entry);
 	}
 
