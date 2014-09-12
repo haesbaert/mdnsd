@@ -369,6 +369,7 @@ if_new(struct kif *kif)
 	struct iface		*iface;
 	struct ifreq		*ifr;
 	int			s;
+	int succeed = 0;
 
 	if ((iface = calloc(1, sizeof(*iface))) == NULL)
 		err(1, "if_new: calloc");
@@ -406,21 +407,27 @@ if_new(struct kif *kif)
 	iface->ea = kif->ea;
 
 	/* get address */
-	if (ioctl(s, SIOCGIFADDR, ifr) < 0)
-		err(1, "if_new: cannot get address");
+	if (ioctl(s, SIOCGIFADDR, ifr) < 0) {
+		log_warn("if_new: cannot get address");
+		goto end;
+	}
 	sain = (struct sockaddr_in *)&ifr->ifr_addr;
 	iface->addr = sain->sin_addr;
 
 	/* get mask */
-	if (ioctl(s, SIOCGIFNETMASK, ifr) < 0)
-		err(1, "if_new: cannot get mask");
+	if (ioctl(s, SIOCGIFNETMASK, ifr) < 0) {
+		log_warn("if_new: cannot get mask");
+		goto end;
+	}
 	sain = (struct sockaddr_in *)&ifr->ifr_addr;
 	iface->mask = sain->sin_addr;
 
 	/* get p2p dst address */
 	if (kif->flags & IFF_POINTOPOINT) {
-		if (ioctl(s, SIOCGIFDSTADDR, ifr) < 0)
-			err(1, "if_new: cannot get dst addr");
+		if (ioctl(s, SIOCGIFDSTADDR, ifr) < 0) {
+			log_warn("if_new: cannot get dst addr");
+			goto end;
+		}
 		sain = (struct sockaddr_in *)&ifr->ifr_addr;
 		iface->dst = sain->sin_addr;
 	}
@@ -428,6 +435,14 @@ if_new(struct kif *kif)
 	/* get the primary group for this interface */
 	if (conf->no_workstation == 0)
 		iface->pge_workstation = pge_new_workstation(iface);
+
+	succeed = 1;
+
+end:
+	if (!succeed) {
+		free(iface);
+		iface = NULL;
+	}
 
 	free(ifr);
 	close(s);
