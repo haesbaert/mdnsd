@@ -19,6 +19,7 @@
 
 #include <sys/param.h>
 #include <sys/socket.h>
+#include <sys/tree.h>
 #include <sys/types.h>
 #include <net/if_arp.h>
 #include <net/if.h>
