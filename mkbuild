@@ -2,19 +2,19 @@
 
 set -x
 
-cd /home/haesbaert/src/mdns
+cd /home/haesbaert/src/mdnsd
 make clean
 version=$(grep '#define MDNS_VERSION ' version.h | \
 	sed 's/#define MDNS_VERSION //' | \
 	sed 's/\"//g' |
 	cut -d ' ' -f 1)
 cat <<EOF > /tmp/distfiles
-mdns/mdnsd
-mdns/mdnsctl
-mdns/TODO
-mdns/README
-mdns/Makefile
-mdns/version.h
+mdnsd/mdnsd
+mdnsd/mdnsctl
+mdnsd/TODO
+mdnsd/README
+mdnsd/Makefile
+mdnsd/version.h
 EOF
 
 tar -s "/mdns\//openmdns-$version\//g" \

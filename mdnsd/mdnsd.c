@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010 Christiano F. Haesbaert <haesbaert@haesbaert.org>
+ * Copyright (c) 2010-2014 Christiano F. Haesbaert <haesbaert@haesbaert.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -63,7 +63,7 @@ __dead void
 display_version(void)
 {
 	printf("OpenMdns Daemon %s\n", MDNS_VERSION);
-	printf("Copyright (C) 2010-2011 Christiano F. Haesbaert\n");
+	printf("Copyright (C) 2010-2014 Christiano F. Haesbaert\n");
 	
 	exit(0);
 }
