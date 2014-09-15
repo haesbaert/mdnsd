@@ -619,6 +619,8 @@ pkt_send(struct pkt *pkt, struct iface *iface)
 		return (pkt_sendto(pkt, iface, NULL));
 
 	LIST_FOREACH(iface2, &conf->iface_list, entry) {
+		if (iface2->state != IF_STA_ACTIVE)
+			continue;
 		if (pkt_sendto(pkt, iface2, NULL) == -1)
 			log_warnx("Can't send packet through %s", iface2->name);
 		else
