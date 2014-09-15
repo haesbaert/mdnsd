@@ -16,7 +16,7 @@ Setup
   
 Code
 -----------------
-  * Really add support for multiple interfaces.
+  * Really add support for multiple interfaces. DONE.
   * Implement NXDOMAIN support, important for legacy queries.
   * Do more tests with link down/up.
   * Implement cache dump.
