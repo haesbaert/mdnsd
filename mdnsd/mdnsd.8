@@ -33,10 +33,10 @@ daemon which acts as the host mdns querier and responder.
 supports both raw MDNS as well as DNS-SD (Service Discovery) as described in the
 MDNS and DNS-SD drafts.
 .Pp
-MDNS is a way to perform DNS-like operations via multicast on the local link,
+MDNS is a way to perform DNS-like operations via multicast in the local link,
 there is no hierarchy or multiple domains as in conventional unicast DNS. MDNS
 provides a way for hosts to co-operate and maintain a cache name database which
-can be used to resolve local host names without the need of a central DNS
+can then be used to resolve local host names without the need of a central DNS
 server.
 .Pp
 DNS-SD is a convention on some names used in MDNS to provide hosts with Service
@@ -44,15 +44,15 @@ Discovery capabilities.
 
 A host can publish a service of any type, be it a HTTP server, NTP server, a
 Printer and so on, this services can then be browsed and resolved by the other
-hosts on the local network.
+hosts in the local network.
 .Pp
 There are basically two roles in a MDNS environment, the Querier, and the
 Responder.
 
 The Querier is the entity responsible for sending questions and MDNS
-requests on the local link, it can't be done as is in libc where each process
-does it's own lookup, there must be something centralizing all the requests are
-there are various complications implied, as cache, timers and so on.
+requests in the local link, it can't be done as it is in libc, where each process
+does its own lookup, there must be something centralizing all the requests as
+there are various complications implied: cache, timers and so on.
 .Pp
 The Responder is the entity responsible for answering those queries, there
 should be only one responder per host. Both roles are performed by MDNS.
@@ -67,13 +67,13 @@ There are three basic types of MDNS question, in which
 uses two of them.
 
 The One-Shot Query, which resembles unicast DNS, where a single question is sent
-and a answer is expected, if no answer is received it means no one can answer
+and an answer is expected, if no answer is received it means no one can answer
 that question. This question is used for simple lookups.
 .Pp
 Continuous Multicast Query is a more complex way of querying, the querier will
-send the same question multiple times, doubling the interval between each time
-and multiple answers and be received, it's used as a way for monitoring the
-Resource Records on the network. This question is mainly used by network
+send the same question multiple times, doubling the interval between each time,
+ multiple answers may be received, it's used as a way for monitoring the
+Resource Records of the network. This question is mainly used by network
 browsing in DNS-SD, where a question for a type of service may enumerate one or
 more instances, for example, if browsing for the HTTP servers, there may be one
 or more servers (instances).
@@ -82,14 +82,14 @@ To diminish the volume of redundant answers, a feature called Known Answer
 Suppression is present, in which the querier when performing a Continuous
 Multicast Query places all the previous known answers in the additional section
 of the MDNS packet, thus, any answer that would be given which is already in the
-additional section is suppressed.
+additional section, is suppressed.
 .Pp
 There are two type of Resource Records, Unique and Shared.
 .Pp
 Unique records are the ones which there may be only one answer for it in the
-local name, the A, PTR and HINFO under the hostname.local name is an example of
-Unique record, it would be strange if two hosts would answer an address for the
-same foobar.local. All Unique records must be Probed to verify it's uniqueness,
+local name, the A, PTR and HINFO under the hostname.local name are examples of
+Unique records, it would be strange if two hosts would answer an address for the
+same foobar.local. All Unique records must be Probed to verify its uniqueness,
 if a conflict is found, another name must be chosen (Unimplemented).
 .Pp
 A Shared record is used for PTR records in DNS-SD, a host may have as many
@@ -103,13 +103,13 @@ line interface to the daemon in the same fashion as ripctl(8) and ospfctl(8).
 .Pp
 When
 .Nm
-starts up, it probes for it's hostname, fetched from /etc/myname, on the network
-and if there isn't a conflict, it publishes an A and a PTR record for itself,
+starts up, it probes for its hostname (fetched from /etc/myname), if 
+there isn't a conflict, it publishes an A and a PTR record for itself,
 both records will be under the .local domain, which is the MDNS single domain
 name. All the other domain names in /etc/myname will be stripped, therefore
 foo.bar.midearth becomes foo.local, which can be resolved through MDNS. If a
-conflict is found, read, there is another foo.local in the network, conflict
-resolution will take place (Unimplemented yet).
+conflict is found, then, there is another foo.local in the network and conflict
+resolution takes place.
 .Pp
 If -w was not specified,
 .Nm
@@ -172,5 +172,4 @@ program version 0.1 was released in 13 February 2011.
 .Sh AUTHORS
 Christiano Farina Haesbaert <haesbaert@haesbaert.org>
 .Sh BUGS
-No support for name conflict resolution. Bugs in packet parser as it won't
-survive some forms of portscan. No proper error return in mdnsl.c.
+No proper error return in mdnsl.c.
