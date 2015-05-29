@@ -352,7 +352,7 @@ parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN])
 	if (word == NULL || *word == '-')
 		return (0);
 	
-	if (strlen(word) < 7 ||	/* shorter host is a.local */
+	if (strlen(word) < 7 ||	/* shortest host is a.local */
 	    strcmp(&word[strlen(word) - 6], ".local") != 0) {
 		fprintf(stderr, "Invalid domain, must be .local\n");
 		return (0);
