@@ -40,7 +40,8 @@ enum actions {
 	LOOKUP,
 	RLOOKUP,
 	BROWSE_PROTO,
-	PUBLISH
+	PUBLISH,
+	PROXY
 };
 
 struct parse_result {
@@ -60,6 +61,7 @@ const struct token	*match_token(const char *, const struct token *);
 void			 show_valid_args(const struct token *);
 int			 parse_addr(const char *, struct in_addr *);
 int			 parse_hostname(const char *, char [MAXHOSTNAMELEN]);
+int			 parse_target_hostname(const char *, char [MAXHOSTNAMELEN]);
 int			 parse_proto(const char *, char [MAXHOSTNAMELEN]);
 int			 parse_flags(const char *, int *);
 int			 parse_brflags(const char *, int *);

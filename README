@@ -111,4 +111,5 @@ How do I use this thing ?
      mdnsctl browse -r http tcp
      # Publish a simple ftp service
      mdnsctl publish myftp ftp tcp 21 "user=foobar"
-     
+     # Proxy publish a https service that has www.mysite.com as the target
+     mdnsctl proxy mysite https tcp 443 www.mysite.com 12.3.45.6 "user=foobar"

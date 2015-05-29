@@ -95,6 +95,25 @@ is the tcp or udp port.
 .Ar text-string
 is the string in the TXT record for the given service, it can be used to
 express additional service information.
+.It Xo
+.Cm proxy
+.Ar service-name
+.Ar application
+.Ar proto
+.Ar port
+.Ar host
+.Ar address
+.Ar text-string
+.Xc
+Proxy publish a service running on a different machine,
+in addition to the arguments used for
+.Sx \&publish ,
+.Ar host
+is a fully qualified domain name (FQDN) of the target machine,
+.Ar address
+is an IPv4 address for the target machine in the
+.Ar a.b.c.d
+form.
 .El
 .Sh FILES
 .Bl -tag -width "/var/run/mdnsctl.sockXX" -compact
@@ -124,6 +143,9 @@ mdnsctl browse -r http tcp
 
 # Publish a simple ftp service
 mdnsctl publish myftp ftp tcp 21 "user=foobar"
+
+# Proxy publish a https service that has www.mysite.com as the target
+mdnsctl proxy mysite https tcp 443 www.mysite.com 12.3.45.6 "user=foobar"
 .Ed
 .Sh SEE ALSO
 .Xr mdnsd 8

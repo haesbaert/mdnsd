@@ -130,7 +130,7 @@ int	mdns_lookup_PTR(struct mdns *, const char *);
 int	mdns_lookup_HINFO(struct mdns *, const char *);
 int	mdns_lookup_rev(struct mdns *, struct in_addr *);
 int	mdns_service_init(struct mdns_service *, const char *, const char *,
-    const char *, u_int16_t, const char *, struct in_addr *);
+    const char *, u_int16_t, const char *, const char *, struct in_addr *);
 int	mdns_group_add(struct mdns *, const char *);
 int	mdns_group_reset(struct mdns *, const char *);
 int	mdns_group_add_service(struct mdns *, const char *, struct mdns_service *);

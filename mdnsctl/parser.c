@@ -39,6 +39,7 @@ enum token_type {
 	ADDRESS,
 	FLAGS,
 	HOSTNAME,
+	FQDN,
 	PROTO,
 	APPPROTO,
 	BRFLAGS,
@@ -64,12 +65,20 @@ static const struct token t_publish_app[];
 static const struct token t_publish_app_proto[];
 static const struct token t_publish_app_proto_port[];
 static const struct token t_publish_app_proto_port_txt[];
+static const struct token t_proxy[];
+static const struct token t_proxy_app[];
+static const struct token t_proxy_app_proto[];
+static const struct token t_proxy_app_proto_port[];
+static const struct token t_proxy_app_proto_port_target[];
+static const struct token t_proxy_app_proto_port_target_addr[];
+static const struct token t_proxy_app_proto_port_target_addr_txt[];
 
 static const struct token t_main[] = {
 	{KEYWORD,	"lookup",	NONE,		t_lookup},
 	{KEYWORD,	"rlookup",	NONE,		t_rlookup},
 	{KEYWORD,	"browse",	BROWSE_PROTO,	t_browse_app},
 	{KEYWORD,	"publish",	NONE,		t_publish},
+	{KEYWORD,	"proxy",	NONE,		t_proxy},
 	{ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -120,6 +129,41 @@ static const struct token t_publish_app_proto_port[] = {
 
 static const struct token t_publish_app_proto_port_txt[] = {
 	{ TXTSTRING,	"",		PUBLISH,	NULL},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+static const struct token t_proxy[] = {
+	{ SRVNAME,	"",		NONE,		t_proxy_app},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_proxy_app[] = {
+	{ APPPROTO,	"",		NONE,		t_proxy_app_proto},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_proxy_app_proto[] = {
+	{ PROTO,	"tcp",		NONE,		t_proxy_app_proto_port},
+	{ PROTO,	"udp",		NONE,		t_proxy_app_proto_port},
+	{ ENDTOKEN,	"",		NONE,		NULL}
+};
+
+static const struct token t_proxy_app_proto_port[] = {
+	{ PORT,		"",		NONE,		t_proxy_app_proto_port_target},
+	{ ENDTOKEN,	"",		NONE,		t_proxy_app_proto_port_target}
+};
+
+static const struct token t_proxy_app_proto_port_target[] = {
+	{ FQDN,	"",		NONE,		t_proxy_app_proto_port_target_addr},
+	{ ENDTOKEN,	"",		NONE,		t_proxy_app_proto_port_target_addr}
+};
+
+static const struct token t_proxy_app_proto_port_target_addr[] = {
+	{ ADDRESS,	"",		NONE,		t_proxy_app_proto_port_target_addr_txt},
+	{ ENDTOKEN,	"",		NONE,		t_proxy_app_proto_port_target_addr_txt}
+};
+
+static const struct token t_proxy_app_proto_port_target_addr_txt[] = {
+	{ TXTSTRING,	"",		PROXY,	NULL},
 	{ ENDTOKEN,	"",		NONE,		NULL}
 };
 
@@ -225,6 +269,14 @@ match_token(const char *word, const struct token *table)
 					res.action = t->value;
 			}
 			break;
+		case FQDN:
+			if (parse_target_hostname(word, res.hostname)) {
+				match++;
+				t = &table[i];
+				if (t->value)
+					res.action = t->value;
+			}
+			break;
 		case APPPROTO:
 			if (word != NULL && *word != '-') {
 				res.app = word;
@@ -304,6 +356,9 @@ show_valid_args(const struct token *table)
 		case HOSTNAME:
 			fprintf(stderr, "  <hostname.local>\n");
 			break;
+		case FQDN:
+			fprintf(stderr, "  <fully qualified hostname>\n");
+			break;
 		case APPPROTO:
 			fprintf(stderr, "  <application protocol>\n");
 			break;
@@ -355,6 +410,23 @@ parse_hostname(const char *word, char hostname[MAXHOSTNAMELEN])
 	if (strlen(word) < 7 ||	/* shortest host is a.local */
 	    strcmp(&word[strlen(word) - 6], ".local") != 0) {
 		fprintf(stderr, "Invalid domain, must be .local\n");
+		return (0);
+	}
+	strlcpy(hostname, word, MAXHOSTNAMELEN);
+
+	return (1);
+}
+
+int
+parse_target_hostname(const char *word, char hostname[MAXHOSTNAMELEN])
+{
+	if (word == NULL)
+		return (0);
+
+	/* XXX need to add support for host.local proxy targets, disallow for now */
+	if (strchr(word, '.') == NULL ||
+	    strcmp(&word[strlen(word) - 6], ".local") == 0) {
+		fprintf(stderr, "Not fully qualified unicast DNS hostname\n");
 		return (0);
 	}
 	strlcpy(hostname, word, MAXHOSTNAMELEN);
