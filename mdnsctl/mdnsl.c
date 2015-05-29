@@ -293,7 +293,7 @@ mdns_group_commit(struct mdns *m, const char *group)
 
 int
 mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
-    const char *proto, u_int16_t port, const char *txt, const char *hostname,
+    const char *proto, u_int16_t port, const char *txt, const char *target,
     struct in_addr *addr)
 {
 	bzero(ms, sizeof(*ms));
@@ -309,8 +309,8 @@ mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
 	ms->port = port;
 	if (strlcpy(ms->txt, txt, sizeof(ms->txt)) >= sizeof(ms->txt))
 		return (-1);
-	if (hostname != NULL)
-		if (strlcpy(ms->target, hostname, sizeof(ms->target)) >= sizeof(ms->target))
+	if (target != NULL)
+		if (strlcpy(ms->target, target, sizeof(ms->target)) >= sizeof(ms->target))
 			return (-1);
 	if (addr != NULL)
 		ms->addr = *addr;

@@ -153,7 +153,7 @@ static const struct token t_proxy_app_proto_port[] = {
 };
 
 static const struct token t_proxy_app_proto_port_target[] = {
-	{ FQDN,	"",		NONE,		t_proxy_app_proto_port_target_addr},
+	{ FQDN,		"",		NONE,		t_proxy_app_proto_port_target_addr},
 	{ ENDTOKEN,	"",		NONE,		t_proxy_app_proto_port_target_addr}
 };
 
@@ -164,7 +164,7 @@ static const struct token t_proxy_app_proto_port_target_addr[] = {
 
 static const struct token t_proxy_app_proto_port_target_addr_txt[] = {
 	{ TXTSTRING,	"",		PROXY,	NULL},
-	{ ENDTOKEN,	"",		NONE,		NULL}
+	{ ENDTOKEN,	"",		NONE,	NULL}
 };
 
 static struct parse_result	res;
