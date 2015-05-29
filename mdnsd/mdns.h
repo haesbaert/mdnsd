@@ -22,6 +22,7 @@
 #ifndef _MDNS_H_
 #define	_MDNS_H_
 
+#include <sys/param.h>
 #include <sys/queue.h>
 #include <arpa/nameser.h>
 #include <netinet/in.h>
