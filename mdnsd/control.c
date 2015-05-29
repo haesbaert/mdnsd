@@ -373,8 +373,9 @@ control_group_add_service(struct ctl_conn *c, struct imsg *imsg)
 	memcpy(&msg, imsg->data, sizeof(msg));
 	msg.name[sizeof(msg.name) - 1] = '\0';
 	ms = &msg;
-	/* XXX deal with target, accept only ourselves for now */
-	(void)strlcpy(ms->target, conf->myname, sizeof(ms->target));
+	/* Default to ourself if target hostname not provided  */
+	if (strlen(ms->target) == 0)
+		(void)strlcpy(ms->target, conf->myname, sizeof(ms->target));
 
 	/* Group not found, or not newgroup commited */
 	pg = pg_get(0, ms->name, c);
