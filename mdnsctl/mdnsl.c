@@ -294,7 +294,7 @@ mdns_group_commit(struct mdns *m, const char *group)
 int
 mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
     const char *proto, u_int16_t port, const char *txt, const char *hostname,
-	struct in_addr *addr)
+    struct in_addr *addr)
 {
 	bzero(ms, sizeof(*ms));
 	
