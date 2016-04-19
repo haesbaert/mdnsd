@@ -224,7 +224,10 @@ my_browse_hook(struct mdns *m, int ev, const char *name, const char *app,
 				err(1, "mdns_resolve");
 			return;
 		}
-		printf("+++ %-48s %-20s %-3s\n", name, app, proto);
+		if (res->flags & F_SCRIPT)
+			printf("proto|%s|app|%s|name|%s\n", proto, app, name);
+		else
+			printf("+++ %-48s %-20s %-3s\n", name, app, proto);
 		break;
 	case MDNS_SERVICE_DOWN:
 		if (name != NULL)
@@ -245,14 +248,20 @@ my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
 		fflush(stderr);
 		break;		/* NOTREACHED */
 	case MDNS_RESOLVE_SUCCESS:
-		printf("+++ %-48s %-20s %-3s\n", ms->name, ms->app, ms->proto);
-		printf(" Name: %s\n", ms->name);
-		/* printf(" Priority: %u\n", ms->priority); */
-		/* printf(" Weight: %u\n", ms->weight); */
-		printf(" Port: %u\n", ms->port);
-		printf(" Target: %s\n", ms->target);
-		printf(" Address: %s\n", inet_ntoa(ms->addr));
-		printf(" Txt: %s\n", ms->txt);
+		if (res->flags & F_SCRIPT) {
+			printf("proto|%s|app|%s|name|%s|port|%u|target|%s|address|%s|txt|%s\n",
+			    ms->proto, ms->app, ms->name, ms->port, ms->target,
+			    inet_ntoa(ms->addr), ms->txt);
+		} else {
+			printf("+++ %-48s %-20s %-3s\n", ms->name, ms->app, ms->proto);
+			printf(" Name: %s\n", ms->name);
+			/* printf(" Priority: %u\n", ms->priority); */
+			/* printf(" Weight: %u\n", ms->weight); */
+			printf(" Port: %u\n", ms->port);
+			printf(" Target: %s\n", ms->target);
+			printf(" Address: %s\n", inet_ntoa(ms->addr));
+			printf(" Txt: %s\n", ms->txt);
+		}
 		break;
 	default:
 		errx(1, "Unhandled event");

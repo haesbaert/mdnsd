@@ -13,7 +13,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: Feb 12 2011 $
+.Dd $Mdocdate: Apr 19 2016 $
 .Dt MDNSCTL 8
 .Os
 .Sh NAME
@@ -64,6 +64,7 @@ address.
 .It Xo
 .Cm browse
 .Op Fl r
+.Op Fl s
 .Op Ar application proto
 .Xc
 Browse for application services of type
@@ -137,6 +138,9 @@ mdnsctl browse
 
 # Browse and resolve all services
 mdnsctl browse -r
+
+# Browse and resolve all services and output in script-readable format
+mdnsctl browse -rs
 
 # Browse and resolve all the http services in the local network
 mdnsctl browse -r http tcp

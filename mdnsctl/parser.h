@@ -34,6 +34,7 @@
 
 /* BRFLAGS */
 #define F_RESOLV	1
+#define	F_SCRIPT	2
 
 enum actions {
 	NONE,
