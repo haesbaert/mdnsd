@@ -225,13 +225,17 @@ my_browse_hook(struct mdns *m, int ev, const char *name, const char *app,
 			return;
 		}
 		if (res->flags & F_SCRIPT)
-			printf("proto|%s|app|%s|name|%s\n", proto, app, name);
+			printf("up|proto|%s|app|%s|name|%s\n", proto, app, name);
 		else
 			printf("+++ %-48s %-20s %-3s\n", name, app, proto);
 		break;
 	case MDNS_SERVICE_DOWN:
-		if (name != NULL)
-			printf("--- %-48s %-20s %-3s\n", name, app, proto);
+		if (name != NULL) {
+			if (res->flags & F_SCRIPT)
+				printf("down|proto|%s|app|%s|name|%s\n", proto, app, name);
+			else
+				printf("--- %-48s %-20s %-3s\n", name, app, proto);
+		}
 		break;
 	default:
 		errx(1, "Unhandled event");
@@ -249,7 +253,7 @@ my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
 		break;		/* NOTREACHED */
 	case MDNS_RESOLVE_SUCCESS:
 		if (res->flags & F_SCRIPT) {
-			printf("proto|%s|app|%s|name|%s|port|%u|target|%s|address|%s|txt|%s\n",
+			printf("up|proto|%s|app|%s|name|%s|port|%u|target|%s|address|%s|txt|%s\n",
 			    ms->proto, ms->app, ms->name, ms->port, ms->target,
 			    inet_ntoa(ms->addr), ms->txt);
 		} else {
