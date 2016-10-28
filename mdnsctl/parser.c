@@ -483,6 +483,10 @@ parse_brflags(const char *word, int *flags)
 			*flags |= F_RESOLV;
 			r++;
 			break;
+		case 's':
+			*flags |= F_SCRIPT;
+			r++;
+			break;
 		default:
 			errx(1, "unknown flag -%c", *word);
 		}
