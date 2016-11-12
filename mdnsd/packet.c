@@ -853,7 +853,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 	int jumped = 0;
 	u_int16_t oldlen = len;
 	size_t slen;
-	u_char label[MAXLABELLEN];
+	char label[MAXLABELLEN];
 
 	/* be extra safe */
 	bzero(dname, MAXHOSTNAMELEN);
@@ -948,7 +948,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	u_int16_t us, rdlen, tmplen;
 	u_int32_t ul;
 	ssize_t n;
-	char *buf;
+	u_char *buf;
 
 	n = pkt_parse_dname(*pbuf, *len, rr->rrs.dname);
 	if (n == -1)

@@ -63,8 +63,8 @@ struct {
 
 
 RB_HEAD(kif_tree, kif_node) kit;
-RB_PROTOTYPE(kif_tree, kif_node, entry, kif_compare)
-RB_GENERATE(kif_tree, kif_node, entry, kif_compare)
+RB_PROTOTYPE(kif_tree, kif_node, entry, kif_compare);
+RB_GENERATE(kif_tree, kif_node, entry, kif_compare);
 
 int
 kif_init(void)
