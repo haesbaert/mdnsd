@@ -18,6 +18,7 @@
 #define	_MDNSD_H_
 
 #include <sys/param.h>
+#include <sys/queue.h>
 #include <sys/socket.h>
 #include <sys/tree.h>
 #include <sys/types.h>
