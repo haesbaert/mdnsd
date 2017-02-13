@@ -941,7 +941,14 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 }
 
 
-/* XXX: This function lacks some comments */
+/* 
+ * Fully parse a resource record ("RR").
+ * This adjusts "len" to be the number of bytes left in "pbuf", which is
+ * the packet buffer.
+ * (There may be multiple RR entries in a single request.)
+ * The "rr" field is filled in along the way.
+ * Returns -1 on failure, 0 on success.
+ */
 int
 pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 {
@@ -957,11 +964,83 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	*len  -= n;
 	/* Make sure rr packet len is ok */
 	if (*len < 8) {
-		log_debug("Unexpected packet len");
+		log_warnx("Unexpected packet len");
 		return (-1);
 	}
 	GETSHORT(rr->rrs.type, *pbuf);
 	*len -= INT16SZ;
+
+	/*
+	 * The T_OPT type is handled differently from other RR types.
+	 * See RFC 2671 for details.
+	 */
+
+	if (T_OPT == rr->rrs.type) {
+		u_int16_t i, code, plen, erc, pl;
+		size_t j;
+
+		/* 
+		 * We need 8 bytes for the OPT RR frame.
+		 * See RFC 2671, 4.3.
+		 */
+		if (*len < 8) {
+			log_warnx("Unexpected packet len "
+				"(T_OPT header malformed)");
+			return (-1);
+		}
+
+		/* sender's UDP payload size */
+		GETSHORT(pl, *pbuf);
+		*len -= INT16SZ;
+		/* extended RCODE and flags */
+		GETLONG(erc, *pbuf);
+		*len -= INT32SZ;
+		/* describes RDATA */
+		GETSHORT(us, *pbuf);
+		*len -= INT16SZ;
+		if (*len < us) {
+			log_warnx("Unexpected packet len "
+				"(T_OPT data malformed)");
+			return (-1);
+		}
+
+		for (j = 0, i = 0; i < us; j++) {
+			GETSHORT(code, *pbuf);
+			*len -= INT16SZ;
+			i += INT16SZ;
+			GETSHORT(plen, *pbuf);
+			*len -= INT16SZ; 
+			i += INT16SZ;
+			if (us - i < plen) {
+				log_warnx("Unexpected packet len "
+					"(T_OPT section %zu malformed)",
+					j);
+				return (-1);
+			}
+
+			if (4 == code) {
+				/* draft-cheshire-edns0-owner-option-00.txt */
+				log_debug("pkt_parse_rr: %s: "
+					"EDNSD0 \'Owner\'",
+					rr_type_name(rr->rrs.type));
+			} else {
+				log_warnx("pkt_parse_rr: %s: %llu "
+					"bytes in RDATA section %zu, "
+					"unknown code %llu",
+					rr_type_name(rr->rrs.type),
+					(long long unsigned)plen, j,
+					(long long unsigned)code);
+			}
+			*pbuf += plen;
+			*len -= plen;
+			i += plen;
+		}
+
+		rr->flags = 0;
+		rr->ttl = 0;
+		return (0);
+	}
+
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
 	if (us & CACHEFLUSH_MSK)
