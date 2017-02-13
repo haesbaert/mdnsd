@@ -1,0 +1,50 @@
+.\"	$OpenBSD: mdoc.template,v 1.15 2014/03/31 00:09:54 dlg Exp $
+.\"
+.\" Copyright (c) 2017 Kristaps Dzonsons <kristaps@bsd.lv>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate$
+.Dt MDNSHOSTS 8
+.Os
+.Sh NAME
+.Nm mdnshosts
+.Nd update /etc/hosts with mdns network information
+.Sh SYNOPSIS
+.Nm mdnshosts
+.Sh DESCRIPTION
+The
+.Nm
+utility connects to the running
+.Xr mdnsd 8
+and manages
+.Pa /etc/hosts
+with local network hosts.
+.Pp
+On startup,
+.Pa /etc/hosts
+is linked to
+.Pa /etc/hosts.mdns.save .
+This file is restored on exit.
+.\" .Sh FILES
+.Sh EXIT STATUS
+.Ex -std
+.\" .Sh DIAGNOSTICS
+.Sh SEE ALSO
+.Xr hosts 5 ,
+.Xr mdnsd 8
+.\" .Sh STANDARDS
+.\" .Sh HISTORY
+.\" .Sh AUTHORS
+.\" .Sh CAVEATS
+.\" .Sh BUGS
