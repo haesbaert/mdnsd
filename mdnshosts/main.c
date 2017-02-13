@@ -30,6 +30,7 @@
 
 #include <err.h>
 #include <fcntl.h>
+#include <paths.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -646,11 +647,7 @@ main(int argc, char *argv[])
 	 * We'll use it to pass host updates.
 	 */
 
-	if (-1 == chroot("/var/empty"))
-		err(EXIT_FAILURE, "/var/empty");
-	else if (-1 == chdir("/")) 
-		err(EXIT_FAILURE, "/var/empty");
-	else if (-1 == pledge("stdio unix", NULL))
+	if (-1 == pledge("stdio unix", NULL))
 		err(EXIT_FAILURE, NULL);
 
 	if (-1 == (sockfd = mdns_open(&mdns)))
