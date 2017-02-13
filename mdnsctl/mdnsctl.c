@@ -67,8 +67,8 @@ main(int argc, char *argv[])
 	struct mdns		mdns;
 	struct mdns_service	ms;
 
-	if (-1 == pledge("stdio unix", NULL))
-		err(EXIT_FAILURE, NULL);
+	if (pledge("stdio unix", NULL) == -1)
+		err(1, NULL);
 
 	/* parse options */
 	if ((res = parse(argc - 1, argv + 1)) == NULL)
@@ -77,8 +77,8 @@ main(int argc, char *argv[])
 	if ((sockfd = mdns_open(&mdns)) == -1)
 		err(1, "mdns_open");
 
-	if (-1 == pledge("stdio", NULL))
-		err(EXIT_FAILURE, NULL);
+	if (pledge("stdio", NULL) == -1)
+		err(1, NULL);
 
 	mdns_set_lookup_A_hook(&mdns, my_lookup_A_hook);
 	mdns_set_lookup_PTR_hook(&mdns, my_lookup_PTR_hook);
