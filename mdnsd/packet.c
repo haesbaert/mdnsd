@@ -952,7 +952,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 int
 pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 {
-	u_int16_t us, rdlen, tmplen;
+	u_int16_t us, rdlen = 0, tmplen;
 	u_int32_t ul;
 	ssize_t n;
 	u_char *buf;
@@ -971,11 +971,91 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	*len -= INT16SZ;
 
 	/*
-	 * The T_OPT type is handled differently from other RR types.
+	 * The T_OPT type is handled differently from other RR types, so
+	 * we jump to the type handler before reading in values that the
+	 * OPT doesn't define.
 	 * See RFC 2671 for details.
 	 */
 
-	if (T_OPT == rr->rrs.type) {
+	if (T_OPT == rr->rrs.type)
+		goto switch;
+
+	GETSHORT(us, *pbuf);
+	*len -= INT16SZ;
+	if (us & CACHEFLUSH_MSK)
+		rr->flags |= RR_FLAG_CACHEFLUSH;
+	rr->rrs.class  = us & CLASS_MSK;
+	if (rr->rrs.class != C_ANY && rr->rrs.class != C_IN) {
+		log_debug("pkt_parse_rr: %s (%s) Invalid packet class %u",
+		    rr_type_name(rr->rrs.type), rr->rrs.dname, rr->rrs.class);
+		return (-1);
+	}
+	GETLONG(rr->ttl, *pbuf);
+	*len -= INT32SZ;
+	GETSHORT(rdlen, *pbuf);
+	*len -= INT16SZ;
+	if (*len < rdlen) {
+		log_debug("Invalid rr data length, *len = %u, rdlen = %u",
+		    *len, rdlen);
+		return (-1);
+	}
+switch:
+	switch (rr->rrs.type) {
+	case T_A:
+		buf = *pbuf;
+		if (rdlen != INT32SZ) {
+			log_debug("Invalid A record rdlen %u", rdlen);
+			return (-1);
+		}
+		GETLONG(ul, buf);
+		rr->rdata.A.s_addr = htonl(ul);
+		if (rr->rdata.A.s_addr == INADDR_ANY) {
+			log_warnx("Invalid T_A record with ip address 0.0.0.0");
+			return (-1);
+		}
+		break;
+	case T_HINFO:
+		if ((n = charstr(rr->rdata.HINFO.cpu, *pbuf, rdlen)) == -1)
+			return (-1);
+		if ((n = charstr(rr->rdata.HINFO.os, *pbuf + n,
+		    rdlen - n)) == -1)
+			return (-1);
+		break;
+	case T_CNAME:
+		if (rr_parse_dname(*pbuf, *len,
+		    rr->rdata.CNAME) == -1)
+			return (-1);
+		break;
+	case T_PTR:
+		if (rr_parse_dname(*pbuf, *len,
+		    rr->rdata.PTR) == -1)
+			return (-1);
+		break;
+	case T_TXT:
+		if ((n = charstr(rr->rdata.TXT, *pbuf, rdlen)) == -1)
+			return (-1);
+		break;
+	case T_NS:
+		if (rr_parse_dname(*pbuf, *len,
+		    rr->rdata.NS) == -1)
+			return (-1);
+		break;
+	case T_SRV:
+		buf = *pbuf;
+		tmplen = *len;
+		GETSHORT(rr->rdata.SRV.priority, buf);
+		tmplen -= INT16SZ;
+		GETSHORT(rr->rdata.SRV.weight, buf);
+		tmplen -= INT16SZ;
+		GETSHORT(rr->rdata.SRV.port, buf);
+		tmplen -= INT16SZ;
+		if (rr_parse_dname(buf, tmplen, rr->rdata.SRV.target) == -1)
+			return (-1);
+		break;
+	case T_AAAA:
+	case T_NSEC:
+		break;
+	case T_OPT:
 		u_int16_t i, code, plen, erc, pl;
 		size_t j;
 
@@ -1038,82 +1118,6 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 
 		rr->flags = 0;
 		rr->ttl = 0;
-		return (0);
-	}
-
-	GETSHORT(us, *pbuf);
-	*len -= INT16SZ;
-	if (us & CACHEFLUSH_MSK)
-		rr->flags |= RR_FLAG_CACHEFLUSH;
-	rr->rrs.class  = us & CLASS_MSK;
-	if (rr->rrs.class != C_ANY && rr->rrs.class != C_IN) {
-		log_debug("pkt_parse_rr: %s (%s) Invalid packet class %u",
-		    rr_type_name(rr->rrs.type), rr->rrs.dname, rr->rrs.class);
-		return (-1);
-	}
-	GETLONG(rr->ttl, *pbuf);
-	*len -= INT32SZ;
-	GETSHORT(rdlen, *pbuf);
-	*len -= INT16SZ;
-	if (*len < rdlen) {
-		log_debug("Invalid rr data length, *len = %u, rdlen = %u",
-		    *len, rdlen);
-		return (-1);
-	}
-	switch (rr->rrs.type) {
-	case T_A:
-		buf = *pbuf;
-		if (rdlen != INT32SZ) {
-			log_debug("Invalid A record rdlen %u", rdlen);
-			return (-1);
-		}
-		GETLONG(ul, buf);
-		rr->rdata.A.s_addr = htonl(ul);
-		if (rr->rdata.A.s_addr == INADDR_ANY) {
-			log_warnx("Invalid T_A record with ip address 0.0.0.0");
-			return (-1);
-		}
-		break;
-	case T_HINFO:
-		if ((n = charstr(rr->rdata.HINFO.cpu, *pbuf, rdlen)) == -1)
-			return (-1);
-		if ((n = charstr(rr->rdata.HINFO.os, *pbuf + n,
-		    rdlen - n)) == -1)
-			return (-1);
-		break;
-	case T_CNAME:
-		if (rr_parse_dname(*pbuf, *len,
-		    rr->rdata.CNAME) == -1)
-			return (-1);
-		break;
-	case T_PTR:
-		if (rr_parse_dname(*pbuf, *len,
-		    rr->rdata.PTR) == -1)
-			return (-1);
-		break;
-	case T_TXT:
-		if ((n = charstr(rr->rdata.TXT, *pbuf, rdlen)) == -1)
-			return (-1);
-		break;
-	case T_NS:
-		if (rr_parse_dname(*pbuf, *len,
-		    rr->rdata.NS) == -1)
-			return (-1);
-		break;
-	case T_SRV:
-		buf = *pbuf;
-		tmplen = *len;
-		GETSHORT(rr->rdata.SRV.priority, buf);
-		tmplen -= INT16SZ;
-		GETSHORT(rr->rdata.SRV.weight, buf);
-		tmplen -= INT16SZ;
-		GETSHORT(rr->rdata.SRV.port, buf);
-		tmplen -= INT16SZ;
-		if (rr_parse_dname(buf, tmplen, rr->rdata.SRV.target) == -1)
-			return (-1);
-		break;
-	case T_AAAA:
-	case T_NSEC:
 		break;
 	default:
 		log_debug("Unknown record type %u", rr->rrs.type);
