@@ -352,12 +352,18 @@ hosts_resolv_hook(struct mdns *m, int ev, struct mdns_service *ms)
 		errx(EXIT_FAILURE, "write_str");
 }
 
+/*
+ * FIXME: have notification from proc_renamer() be polled for and set a
+ * state bit.  This way we can flush the file and continue listening for
+ * more updates to the database.
+ * Also implement rate limiting so we don't stress the system.
+ */
 static int
 proc_writer(int wfd, int rfd)
 {
 	int	 	 c, rc = 0, tok, change;
 	struct hostdb	 db;
-	size_t		 i;
+	size_t		 i, j;
 	FILE		*f;
 	char		*name = NULL, *target = NULL;
 	struct hostent	*ent;
@@ -439,26 +445,65 @@ proc_writer(int wfd, int rfd)
 		if ( ! change)
 			continue;
 
+		/* FIXME: use open(2) to avoid unnecessary pledges. */
+
 		if (NULL == (f = fopen("hosts", "a"))) {
 			warn("/etc/mdns/hosts");
 			break;
 		}
 
+		/* FIXME: import from original. */
+
 		fprintf(f, "127.0.0.1 localhost\n");
 		fprintf(f, "::1 localhost\n");
+
 		for (i = 0; i < db.hostsz; i++) {
+			/* 
+			 * First, we only print those with references so
+			 * "down" hosts don't have entries.
+			 */
+
 			if (0 == db.hosts[i].refs)
 				continue;
+
+			/* 
+			 * Check for duplicates.
+			 * This happens all the time: an mDNS host will
+			 * start a different entry with the same target
+			 * and IP.
+			 */
+
+			for (j = 0; j < i; j++) {
+				if (strcasecmp(db.hosts[j].target, 
+				    db.hosts[i].target)) 
+					continue;
+				warnx("%s: duplicate",
+					db.hosts[i].target);
+				break;
+			}
+			if (j < i)
+				continue;
+
+			/* Print the target and address. */
+
 			fprintf(f, "%s %s\n", 
 				inet_ntoa(db.hosts[i].addr), 
 				db.hosts[i].target);
 		}
 		fclose(f);
 
+		/* FIXME: push this into open(2). */
+
 		if (-1 == chmod("hosts", 0644)) {
 			warn("/etc/mdns/hosts");
 			break;
 		}
+
+		/* 
+		 * FIXME: listen for the acknowledgement asynchronously
+		 * so we don't delay by waiting here.
+		 * (See function documentation.)
+		 */
 
 		warnx("writer: created /etc/mdns/hosts");
 		if ( ! write_token(wfd, "writer req", 1))
@@ -704,7 +749,11 @@ main(int argc, char *argv[])
 
 	warnx("updater: browse loop");
 
-	/* FIXME: underlying system not interrupted. */
+	/* 
+	 * FIXME: underlying system not interrupted.
+	 * So poll on sockfd before doing anything.
+	 * This will catch the control-c immediately.
+	 */
 
 	while ( ! doexit) 
 		if (-1 == (n = mdns_read(&mdns)))
