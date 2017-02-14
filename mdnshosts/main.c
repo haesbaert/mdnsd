@@ -443,6 +443,8 @@ proc_writer(int wfd, int rfd)
 		fprintf(f, "127.0.0.1 localhost\n");
 		fprintf(f, "::1 localhost\n");
 		for (i = 0; i < db.hostsz; i++) {
+			if (0 == db.hosts[i].refs)
+				continue;
 			fprintf(f, "%s %s\n", 
 				inet_ntoa(db.hosts[i].addr), 
 				db.hosts[i].target);
