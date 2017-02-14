@@ -965,7 +965,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	*len  -= n;
 	/* Make sure rr packet len is ok */
 	if (*len < 8) {
-		log_warnx("Unexpected packet len");
+		log_warnx("RR packet length too long");
 		return (-1);
 	}
 	GETSHORT(rr->rrs.type, *pbuf);
@@ -1000,6 +1000,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 		    *len, rdlen);
 		return (-1);
 	}
+
 handletype:
 	switch (rr->rrs.type) {
 	case T_A:
@@ -1062,8 +1063,7 @@ handletype:
 		 * See RFC 2671, 4.3.
 		 */
 		if (*len < 8) {
-			log_warnx("Unexpected packet len "
-				"(T_OPT header malformed)");
+			log_warnx("Bad T_OPT length");
 			return (-1);
 		}
 
@@ -1077,10 +1077,11 @@ handletype:
 		GETSHORT(us, *pbuf);
 		*len -= INT16SZ;
 		if (*len < us) {
-			log_warnx("Unexpected packet len "
-				"(T_OPT data malformed)");
+			log_warnx("Bad T_OPT RDATA length");
 			return (-1);
 		}
+
+		/* Parse RDATA sections. */
 
 		for (j = 0, i = 0; i < us; j++) {
 			GETSHORT(code, *pbuf);
@@ -1090,25 +1091,19 @@ handletype:
 			*len -= INT16SZ; 
 			i += INT16SZ;
 			if (us - i < plen) {
-				log_warnx("Unexpected packet len "
-					"(T_OPT section %zu malformed)",
-					j);
+				log_warnx("Bad T_OPT RDATA "
+					"section %zu length", j);
 				return (-1);
 			}
 
-			if (4 == code) {
-				/* draft-cheshire-edns0-owner-option-00.txt */
-				log_debug("pkt_parse_rr: %s: "
-					"EDNSD0 \'Owner\'",
-					rr_type_name(rr->rrs.type));
-			} else {
-				log_warnx("pkt_parse_rr: %s: %llu "
-					"bytes in RDATA section %zu, "
-					"unknown code %llu",
-					rr_type_name(rr->rrs.type),
-					(long long unsigned)plen, j,
-					(long long unsigned)code);
-			}
+			if (4 == code)
+				log_debug("pkt_parse_rr: "
+					"edns0 \'owner-option\'");
+			else
+				log_warnx("Unknown T_OPT RDATA "
+					"section %zu code %u",
+					j, code);
+
 			*pbuf += plen;
 			*len -= plen;
 			i += plen;
