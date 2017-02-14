@@ -30,15 +30,17 @@
 
 #include <err.h>
 #include <fcntl.h>
+#include <imsg.h>
 #include <paths.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#include <imsg.h>
-
 #include "mdns.h"
+
+#define MDNSD_USER "_mdnsd"
 
 /*
  * A named host entry reported by the mdns server.
@@ -57,6 +59,8 @@ struct	hostdb {
 };
 
 static	int	writer;
+static	volatile sig_atomic_t doexit;
+
 
 /*
  * Look up entry named "name" in our database of entries.
@@ -566,8 +570,6 @@ proc_renamer(int fd)
 	return(rc);
 }
 
-static	volatile sig_atomic_t doexit = 0;
-
 static void
 dosig(int code)
 {
@@ -583,6 +585,25 @@ main(int argc, char *argv[])
 	struct mdns	 mdns;
 	ssize_t		 n;
 	pid_t		 hpid, wpid;
+	struct passwd	*pw;
+
+	/* 
+	 * Check for root privileges.
+	 * This is required for the chroot() and touching /etc/hosts, if
+	 * nothing else.
+	 */
+
+	if (geteuid())
+		errx(EXIT_FAILURE, "need root privileges");
+
+	/* 
+	 * Check for mdnsd user.
+	 * This is the user with which we'll run our unprivileged
+	 * operations.
+	 */
+
+	if (NULL == (pw = getpwnam(MDNSD_USER)))
+		errx(EXIT_FAILURE, "missing user: %s", MDNSD_USER);
 
 	/*
 	 * Create the renamer, which just sits there til it's woken, at
@@ -637,6 +658,11 @@ main(int argc, char *argv[])
 	close(hsock[0]);
 	close(wsock[1]);
 
+	/* 
+	 * Set a global variable because the current interface won't let
+	 * us pass opaque data.
+	 */
+
 	writer = wsock[0];
 
 	warnx("updater: starting");
@@ -649,14 +675,26 @@ main(int argc, char *argv[])
 	 * We'll use it to pass host updates.
 	 */
 
-	if (-1 == pledge("stdio unix", NULL))
-		err(EXIT_FAILURE, NULL);
-
 	if (-1 == (sockfd = mdns_open(&mdns)))
 		err(EXIT_FAILURE, "mdns_open");
 
+	/* 
+	 * Security: put is in /var/empty, drop our privileges to the
+	 * MDNSD_USER, and pledge.
+	 */
+
+	if (-1 == chroot(_PATH_VAREMPTY))
+		err(EXIT_FAILURE, "chroot: %s", _PATH_VAREMPTY);
+	if (-1 == chdir("/"))
+		err(EXIT_FAILURE, "chdir: %s", _PATH_VAREMPTY);
+	if (setgroups(1, &pw->pw_gid) ||
+	    setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) ||
+	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
+		err(EXIT_FAILURE, "privdrop: %s", MDNSD_USER);
 	if (-1 == pledge("stdio", NULL))
 		err(EXIT_FAILURE, NULL);
+
+	/* Set our callbacks. */
 
 	mdns_set_browse_hook(&mdns, hosts_browse_hook);
 	mdns_set_resolve_hook(&mdns, hosts_resolv_hook);
@@ -665,6 +703,8 @@ main(int argc, char *argv[])
 		err(EXIT_FAILURE, "mdns_browse_add");
 
 	warnx("updater: browse loop");
+
+	/* FIXME: underlying system not interrupted. */
 
 	while ( ! doexit) 
 		if (-1 == (n = mdns_read(&mdns)))
