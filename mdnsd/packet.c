@@ -952,8 +952,9 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 int
 pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 {
-	u_int16_t us, rdlen = 0, tmplen;
+	u_int16_t us, rdlen = 0, tmplen, i, code, plen, erc, pl;
 	u_int32_t ul;
+	size_t j;
 	ssize_t n;
 	u_char *buf;
 
@@ -978,7 +979,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	 */
 
 	if (T_OPT == rr->rrs.type)
-		goto switch;
+		goto handletype;
 
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
@@ -999,7 +1000,7 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 		    *len, rdlen);
 		return (-1);
 	}
-switch:
+handletype:
 	switch (rr->rrs.type) {
 	case T_A:
 		buf = *pbuf;
@@ -1056,9 +1057,6 @@ switch:
 	case T_NSEC:
 		break;
 	case T_OPT:
-		u_int16_t i, code, plen, erc, pl;
-		size_t j;
-
 		/* 
 		 * We need 8 bytes for the OPT RR frame.
 		 * See RFC 2671, 4.3.
