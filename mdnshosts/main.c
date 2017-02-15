@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017 Kristaps Dzonsons <kristaps@bsd.lv>
- * Copyright (c) 2010,2011 Christiano F. Haesbaert <haesbaert@haesbaert.org>
+ * Copyright (c) 2010, 2011 Christiano F. Haesbaert <haesbaert@haesbaert.org>
  * Copyright (c) 2006 Michele Marchetto <mydecay@openbeer.it>
  * Copyright (c) 2005 Claudio Jeker <claudio@openbsd.org>
  * Copyright (c) 2004, 2005 Esben Norby <norby@openbsd.org>
@@ -18,17 +18,19 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/queue.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if_media.h>
 #include <net/if_types.h>
+#include <netinet/in.h>
+#include <sys/poll.h>
+#include <sys/queue.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/un.h>
 
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <imsg.h>
 #include <paths.h>
@@ -41,6 +43,7 @@
 #include "mdns.h"
 
 #define MDNSD_USER "_mdnsd"
+#define	TIMEOUT 5000
 
 /*
  * A named host entry reported by the mdns server.
@@ -631,6 +634,7 @@ main(int argc, char *argv[])
 	ssize_t		 n;
 	pid_t		 hpid, wpid;
 	struct passwd	*pw;
+	struct pollfd	 pfd;
 
 	/* 
 	 * Check for root privileges.
@@ -749,22 +753,61 @@ main(int argc, char *argv[])
 
 	warnx("updater: browse loop");
 
-	/* 
-	 * FIXME: underlying system not interrupted.
-	 * So poll on sockfd before doing anything.
-	 * This will catch the control-c immediately.
-	 */
+	memset(&pfd, 0, sizeof(struct pollfd));
 
-	while ( ! doexit) 
+	pfd.fd = sockfd;
+	pfd.events = POLLIN;
+
+	while ( ! doexit) {
+		/* 
+		 * To catch signals before entering mdns_read() (which
+		 * ignores them), set the file-descriptor to be
+		 * non-blocking then poll to read with a timeout.
+		 * The timeout is because we may have been signalled
+		 * between the check to "doexit" above and the poll
+		 * function.
+		 * Then poll.
+		 * Then loop is to reduce the number of mode-changes.
+		 */
+
+		if (-1 == fcntl(sockfd, F_SETFL, O_NONBLOCK))
+			err(EXIT_FAILURE, "fcntl");
+
+		do {
+			if (-1 == (c = poll(&pfd, 1, TIMEOUT)) &&
+			    EINTR != errno)
+				err(EXIT_FAILURE, "poll");
+		} while (0 == c && ! doexit);
+
+		if (-1 == fcntl(sockfd, F_SETFL, 0))
+			err(EXIT_FAILURE, "fcntl");
+
+		if (doexit)
+			break;
+
+		/* 
+		 * We're now blocking again.
+		 * Check the return values of the poller for errors.
+		 */
+
+		if ((POLLERR|POLLNVAL) & pfd.revents) 
+			errx(EXIT_FAILURE, "poll: bad descriptor");
+		if ( ! ((POLLIN|POLLHUP) & pfd.revents))
+			continue;
+
+		/* Process the incoming packets in blocking mode. */
+
 		if (-1 == (n = mdns_read(&mdns)))
 			errx(EXIT_FAILURE, "mdns_read");
-		else if (n == 0)
-			errx(EXIT_FAILURE, "server closed socket");
+
+		if (n == 0) {
+			warnx("server closed socket");
+			break;
+		}
+	}
 
 	warnx("updater: exiting");
-
 	mdns_close(&mdns);
-
 	close(writer);
 	close(sockfd);
 
