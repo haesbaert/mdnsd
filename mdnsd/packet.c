@@ -288,7 +288,13 @@ recv_packet(int fd, short event, void *bula)
 			return;
 		}
 
-		LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
+		/* 
+		 * T_OPT are MDNS_QUERY packets that don't need to build
+		 * an additional section list entry, as they won't be
+		 * processed in pkt_process(0.
+		 */
+		if (T_OPT != rr->rrs.type)
+			LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	}
 
 	/* XXX: If we droped an RR our packet counts may be wrong. */
@@ -1098,7 +1104,7 @@ handletype:
 
 			if (4 == code)
 				log_debug("pkt_parse_rr: "
-					"edns0 \'owner-option\'");
+					"edns0 owner-option");
 			else
 				log_warnx("Unknown T_OPT RDATA "
 					"section %zu code %u",
