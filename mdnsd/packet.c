@@ -287,7 +287,6 @@ recv_packet(int fd, short event, void *bula)
 			free(pkt);
 			return;
 		}
-
 		LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	}
 
@@ -398,6 +397,11 @@ pkt_process(int unused, short event, void *v_pkt)
 		}
 		/* Clear all answer section (KNA) */
 		while((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			free(rr);
+		}
+		/* Clear all additional section. */
+		while((rr = LIST_FIRST(&pkt->arlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			free(rr);
 		}
@@ -941,12 +945,20 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 }
 
 
-/* XXX: This function lacks some comments */
+/* 
+ * Fully parse a resource record ("RR").
+ * This adjusts "len" to be the number of bytes left in "pbuf", which is
+ * the packet buffer.
+ * (There may be multiple RR entries in a single request.)
+ * The "rr" field is filled in along the way.
+ * Returns -1 on failure, 0 on success.
+ */
 int
 pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 {
-	u_int16_t us, rdlen, tmplen;
+	u_int16_t us, rdlen = 0, tmplen, i, code, plen, erc, pl;
 	u_int32_t ul;
+	size_t j;
 	ssize_t n;
 	u_char *buf;
 
@@ -957,11 +969,22 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 	*len  -= n;
 	/* Make sure rr packet len is ok */
 	if (*len < 8) {
-		log_debug("Unexpected packet len");
+		log_warnx("RR packet length too long");
 		return (-1);
 	}
 	GETSHORT(rr->rrs.type, *pbuf);
 	*len -= INT16SZ;
+
+	/*
+	 * The T_OPT type is handled differently from other RR types, so
+	 * we jump to the type handler before reading in values that the
+	 * OPT doesn't define.
+	 * See RFC 2671 for details.
+	 */
+
+	if (T_OPT == rr->rrs.type)
+		goto handletype;
+
 	GETSHORT(us, *pbuf);
 	*len -= INT16SZ;
 	if (us & CACHEFLUSH_MSK)
@@ -981,6 +1004,8 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 		    *len, rdlen);
 		return (-1);
 	}
+
+handletype:
 	switch (rr->rrs.type) {
 	case T_A:
 		buf = *pbuf;
@@ -1035,6 +1060,61 @@ pkt_parse_rr(u_int8_t **pbuf, u_int16_t *len, struct rr *rr)
 		break;
 	case T_AAAA:
 	case T_NSEC:
+		break;
+	case T_OPT:
+		/* 
+		 * We need 8 bytes for the OPT RR frame.
+		 * See RFC 2671, 4.3.
+		 */
+		if (*len < 8) {
+			log_warnx("Bad T_OPT length");
+			return (-1);
+		}
+
+		/* sender's UDP payload size */
+		GETSHORT(pl, *pbuf);
+		*len -= INT16SZ;
+		/* extended RCODE and flags */
+		GETLONG(erc, *pbuf);
+		*len -= INT32SZ;
+		/* describes RDATA */
+		GETSHORT(us, *pbuf);
+		*len -= INT16SZ;
+		if (*len < us) {
+			log_warnx("Bad T_OPT RDATA length");
+			return (-1);
+		}
+
+		/* Parse RDATA sections. */
+
+		for (j = 0, i = 0; i < us; j++) {
+			GETSHORT(code, *pbuf);
+			*len -= INT16SZ;
+			i += INT16SZ;
+			GETSHORT(plen, *pbuf);
+			*len -= INT16SZ; 
+			i += INT16SZ;
+			if (us - i < plen) {
+				log_warnx("Bad T_OPT RDATA "
+					"section %zu length", j);
+				return (-1);
+			}
+
+			if (4 == code)
+				log_debug("pkt_parse_rr: "
+					"edns0 owner-option");
+			else
+				log_warnx("Unknown T_OPT RDATA "
+					"section %zu code %u",
+					j, code);
+
+			*pbuf += plen;
+			*len -= plen;
+			i += plen;
+		}
+
+		rr->flags = 0;
+		rr->ttl = 0;
 		break;
 	default:
 		log_debug("Unknown record type %u", rr->rrs.type);
