@@ -287,14 +287,7 @@ recv_packet(int fd, short event, void *bula)
 			free(pkt);
 			return;
 		}
-
-		/* 
-		 * T_OPT are MDNS_QUERY packets that don't need to build
-		 * an additional section list entry, as they won't be
-		 * processed in pkt_process(0.
-		 */
-		if (T_OPT != rr->rrs.type)
-			LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
+		LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	}
 
 	/* XXX: If we droped an RR our packet counts may be wrong. */
@@ -404,6 +397,11 @@ pkt_process(int unused, short event, void *v_pkt)
 		}
 		/* Clear all answer section (KNA) */
 		while((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
+			LIST_REMOVE(rr, pentry);
+			free(rr);
+		}
+		/* Clear all additional section. */
+		while((rr = LIST_FIRST(&pkt->arlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			free(rr);
 		}
