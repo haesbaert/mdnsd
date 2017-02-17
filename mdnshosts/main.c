@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 
 #include <err.h>
 #include <errno.h>
@@ -364,6 +365,21 @@ hosts_resolv_hook(struct mdns *m, int ev, struct mdns_service *ms)
 		errx(EXIT_FAILURE, "write_str");
 }
 
+static int
+proc_writer_write(int fd, const void *cp, size_t sz)
+{
+	ssize_t	 ssz;
+
+	if (-1 == (ssz = write(fd, cp, sz))) {
+		warn("%s/hosts", MDNSDIR);
+		return(0);
+	} else if ((size_t)ssz != sz) {
+		warnx("%s/hosts: short write", MDNSDIR);
+		return(0);
+	}
+	return(1);
+}
+
 /*
  * FIXME: have notification from proc_renamer() be polled for and set a
  * state bit.  This way we can flush the file and continue listening for
@@ -373,11 +389,13 @@ hosts_resolv_hook(struct mdns *m, int ev, struct mdns_service *ms)
 static int
 proc_writer(int wfd, int rfd)
 {
-	int	 	 c, rc = 0, tok, change;
+	int	 	 c, rc = 0, tok, change, fd;
 	struct hostdb	 db;
-	size_t		 i, j;
-	FILE		*f;
-	char		*name = NULL, *target = NULL;
+	size_t		 i, j, sz;
+	ssize_t		 ssz;
+	char		*name = NULL, *target = NULL, *save = NULL;
+	struct stat	 st;
+	const char	*cp;
 	struct hostent	*ent;
 	struct in_addr	 addr;
 
@@ -391,7 +409,7 @@ proc_writer(int wfd, int rfd)
 	} else if (-1 == chdir("/")) {
 		warnx("chdir");
 		return(0);
-	} else if (-1 == pledge("stdio cpath wpath fattr rpath", NULL)) {
+	} else if (-1 == pledge("stdio cpath wpath rpath", NULL)) {
 		warn("pledge");
 		return(0);
 	}
@@ -403,6 +421,46 @@ proc_writer(int wfd, int rfd)
 		return(0);
 	} else if (-1 == c)
 		return(0);
+
+	/* 
+	 * Read the saved /etc/hosts file (copied by the renamer) into a
+	 * save buffer.
+	 */
+
+	if (-1 == (fd = open("hosts.save", O_RDONLY, 0))) {
+		warn("hosts.save");
+		return(0);
+	} 
+	
+	if (-1 == fstat(fd, &st) || 
+	    -1 == unlink("hosts.save")) {
+		warn("hosts.save");
+		close(fd);
+		return(0);
+	} 
+
+	if (NULL == (save = malloc(st.st_size + 1)))
+		err(EXIT_FAILURE, NULL);
+	ssz = read(fd, save, st.st_size);
+	if (-1 == ssz || ssz != st.st_size) {
+		if (-1 == ssz)
+			warn("hosts.save");
+		else
+			warnx("hosts.save: short read");
+		close(fd);
+		free(save);
+		return(0);
+	} 
+	close(fd);
+	save[st.st_size] = '\0';
+
+	/* Now we turn off our reading capabilities, too. */
+
+	if (-1 == pledge("stdio cpath wpath", NULL)) {
+		warn("pledge");
+		free(save);
+		return(0);
+	}
 
 	/*
 	 * Main loop: wait until we receive an update on our hosts, then
@@ -457,17 +515,21 @@ proc_writer(int wfd, int rfd)
 		if ( ! change)
 			continue;
 
-		/* FIXME: use open(2) to avoid unnecessary pledges. */
+		/* We have some changes to flush to disc. */
 
-		if (NULL == (f = fopen("hosts", "w"))) {
+		fd = open("hosts", O_WRONLY|O_CREAT|O_TRUNC, 0644);
+		if (-1 == fd) {
 			warn("%s/hosts", MDNSDIR);
 			break;
 		}
+		
+		/* Start with the old /etc/hosts content. */
 
-		/* FIXME: import from original. */
-
-		fprintf(f, "127.0.0.1 localhost\n");
-		fprintf(f, "::1 localhost\n");
+		if ( ! proc_writer_write(fd, save, strlen(save)) ||
+		     ! proc_writer_write(fd, "\n", 1)) {
+			close(fd);
+			break;
+		}
 
 		for (i = 0; i < db.hostsz; i++) {
 			/* 
@@ -477,6 +539,21 @@ proc_writer(int wfd, int rfd)
 
 			if (0 == db.hosts[i].refs)
 				continue;
+
+			/* Check that we're ending in .local. */
+
+			if ((sz = strlen(db.hosts[i].target)) < 7) {
+				warnx("%s: security warning: name "
+					"too short", db.hosts[i].target);
+				continue;
+			} 
+
+			if (strcasecmp(".local",
+			    &db.hosts[i].target[sz - 6])) {
+				warnx("%s: security warning: name not in "
+					"local domain", db.hosts[i].target);
+				continue;
+			}
 
 			/* 
 			 * Check for duplicates.
@@ -498,18 +575,18 @@ proc_writer(int wfd, int rfd)
 
 			/* Print the target and address. */
 
-			fprintf(f, "%s %s\n", 
-				inet_ntoa(db.hosts[i].addr), 
-				db.hosts[i].target);
+			cp = inet_ntoa(db.hosts[i].addr);
+			if ( ! proc_writer_write(fd, cp, strlen(cp)))
+				break;
+			if ( ! proc_writer_write(fd, " ", 1))
+				break;
+			cp = db.hosts[i].target;
+			if ( ! proc_writer_write(fd, cp, strlen(cp)))
+				break;
+			if ( ! proc_writer_write(fd, "\n", 1))
+				break;
 		}
-		fclose(f);
-
-		/* FIXME: push this into open(2). */
-
-		if (-1 == chmod("hosts", 0644)) {
-			warn("%s/hosts", MDNSDIR);
-			break;
-		}
+		close(fd);
 
 		/* 
 		 * FIXME: listen for the acknowledgement asynchronously
@@ -527,6 +604,7 @@ proc_writer(int wfd, int rfd)
 
 	free(target);
 	free(name);
+	free(save);
 
 	for (i = 0; i < db.hostsz; i++) {
 		free(db.hosts[i].name);
@@ -841,6 +919,11 @@ main(int argc, char *argv[])
 	mdns_close(&mdns);
 	close(writer);
 	close(sockfd);
+
+	if (-1 == waitpid(hpid, NULL, 0))
+		warn("renamer: waiting for pid");
+	if (-1 == waitpid(wpid, NULL, 0))
+		warn("writer: waiting for pid");
 
 	return(EXIT_SUCCESS);
 }
