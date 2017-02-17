@@ -42,8 +42,17 @@
 
 #include "mdns.h"
 
+/* Drop privileges into this user. */
 #define MDNSD_USER "_mdnsd"
+
+/* How long to wait before checking for exit signal. */
 #define	TIMEOUT 5000
+
+/* 
+ * This must be on the same partion as /etc/hosts. 
+ * For now, we depend on chroot(/etc) and accessing mdns/xxx.
+ */
+#define	MDNSDIR "/etc/mdns"
 
 /*
  * A named host entry reported by the mdns server.
@@ -51,9 +60,9 @@
  */
 struct	hostent {
 	char		*name; /* unique name */
-	struct in_addr	 addr; 
-	char		*target;
-	size_t		 refs;
+	struct in_addr	 addr; /* host address */
+	char		*target; /* hostname */
+	size_t		 refs; /* number of entity references */
 };
 
 struct	hostdb {
@@ -376,7 +385,7 @@ proc_writer(int wfd, int rfd)
 
 	/* Make us safe: trap us in /etc/mdns. */
 
-	if (-1 == chroot("/etc/mdns")) {
+	if (-1 == chroot(MDNSDIR)) {
 		warn("chroot");
 		return(0);
 	} else if (-1 == chdir("/")) {
@@ -450,8 +459,8 @@ proc_writer(int wfd, int rfd)
 
 		/* FIXME: use open(2) to avoid unnecessary pledges. */
 
-		if (NULL == (f = fopen("hosts", "a"))) {
-			warn("/etc/mdns/hosts");
+		if (NULL == (f = fopen("hosts", "w"))) {
+			warn("%s/hosts", MDNSDIR);
 			break;
 		}
 
@@ -498,7 +507,7 @@ proc_writer(int wfd, int rfd)
 		/* FIXME: push this into open(2). */
 
 		if (-1 == chmod("hosts", 0644)) {
-			warn("/etc/mdns/hosts");
+			warn("%s/hosts", MDNSDIR);
 			break;
 		}
 
@@ -508,7 +517,7 @@ proc_writer(int wfd, int rfd)
 		 * (See function documentation.)
 		 */
 
-		warnx("writer: created /etc/mdns/hosts");
+		warnx("writer: created %s/hosts", MDNSDIR);
 		if ( ! write_token(wfd, "writer req", 1))
 			break;
 		if ( ! read_token(wfd, "writer resp", NULL))
@@ -552,12 +561,29 @@ proc_renamer(int fd)
 		return(0);
 	}
 
+	/* Prune stale file from previous bad exit. */
+
+	if (-1 == unlink("mdns/hosts.save")) {
+		if (ENOENT != errno)
+			err(EXIT_FAILURE, "%s/hosts.save", MDNSDIR);
+	} else
+		warnx("renamer: removed stale %s/hosts.save", MDNSDIR);
+
 	warnx("renamer: /etc/hosts <-> /etc/hosts/mdns.save");
 
-	/* Back up our current /etc/hosts. */
+	/* 
+	 * Back up our current /etc/hosts.
+	 * Then copy it into the writer directory.
+	 * XXX: if /etc/hosts.mdns.save exists, something bad happened
+	 * and we shouldn't touch the file: it may contain the real
+	 * /etc/hosts file.
+	 */
 
 	if (-1 == link("hosts", "hosts.mdns.save")) {
 		warn("link: /etc/hosts, /etc/hosts.mdns.save");
+		return(0);
+	} else if (-1 == link("hosts", "mdns/hosts.save")) {
+		warn("link: /etc/hosts, %s/hosts.save", MDNSDIR);
 		return(0);
 	}
 
@@ -584,7 +610,7 @@ proc_renamer(int fd)
 		} else if (c < 0)
 			break;
 
-		warnx("renamer: /etc/mdns/hosts -> /etc/hosts");
+		warnx("renamer: %s/hosts -> /etc/hosts", MDNSDIR);
 
 		/*
 		 * The /etc/mdns/hosts file is created and managed by
@@ -596,7 +622,7 @@ proc_renamer(int fd)
 		 */
 
 		if (-1 == rename("mdns/hosts", "hosts")) {
-			warn("rename: /etc/mdns/hosts, /etc/hosts");
+			warn("rename: %s/hosts, /etc/hosts", MDNSDIR);
 			break;
 		}
 
@@ -653,6 +679,11 @@ main(int argc, char *argv[])
 
 	if (NULL == (pw = getpwnam(MDNSD_USER)))
 		errx(EXIT_FAILURE, "missing user: %s", MDNSD_USER);
+
+	/* Create our working directory. */
+
+	if (-1 == mkdir(MDNSDIR, 0700) && EEXIST != errno)
+		err(EXIT_FAILURE, MDNSDIR);
 
 	/*
 	 * Create the renamer, which just sits there til it's woken, at
