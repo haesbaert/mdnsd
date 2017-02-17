@@ -30,17 +30,28 @@ utility connects to the running
 and manages
 .Pa /etc/hosts
 with local network hosts.
+For the time being, it outputs its logs to standard error and does not
+daemonise.
+It must be invoked as root and requires the existence of user
+.Dq _mdnsd
+to operate.
 .Pp
 On startup,
 .Pa /etc/hosts
-is linked to
+.Po
+whose contents will precede any
+.No Nm Ns -written
+data
+.Pc
+is copied to
 .Pa /etc/hosts.mdns.save .
 This file is restored on exit.
 .Pp
-The
+The temporary files used by
 .Nm
-utility must be invoked as root, and requires the existence of user
-.Dq _mdnsd .
+are written into
+.Pa /etc/mdns
+and should not be touched.
 .\" .Sh FILES
 .Sh EXIT STATUS
 .Ex -std
@@ -51,5 +62,10 @@ utility must be invoked as root, and requires the existence of user
 .\" .Sh STANDARDS
 .\" .Sh HISTORY
 .\" .Sh AUTHORS
-.\" .Sh CAVEATS
+.Sh CAVEATS
+During operation, the
+.Pa /etc/hosts.mdns.save
+may be written to, but the changes will not [yet] find their way into
+the written
+.Pa /etc/hosts .
 .\" .Sh BUGS
