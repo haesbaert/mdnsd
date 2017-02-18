@@ -124,7 +124,7 @@ struct rr {
 	int			 auth_refcount; /* Number of pges holding us */
 	int			 revision; /* at 80% of ttl, then 90% and 95% */
 	struct event		 timer; /* revision timer */
-	struct timespec		 age;	/* XXX cant remember */
+	struct timespec		 age;	/* Timestamp of when we got this RR. */
 	u_int			 flags;	/* RR Flags */
 #define RR_FLAG_CACHEFLUSH	0x01	/* Unique record */
 #define RR_FLAG_PUBLISHED	0x02	/* Published record */
