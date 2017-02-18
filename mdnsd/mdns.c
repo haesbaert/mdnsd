@@ -30,7 +30,7 @@
 #include "mdnsd.h"
 #include "log.h"
 
-int 		 question_cmp(struct question *, struct question *);
+int		 question_cmp(struct question *, struct question *);
 struct question *question_lookup(struct rrset *);
 
 RB_HEAD(cache_tree, cache_node) cache_tree;
@@ -322,8 +322,8 @@ cache_schedrev(struct rr *rr)
 		tv.tv_sec = 1;
 		break;
 	}
-/* 	log_debug("cache_schedrev: schedule rr type: %s, name: %s (%d)", */
-/* 	    rr_type_name(rr->type), rr->dname, tv.tv_sec); */
+/*	log_debug("cache_schedrev: schedule rr type: %s, name: %s (%d)", */
+/*	    rr_type_name(rr->type), rr->dname, tv.tv_sec); */
 
 	rr->revision++;
 
@@ -340,8 +340,8 @@ cache_rev(int unused, short event, void *v_rr)
 	struct question	*qst;
 	struct pkt	 pkt;
 
-/* 	log_debug("cache_rev: timeout rr type: %s, name: %s (%u)", */
-/* 	    rr_type_name(rr->type), rr->dname, rr->ttl); */
+/*	log_debug("cache_rev: timeout rr type: %s, name: %s (%u)", */
+/*	    rr_type_name(rr->type), rr->dname, rr->ttl); */
 
 	/* If we have an active question, try to renew the answer */
 	if ((qst = question_lookup(&rr->rrs)) != NULL) {
@@ -851,7 +851,6 @@ pge_fsm(int unused, short event, void *v_pge)
 			timerclear(&tv);
 			tv.tv_sec = 1;
 			pge_fsm_restart(pge, &tv);
-			
 			return;
 		}
 	}
@@ -927,7 +926,7 @@ pge_fsm(int unused, short event, void *v_pge)
 			LIST_REMOVE(conf->pge_primary->rr[PGE_RR_PRIM], pentry);
 			pkt.h.ancount--; /* XXX */
 		}
-		
+
 		if (++pge->sent < 3)  {
 			timerclear(&tv);
 			tv.tv_sec = pge->sent;
@@ -1033,14 +1032,14 @@ pge_initprimary(void)
 {
 	struct pge	*pge;
 	struct question	*qst;
-	struct iface 	*iface;
+	struct iface	*iface;
 	struct rr	 rr;
 	char		 revaddr[MAXHOSTNAMELEN];
 	struct in_addr	 inaddrany;
 
 	if ((conf->pge_primary = calloc(1, sizeof(*pge))) == NULL)
 		fatal("calloc");
-	pge 	       = conf->pge_primary;
+	pge	       = conf->pge_primary;
 	pge->pge_flags = PGE_FLAG_INTERNAL;
 	pge->pg	       = NULL;
 	pge->sent      = 0;

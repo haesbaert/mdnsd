@@ -47,7 +47,7 @@
 #define CACHEFLUSH_MSK	0x8000
 #define CLASS_MSK	~0x8000
 #define UNIRESP_MSK	0x8000
-#define NAMECOMP_BYTE_MSK 0xc0 	/* TODO unify this someday */
+#define NAMECOMP_BYTE_MSK 0xc0	/* TODO unify this someday */
 #define NAMECOMP_MSK	0xc000
 #define NAMEADDR_MSK	~0xc000
 #define MAXLABELS	128
@@ -79,15 +79,15 @@ extern struct mdnsd_conf *conf;
 
 /* Used in name compression */
 struct namecomp {
-	LIST_ENTRY(namecomp) 	entry;
+	LIST_ENTRY(namecomp)	entry;
 	char			dname[MAXHOSTNAMELEN];
 	u_int16_t		offset;
 };
 
 struct {
-	LIST_HEAD(, namecomp) 	namecomp_list;
+	LIST_HEAD(, namecomp)	namecomp_list;
 	u_int8_t		*start;
-	u_int16_t	 	len;
+	u_int16_t		len;
 } pktcomp;
 
 /* Deferred packets, Known Answer Supression packets with TC bit */
@@ -140,7 +140,7 @@ recv_packet(int fd, short event, void *bula)
 	static u_int8_t		 buf[MAXPACKET];
 	struct rr		*rr;
 	struct pkt		*pkt;
-	struct timeval 		 tv;
+	struct timeval		 tv;
 	u_int8_t		*pbuf;
 	u_int16_t		 i, len;
 	ssize_t			 r;
@@ -731,7 +731,7 @@ int
 rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 {
 	struct iface *iface;
-	
+
 	if (rra->rrs.type != rrb->rrs.type)
 		return (-1);
 	if (rra->rrs.class != rrb->rrs.class)
@@ -948,7 +948,7 @@ pkt_parse_dname(u_int8_t *buf, u_int16_t len, char dname[MAXHOSTNAMELEN])
 }
 
 
-/* 
+/*
  * Fully parse a resource record ("RR").
  * This adjusts "len" to be the number of bytes left in "pbuf", which is
  * the packet buffer.
@@ -1065,7 +1065,7 @@ handletype:
 	case T_NSEC:
 		break;
 	case T_OPT:
-		/* 
+		/*
 		 * We need 8 bytes for the OPT RR frame.
 		 * See RFC 2671, 4.3.
 		 */
@@ -1095,7 +1095,7 @@ handletype:
 			*len -= INT16SZ;
 			i += INT16SZ;
 			GETSHORT(plen, *pbuf);
-			*len -= INT16SZ; 
+			*len -= INT16SZ;
 			i += INT16SZ;
 			if (us - i < plen) {
 				log_warnx("Bad T_OPT RDATA "
@@ -1138,8 +1138,8 @@ pkt_handle_qst(struct pkt *pkt)
 	struct rr		*rr, *rrcopy, *rr_aux;
 	struct pkt		 sendpkt;
 	struct sockaddr_in	 dst, *pdst;
-	struct cache_node 	*cn;
-	int 			 probe;
+	struct cache_node	*cn;
+	int			 probe;
 
 	/* TODO: Mdns draft 6.3 Duplicate Question Suppression */
 

@@ -64,7 +64,7 @@ display_version(void)
 {
 	printf("OpenMdns Daemon %s\n", MDNS_VERSION);
 	printf("Copyright (C) 2010-2014 Christiano F. Haesbaert\n");
-	
+
 	exit(0);
 }
 
@@ -132,7 +132,7 @@ mdnsd_shutdown(void)
 	 */
 	while ((pge = TAILQ_FIRST(&pge_queue)) != NULL)
 		pge_kill(pge);
-	
+
 	while ((iface = LIST_FIRST(&conf->iface_list)) != NULL) {
 		LIST_REMOVE(iface, entry);
 		free(iface);
@@ -224,7 +224,7 @@ main(int argc, char *argv[])
 	/*
 	 * XXX Carefull not to call anything that would malloc prior to setting
 	 * malloc_options, malloc will disregard malloc_options after the first
-	 * call. 
+	 * call.
 	 */
 	while ((ch = getopt(argc, argv, "dvw")) != -1) {
 		switch (ch) {
@@ -243,9 +243,9 @@ main(int argc, char *argv[])
 			/* NOTREACHED */
 		}
 	}
-	
+
 	log_init(1);	/* log to stderr until daemonized */
-	
+
 	argc -= optind;
 	argv += optind;
 
@@ -259,7 +259,7 @@ main(int argc, char *argv[])
 	/* check for mdnsd user */
 	if ((pw = getpwnam(MDNSD_USER)) == NULL)
 		fatal("getpwnam, make sure you have user and group _mdnsd");
-	
+
 	log_init(debug);
 
 	if (!debug)
@@ -309,7 +309,7 @@ main(int argc, char *argv[])
 	fetchhinfo(&conf->hi);
 	LIST_INIT(&conf->iface_list);
 	conf->no_workstation = no_workstation;
-	
+
 	/* init RR cache */
 	cache_init();
 
@@ -324,7 +324,7 @@ main(int argc, char *argv[])
 
 	/* init some packet internals */
 	packet_init();
-	
+
 	/* init querier */
 	query_init();
 
@@ -350,7 +350,7 @@ main(int argc, char *argv[])
 	/* listen on mdns control socket */
 	TAILQ_INIT(&ctl_conns);
 	control_listen();
-	
+
 	/* parent mainloop */
 	event_dispatch();
 
@@ -402,4 +402,3 @@ peersuser(int fd)
 		fatal("getpeereid");
 	return (euid == 0);
 }
-

@@ -49,7 +49,7 @@
 #define RANDOM_PROBETIME	arc4random_uniform(250000)
 #define FIRST_QUERYTIME		(arc4random_uniform(120000) + 20000)
 #define MAXQUERYTIME		(60 * 60) /* one hour */
-#define ALL_IFACE 		(NULL)
+#define ALL_IFACE		(NULL)
 
 #define ANSWERS(qrrs, rrs)						\
 	((((qrrs)->type == T_ANY) || ((qrrs)->type == (rrs)->type))  && \
@@ -86,9 +86,9 @@ struct rrset {
 };
 
 struct cache_node {
-	RB_ENTRY(cache_node) entry; 	/* Cache RBTREE link */
+	RB_ENTRY(cache_node) entry;	/* Cache RBTREE link */
 	LIST_HEAD(, rr)	     rr_list;	/* List of RR under dname */
-	char 		     dname[MAXHOSTNAMELEN]; /* domain name */
+	char		     dname[MAXHOSTNAMELEN]; /* domain name */
 };
 
 struct hinfo {
@@ -106,12 +106,12 @@ struct srv {
 struct rr {
 	LIST_ENTRY(rr)		centry;	/* Cache entry */
 	LIST_ENTRY(rr)		pentry;	/* Packet entry */
-	struct rrset 		rrs;	/* RR tripple */
+	struct rrset		rrs;	/* RR tripple */
 	u_int32_t		ttl;	/* DNS Time to live */
 	union {
 		/* IPv4 Address, if INADDR_ANY, use the interface address, this
 		 * is how we can have the same RR with multiple addresses */
-		struct in_addr	A; 	
+		struct in_addr	A;
 		char		CNAME[MAXHOSTNAMELEN]; /* CNAME */
 		char		PTR[MAXHOSTNAMELEN];   /* PTR */
 		char		NS[MAXHOSTNAMELEN];    /* Name server */
@@ -135,19 +135,19 @@ struct pkt {
 	u_int			flags;	/* Packet flags */
 #define PKT_FLAG_LEGACY 0x1		/* Legacy unicast packet */
 	HEADER			h;	/* Packet header */
-	LIST_HEAD(, question) 	qlist;	/* Question section */
-	LIST_HEAD(, rr)	      	anlist;	/* Answer section */
-	LIST_HEAD(, rr)	      	nslist;	/* Authority section */
-	LIST_HEAD(, rr)	      	arlist;	/* Additional section */
+	LIST_HEAD(, question)	qlist;	/* Question section */
+	LIST_HEAD(, rr)		anlist;	/* Answer section */
+	LIST_HEAD(, rr)		nslist;	/* Authority section */
+	LIST_HEAD(, rr)		arlist;	/* Additional section */
 	struct sockaddr_in	ipsrc;	/* Received ipsource */
 	struct event		timer;	/* Timer for truncated pkts */
-	struct iface 	       *iface;  /* Received interface */
+	struct iface	       *iface;  /* Received interface */
 };
 
 struct question {
-	LIST_ENTRY(question)	entry; 	   /* Packet link */
+	LIST_ENTRY(question)	entry;	   /* Packet link */
 	RB_ENTRY(question)	qst_entry; /* Question Tree link */
-	struct rrset 		rrs;	   /* RR tripple */
+	struct rrset		rrs;	   /* RR tripple */
 	u_int			flags;	   /* Question flags */
 #define QST_FLAG_UNIRESP 0x1		   /* Accepts unicast response */
 	int			active;	   /* Active controllers */
@@ -181,11 +181,11 @@ enum pg_state {
 };
 /* Publish Group */
 struct pg {
-	TAILQ_ENTRY(pg) 	entry; 		/* pg_queue link */
-	LIST_HEAD(, pge) 	pge_list;	/* List of pge */
-	struct ctl_conn 	*c;		/* Owner */
-	char 			name[MAXHOSTNAMELEN]; /* Name id */
-	u_int 			flags;		/* Misc flags */
+	TAILQ_ENTRY(pg)		entry;		/* pg_queue link */
+	LIST_HEAD(, pge)	pge_list;	/* List of pge */
+	struct ctl_conn		*c;		/* Owner */
+	char			name[MAXHOSTNAMELEN]; /* Name id */
+	u_int			flags;		/* Misc flags */
 	enum pg_state		state;		/* enum pg_state */
 };
 
@@ -205,17 +205,17 @@ enum pge_state {
 
 #define PGE_RR_MAX 32
 struct pge {
-	TAILQ_ENTRY(pge) entry;	  	/* pge_queue link */
-	LIST_ENTRY(pge)	 pge_entry; 	/* Group link */
-	struct pg 	 *pg;		/* Parent Publish Group */
-	enum pge_type 	  pge_type;	/* Type of this entry */
-	u_int 		  pge_flags;	/* Misc flags */
+	TAILQ_ENTRY(pge)  entry;	/* pge_queue link */
+	LIST_ENTRY(pge)	  pge_entry;	/* Group link */
+	struct pg	 *pg;		/* Parent Publish Group */
+	enum pge_type	  pge_type;	/* Type of this entry */
+	u_int		  pge_flags;	/* Misc flags */
 #define PGE_FLAG_INC_A	  0x01		/* Include primary T_A record */
 #define PGE_FLAG_INTERNAL 0x02		/* TODO: kill and test for pg */
 	struct question  *pqst;		/* Probing Question, may be NULL */
-	struct rr 	 *rr[PGE_RR_MAX]; /* Array of to publish rr */
+	struct rr	 *rr[PGE_RR_MAX]; /* Array of to publish rr */
 #define PGE_RR_PRIM 0			/* The T_A record for primary address */
-	int 		  nrr;		/* Members in rr array */
+	int		  nrr;		/* Members in rr array */
 	struct iface	 *iface;	/* Iface to be published */
 	struct event	  timer;	/* FSM timer */
 	enum pge_state	  state;	/* FSM state */
@@ -312,7 +312,7 @@ struct mdnsd_conf {
 	struct hinfo		hi;	    /* MDNS Host Info */
 	char			myname[MAXHOSTNAMELEN]; /* Hostname */
 	struct pge	       *pge_primary;/* Primary pge addresses */
-	int 			no_workstation;	/* Don't publish workstation */
+	int			no_workstation;	/* Don't publish workstation */
 };
 
 /* kiface.c */
@@ -371,7 +371,7 @@ int		 cache_node_cmp(struct cache_node *, struct cache_node *);
 int		 cache_process(struct rr *);
 struct rr	*cache_lookup(struct rrset *);
 struct cache_node *cache_lookup_dname(const char *);
-struct rr 	*cache_next_by_rrs(struct rr *);
+struct rr	*cache_next_by_rrs(struct rr *);
 int		 rrset_cmp(struct rrset *, struct rrset *);
 int		 rr_notify_in(struct rr *);
 int		 rr_notify_out(struct rr *);
@@ -386,8 +386,8 @@ struct pge	*pge_from_ms(struct pg *, struct mdns_service *, struct iface *);
 void		 pge_kill(struct pge *);
 void		 pge_fsm(int, short, void *);
 void		 pge_fsm_restart(struct pge *, struct timeval *);
-void 		 pge_initprimary(void);
-struct pge 	*pge_new_workstation(struct iface *);
+void		 pge_initprimary(void);
+struct pge	*pge_new_workstation(struct iface *);
 void		 pge_revert_probe(struct pge *);
 void		 pge_conflict_drop(struct pge *);
 struct rr *	 auth_get(struct rr *);
@@ -401,7 +401,7 @@ TAILQ_HEAD(ctl_conns, ctl_conn) ctl_conns;
 int     control_send_rr(struct ctl_conn *, struct rr *, int);
 int	control_send_ms(struct ctl_conn *, struct mdns_service *, int);
 int     control_try_answer_ms(struct ctl_conn *, char[MAXHOSTNAMELEN]);
-int    	control_notify_pg(struct ctl_conn *, struct pg *, int);
+int	control_notify_pg(struct ctl_conn *, struct pg *, int);
 
 
 #endif /* _MDNSD_H_ */

@@ -58,7 +58,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 {
 	struct rrset	 mlkup, *rrs;
 	struct rr	*rr;
-	struct query 	*q;
+	struct query	*q;
 	struct timeval	 tv;
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
@@ -209,7 +209,7 @@ void
 control_browse_del(struct ctl_conn *c, struct imsg *imsg)
 {
 	struct rrset	 mlkup;
-	struct query 	*q;
+	struct query	*q;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(mlkup))
 		return;
@@ -734,7 +734,7 @@ control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 	r = mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr));
 	if (inaddrany)
 		rr->rdata.A.s_addr = INADDR_ANY;
-	
+
 	return (r);
 }
 
