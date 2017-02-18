@@ -376,7 +376,7 @@ void
 pkt_process(int unused, short event, void *v_pkt)
 {
 	struct pkt	*pkt = v_pkt;
-	struct rr	*rr;
+	struct rr	*rr, *rraux;
 
 	if (event == EV_TIMEOUT) {
 		log_debug("pkt deferred from %s:%u",
@@ -400,6 +400,13 @@ pkt_process(int unused, short event, void *v_pkt)
 		while((rr = LIST_FIRST(&pkt->anlist)) != NULL) {
 			LIST_REMOVE(rr, pentry);
 			free(rr);
+		}
+		/* Clear up ESDN0/T_opt packets */
+		LIST_FOREACH_SAFE(rr, &pkt->arlist, pentry, rraux) {
+			if (rr->rrs.type == T_OPT) {
+				LIST_REMOVE(rr, pentry);
+				free(rr);
+			}
 		}
 
 		break;
