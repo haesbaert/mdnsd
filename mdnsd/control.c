@@ -337,7 +337,6 @@ void
 control_group_add(struct ctl_conn *c, struct imsg *imsg)
 {
 	char		 msg[MAXHOSTNAMELEN];
-	struct pg	*pg;
 
 	if ((imsg->hdr.len - IMSG_HEADER_SIZE) != sizeof(msg)) {
 		log_warnx("control_group_add: Invalid group len");
@@ -356,7 +355,7 @@ control_group_add(struct ctl_conn *c, struct imsg *imsg)
 	 * Initialize group in temporary list, when user commits the group, we
 	 * will process it all.
 	 */
-	pg = pg_get(1, msg, c);
+	(void)pg_get(1, msg, c);
 }
 
 void

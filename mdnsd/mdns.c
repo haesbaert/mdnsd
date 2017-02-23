@@ -956,9 +956,7 @@ pge_kill(struct pge *pge)
 {
 	int i;
 	struct rr *rr;
-	struct pg *pg;
 
-	pg = pge->pg;
 	/* Stop pge machine */
 	if (evtimer_pending(&pge->timer, NULL))
 		evtimer_del(&pge->timer);

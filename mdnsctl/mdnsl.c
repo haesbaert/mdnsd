@@ -541,7 +541,7 @@ splitdname(char fname[MAXHOSTNAMELEN], char sname[MAXHOSTNAMELEN],
 			*hasname = 0;
 	}
 
-	p = start = namecp;
+	start = namecp;
 
 	/* if we have a name, copy */
 	if (*hasname == 1 && sname != NULL) {
