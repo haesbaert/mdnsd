@@ -8,7 +8,7 @@ SRCS=	log.c mdnsd.c kiface.c interface.c packet.c \
 
 MAN=	mdnsd.8
 
-CFLAGS+= -g -Wall -I${.CURDIR} -I../
+CFLAGS+= -g -Wall -I${.CURDIR} -I${.CURDIR}/../
 CFLAGS+= -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS+= -Wmissing-declarations
 CFLAGS+= -Wshadow -Wpointer-arith -Wcast-qual
