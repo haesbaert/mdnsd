@@ -1,8 +1,8 @@
-SUBDIR= mdnsctl mdnsd 
+SUBDIR= libmdns mdnsctl mdnsd
 
 .include <bsd.subdir.mk>
 
-TAG_SUBDIRS+=mdnsd   
+TAG_SUBDIRS+=mdnsd
 TAG_SUBDIRS+=mdnsctl
 TAG_SUBDIRS+=/usr/include
 TAG_SUBDIRS+=/usr/src/lib/libevent
