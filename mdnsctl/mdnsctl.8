@@ -36,14 +36,14 @@ The following commands are available:
 .It Xo
 .Cm lookup
 .Op Ar rr-types
-.Cm Ar host.local
+.Ar host.local
 .Xc
-Look up resource records for 
+Look up resource records for
 .Ar host.local .
 The optional
 .Ar rr-types
-specifies which type of resource record should be looked up. It can be any
-combination of the following:
+specifies which type of resource record should be looked up.
+It can be any combination of the following:
 .Pp
 .Bl -tag -width "   " -compact
 .It Cm -a
@@ -69,12 +69,13 @@ address.
 .Xc
 Browse for application services of type
 .Ar application
-for the given transport protocol 
+for the given transport protocol
 .Ar proto .
 .Ar application
 may be any application service type, like http, workstation, ftp, printer...
 .Ar proto
-must be either tcp or udp. Defaults to all services if none specified.
+must be either tcp or udp.
+Defaults to all services if none specified.
 .It Xo
 .Cm publish
 .Ar service-name
@@ -86,7 +87,8 @@ must be either tcp or udp. Defaults to all services if none specified.
 Publish services via dns-sd,
 .Ar service-name
 is the unique chosen name for the service, it can be any string up to 63
-characters. The
+characters.
+The
 .Ar application
 is the application protocol for the service, like http, ftp...
 .Ar proto
@@ -162,4 +164,3 @@ The
 program version 0.1 was released in 13 February 2011.
 .Sh AUTHORS
 Christiano Farina Haesbaert <haesbaert@haesbaert.org>
-
