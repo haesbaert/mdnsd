@@ -306,7 +306,7 @@ match_token(const char *word, const struct token *table)
 			break;
 		case PORT:
 			if (word != NULL) {
-				res.port = strtonum(word, 1, UINT16_MAX,
+				res.port = strtonum(word, 0, UINT16_MAX,
 				    &errstr);
 				if (errstr)
 					errx(1, "strtonum: %s", errstr);
