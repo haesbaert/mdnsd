@@ -1,0 +1,929 @@
+/*
+ * Copyright (c) 2017 Kristaps Dzonsons <kristaps@bsd.lv>
+ * Copyright (c) 2010, 2011 Christiano F. Haesbaert <haesbaert@haesbaert.org>
+ * Copyright (c) 2006 Michele Marchetto <mydecay@openbeer.it>
+ * Copyright (c) 2005 Claudio Jeker <claudio@openbsd.org>
+ * Copyright (c) 2004, 2005 Esben Norby <norby@openbsd.org>
+ * Copyright (c) 2003 Henning Brauer <henning@openbsd.org>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+#include <arpa/inet.h>
+#include <net/if_media.h>
+#include <net/if_types.h>
+#include <netinet/in.h>
+#include <sys/poll.h>
+#include <sys/queue.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <sys/wait.h>
+
+#include <err.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <imsg.h>
+#include <paths.h>
+#include <pwd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "mdns.h"
+
+/* Drop privileges into this user. */
+#define MDNSD_USER "_mdnsd"
+
+/* How long to wait before checking for exit signal. */
+#define	TIMEOUT 5000
+
+/* 
+ * This must be on the same partion as /etc/hosts. 
+ * For now, we depend on chroot(/etc) and accessing mdns/xxx.
+ */
+#define	MDNSDIR "/etc/mdns"
+
+/*
+ * A named host entry reported by the mdns server.
+ * This is unique over "name" entries.
+ */
+struct	hostent {
+	char		*name; /* unique name */
+	struct in_addr	 addr; /* host address */
+	char		*target; /* hostname */
+	size_t		 refs; /* number of entity references */
+};
+
+struct	hostdb {
+	struct hostent	*hosts;
+	size_t		 hostsz;
+};
+
+static	int	writer;
+static	volatile sig_atomic_t doexit;
+
+
+/*
+ * Look up entry named "name" in our database of entries.
+ * TODO: use ohash or another hash based lookup.
+ * Returns the entry or NULL if it doesn't exist.
+ */
+static struct hostent *
+db_lookup(struct hostdb *db, const char *name)
+{
+	size_t	 i;
+
+	for (i = 0; i < db->hostsz; i++)
+		if (0 == strcmp(name, db->hosts[i].name))
+			return(&db->hosts[i]);
+
+	return(NULL);
+}
+
+/*
+ * Decrement a reference counter, if active.
+ */
+static void
+db_unref(struct hostent *ent)
+{
+
+	if (ent->refs) 
+		warnx("writer: entry down: %s (%zu refs)", 
+			ent->name, --ent->refs);
+	else
+		warnx("writer: entry down: %s (already down)", 
+			ent->name);
+}
+
+/*
+ * Increase the reference count of a name.
+ * This always frees the "target" pointer.
+ * Also check whether our IP address and/or target is changing.
+ */
+static void
+db_ref(struct hostent *ent, char *target, const struct in_addr *addr)
+{
+	char	 buf[64];
+	char	*cp;
+
+	if (ent->refs) {
+		warnx("writer: known entity being referenced: "
+			"%s (%zu refs)", ent->name, ent->refs + 1);
+		cp = inet_ntoa(*addr);
+		strlcpy(buf, cp, sizeof(buf));
+		if (memcmp(&ent->addr, addr, sizeof(ent->addr))) {
+			warnx("address changed: is %s, was %s: %s", 
+				buf, inet_ntoa(ent->addr), ent->name);
+			memcpy(&ent->addr, addr, sizeof(ent->addr));
+		}
+		if (strcmp(ent->target, target)) {
+			warnx("target changed: is %s, was %s: %s", 
+				ent->target, target, ent->name);
+			free(ent->target);
+			ent->target = target;
+			target = NULL;
+		} 
+	} else {
+		warnx("writer: known entity "
+			"coming online: %s", ent->name);
+		memcpy(&ent->addr, addr, sizeof(ent->addr));
+		free(ent->target);
+		ent->target = target;
+		target = NULL;
+	}
+
+	ent->refs++;
+	free(target);
+}
+
+/*
+ * Add an entry to the database.
+ * IT MUST NOT ALREADY EXIST.
+ * Initialises the entry with the given attributes.
+ */
+static void
+db_add(struct hostdb *db, char *name, 
+	char *target, struct in_addr *addr)
+{
+
+	db->hosts = reallocarray(db->hosts, 
+		db->hostsz + 1, sizeof(struct hostent));
+	if (NULL == db->hosts)
+		err(EXIT_FAILURE, NULL);
+
+	db->hosts[db->hostsz].refs = 1;
+	db->hosts[db->hostsz].target = target;
+	db->hosts[db->hostsz].name = name;
+	memcpy(&db->hosts[db->hostsz].addr, 
+		addr, sizeof(struct in_addr));
+	db->hostsz++;
+	warnx("writer: unknown entity coming online: %s "
+		"(%s -> %s)", name, inet_ntoa(*addr), target);
+}
+
+/*
+ * Write binary buffer "buf" of size "sz" to the descriptor.
+ * Return zero on failure, non-zero on success.
+ */
+static int
+write_buf(int fd, const char *name, const void *buf, size_t sz)
+{
+	ssize_t	 ssz;
+
+	ssz = write(fd, buf, sz);
+	if (ssz < 0) {
+		warn("write: %s", name);
+		return(-1);
+	} else if (sz != (size_t)ssz) {
+		warnx("short write: %s", name);
+		return(-1);
+	}
+
+	return(1);
+}
+
+/*
+ * Write nil-terminated string "buf" to the descriptor.
+ * Return zero on failure, non-zero on success.
+ */
+static int
+write_str(int fd, const char *name, const char *buf)
+{
+	size_t	 sz;
+
+	sz = strlen(buf) + 1;
+	if (write_buf(fd, name, &sz, sizeof(size_t)) < 0)
+		return(0);
+	return(write_buf(fd, name, buf, sz));
+}
+
+/*
+ * Write an integral token to the descriptor.
+ * Return zero on failure, non-zero on success.
+ */
+static int
+write_token(int fd, const char *name, int token)
+{
+
+	return(write_buf(fd, name, &token, sizeof(int)));
+}
+
+/*
+ * Read a buffer "buf" of known size "sz".
+ * Returns zero on failure, non-zero on success.
+ */
+static int
+read_buf(int fd, const char *name, void *buf, size_t sz)
+{
+	ssize_t	 ssz;
+
+	if ((ssz = read(fd, buf, sz)) < 0) {
+		warn("read: %s", name);
+		return(0);
+	} else if (sz != (size_t)ssz) {
+		warnx("short read: %s", name);
+		return(0);
+	}
+
+	return(1);
+}
+
+/* 
+ * Read a string into "buf".
+ * Returns zero on failure, non-zero on success.
+ */
+static int
+read_str(int fd, const char *name, char **buf)
+{
+	ssize_t	 ssz;
+	size_t	 sz;
+
+	ssz = read(fd, &sz, sizeof(size_t));
+	if (ssz < 0) {
+		warn("read: %s", name);
+		return(0);
+	} else if (sizeof(size_t) != (size_t)ssz) {
+		warnx("short read: %s", name);
+		return(0);
+	}
+
+	if (NULL == (*buf = malloc(sz)))
+		err(EXIT_FAILURE, NULL);
+
+	ssz = read(fd, *buf, sz);
+	if (ssz < 0) {
+		warn("read: %s", name);
+		return(0);
+	} else if (sz != (size_t)ssz) {
+		warnx("short read: %s", name);
+		return(0);
+	}
+
+	return(1);
+}
+
+/*
+ * Read an integral token into "tok", if non-NULL.
+ * Returns <0 on failure, 0 on disconnect, >0 on success.
+ */
+static int
+read_token(int fd, const char *name, int *tok)
+{
+	ssize_t	 ssz;
+	int	 code = 1;
+
+	if (NULL == tok)
+		tok = &code;
+
+	ssz = read(fd, tok, sizeof(int));
+	if (ssz < 0) {
+		warn("read: %s", name);
+		return(-1);
+	} else if (0 == ssz) {
+		return(0);
+	} else if (sizeof(int) != (size_t)ssz) {
+		warnx("short read: %s", name);
+		return(-1);
+	}
+
+	return(1);
+}
+
+/*
+ * A browsing event has occurred: entity down or up.
+ * If down, pass it to the writer.
+ * If up, resolve address and pass to hosts_resolv_hook().
+ */
+static void
+hosts_browse_hook(struct mdns *m, int ev, 
+	const char *name, const char *app, const char *proto)
+{
+
+	switch (ev) {
+	case MDNS_SERVICE_UP:
+		break;
+	case MDNS_SERVICE_DOWN:
+		if (name == NULL)
+			return;
+		if ( ! write_token(writer, "service down", 1))
+			errx(EXIT_FAILURE, "write_token");
+		if ( ! write_str(writer, "name", name))
+			errx(EXIT_FAILURE, "write_str");
+		return;
+	default:
+		errx(EXIT_FAILURE, "unhandled browse event");
+		/* NOTREACHED */
+	}
+
+	if (name == NULL) {
+		if (mdns_browse_add(m, app, proto) == -1)
+			errx(EXIT_FAILURE, "mdns_browse_add");
+	} else {
+		if (mdns_resolve(m, name, app, proto) == -1)
+			errx(EXIT_FAILURE, "mdns_resolve");
+	}
+}
+
+/*
+ * Address has been resolved.
+ * Pass to the writer (entity up).
+ */
+static void
+hosts_resolv_hook(struct mdns *m, int ev, struct mdns_service *ms)
+{
+
+	switch (ev) {
+	case MDNS_RESOLVE_FAILURE:
+		warnx("can't resolve: %s", ms->name);
+		return;
+	case MDNS_RESOLVE_SUCCESS:
+		break;
+	default:
+		errx(EXIT_FAILURE, "unhandled resolve event");
+		/* NOTREACHED */
+	}
+
+	if ( ! write_token(writer, "service up", 2))
+		errx(EXIT_FAILURE, "write_token");
+	if ( ! write_str(writer, "name", ms->name))
+		errx(EXIT_FAILURE, "write_str");
+	if ( ! write_buf(writer, "addr", &ms->addr, sizeof(ms->addr)))
+		errx(EXIT_FAILURE, "write_buf");
+	if ( ! write_str(writer, "target", ms->target))
+		errx(EXIT_FAILURE, "write_str");
+}
+
+static int
+proc_writer_write(int fd, const void *cp, size_t sz)
+{
+	ssize_t	 ssz;
+
+	if (-1 == (ssz = write(fd, cp, sz))) {
+		warn("%s/hosts", MDNSDIR);
+		return(0);
+	} else if ((size_t)ssz != sz) {
+		warnx("%s/hosts: short write", MDNSDIR);
+		return(0);
+	}
+	return(1);
+}
+
+/*
+ * FIXME: have notification from proc_renamer() be polled for and set a
+ * state bit.  This way we can flush the file and continue listening for
+ * more updates to the database.
+ * Also implement rate limiting so we don't stress the system.
+ */
+static int
+proc_writer(int wfd, int rfd)
+{
+	int	 	 c, rc = 0, tok, change, fd;
+	struct hostdb	 db;
+	size_t		 i, j, sz;
+	ssize_t		 ssz;
+	char		*name = NULL, *target = NULL, *save = NULL;
+	struct stat	 st;
+	const char	*cp;
+	struct hostent	*ent;
+	struct in_addr	 addr;
+
+	memset(&db, 0, sizeof(struct hostdb));
+
+	/* Make us safe: trap us in /etc/mdns. */
+
+	if (-1 == chroot(MDNSDIR)) {
+		warn("chroot");
+		return(0);
+	} else if (-1 == chdir("/")) {
+		warnx("chdir");
+		return(0);
+	} else if (-1 == pledge("stdio cpath wpath rpath", NULL)) {
+		warn("pledge");
+		return(0);
+	}
+
+	/* Wait until the renamer has started up. */
+
+	if (0 == (c = read_token(wfd, "renamer up", NULL))) {
+		warnx("process down: renamer");
+		return(0);
+	} else if (-1 == c)
+		return(0);
+
+	/* 
+	 * Read the saved /etc/hosts file (copied by the renamer) into a
+	 * save buffer.
+	 */
+
+	if (-1 == (fd = open("hosts.save", O_RDONLY, 0))) {
+		warn("hosts.save");
+		return(0);
+	} 
+	
+	if (-1 == fstat(fd, &st) || 
+	    -1 == unlink("hosts.save")) {
+		warn("hosts.save");
+		close(fd);
+		return(0);
+	} 
+
+	if (NULL == (save = malloc(st.st_size + 1)))
+		err(EXIT_FAILURE, NULL);
+	ssz = read(fd, save, st.st_size);
+	if (-1 == ssz || ssz != st.st_size) {
+		if (-1 == ssz)
+			warn("hosts.save");
+		else
+			warnx("hosts.save: short read");
+		close(fd);
+		free(save);
+		return(0);
+	} 
+	close(fd);
+	save[st.st_size] = '\0';
+
+	/* Now we turn off our reading capabilities, too. */
+
+	if (-1 == pledge("stdio cpath wpath", NULL)) {
+		warn("pledge");
+		free(save);
+		return(0);
+	}
+
+	/*
+	 * Main loop: wait until we receive an update on our hosts, then
+	 * flush any changes to the file hosts.
+	 * Re-create this every time.
+	 */
+
+	for (;;) {
+		if (0 == (c = read_token(rfd, "update", &tok))) {
+			warnx("writer: updater has exited");
+			rc = 1;
+			break;
+		} else if (c < 0)
+			break;
+
+		change = 0;
+
+		/* Process addition or deletion. */
+
+		if (1 == tok) {
+			if ( ! read_str(rfd, "name", &name))
+				break;
+
+			if (NULL != (ent = db_lookup(&db, name))) {
+				change = 1 == ent->refs;
+				db_unref(ent);
+			} else
+				warnx("unknown service: %s", name);
+
+			free(name);
+			name = NULL;
+		} else if (2 == tok) {
+			if ( ! read_str(rfd, "name", &name))
+				break;
+			if ( ! read_buf(rfd, "addr", &addr, sizeof(addr)))
+				break;
+			if ( ! read_str(rfd, "target", &target))
+				break;
+
+			if (NULL != (ent = db_lookup(&db, name))) {
+				free(name);
+				change = 0 == ent->refs;
+				db_ref(ent, target, &addr);
+			} else {
+				change = 1;
+				db_add(&db, name, target, &addr);
+			}
+			name = target = NULL;
+		} else 
+			err(EXIT_FAILURE, "unknown token");
+
+		if ( ! change)
+			continue;
+
+		/* We have some changes to flush to disc. */
+
+		fd = open("hosts", O_WRONLY|O_CREAT|O_TRUNC, 0644);
+		if (-1 == fd) {
+			warn("%s/hosts", MDNSDIR);
+			break;
+		}
+		
+		/* Start with the old /etc/hosts content. */
+
+		if ( ! proc_writer_write(fd, save, strlen(save)) ||
+		     ! proc_writer_write(fd, "\n", 1)) {
+			close(fd);
+			break;
+		}
+
+		for (i = 0; i < db.hostsz; i++) {
+			/* 
+			 * First, we only print those with references so
+			 * "down" hosts don't have entries.
+			 */
+
+			if (0 == db.hosts[i].refs)
+				continue;
+
+			/* Check that we're ending in .local. */
+
+			if ((sz = strlen(db.hosts[i].target)) < 7) {
+				warnx("%s: security warning: name "
+					"too short", db.hosts[i].target);
+				continue;
+			} 
+
+			if (strcasecmp(".local",
+			    &db.hosts[i].target[sz - 6])) {
+				warnx("%s: security warning: name not in "
+					"local domain", db.hosts[i].target);
+				continue;
+			}
+
+			/* 
+			 * Check for duplicates.
+			 * This happens all the time: an mDNS host will
+			 * start a different entry with the same target
+			 * and IP.
+			 */
+
+			for (j = 0; j < i; j++) {
+				if (strcasecmp(db.hosts[j].target, 
+				    db.hosts[i].target)) 
+					continue;
+				warnx("%s: duplicate",
+					db.hosts[i].target);
+				break;
+			}
+			if (j < i)
+				continue;
+
+			/* Print the target and address. */
+
+			cp = inet_ntoa(db.hosts[i].addr);
+			if ( ! proc_writer_write(fd, cp, strlen(cp)))
+				break;
+			if ( ! proc_writer_write(fd, " ", 1))
+				break;
+			cp = db.hosts[i].target;
+			if ( ! proc_writer_write(fd, cp, strlen(cp)))
+				break;
+			if ( ! proc_writer_write(fd, "\n", 1))
+				break;
+		}
+		close(fd);
+
+		/* 
+		 * FIXME: listen for the acknowledgement asynchronously
+		 * so we don't delay by waiting here.
+		 * (See function documentation.)
+		 */
+
+		warnx("writer: created %s/hosts", MDNSDIR);
+		if ( ! write_token(wfd, "writer req", 1))
+			break;
+		if ( ! read_token(wfd, "writer resp", NULL))
+			break;
+		warnx("writer: changes flushed");
+	}
+
+	free(target);
+	free(name);
+	free(save);
+
+	for (i = 0; i < db.hostsz; i++) {
+		free(db.hosts[i].name);
+		free(db.hosts[i].target);
+	}
+
+	free(db.hosts);
+	return(rc);
+}
+
+static int
+proc_renamer(int fd)
+{
+	int	 c, rc = 0;
+
+	warnx("renamer: start");
+
+	/* 
+	 * Make us safe: chroot in /etc and pledge.
+	 * We need to use rename(2) (and thus cpath) in this because
+	 * /etc/hosts needs to have sane contents at all times.
+	 */
+
+	if (-1 == chroot("/etc")) {
+		warn("chroot");
+		return(0);
+	} else if (-1 == chdir("/")) {
+		warnx("chdir");
+		return(0);
+	} else if (-1 == pledge("stdio rpath cpath", NULL)) {
+		warn("pledge");
+		return(0);
+	}
+
+	/* Prune stale file from previous bad exit. */
+
+	if (-1 == unlink("mdns/hosts.save")) {
+		if (ENOENT != errno)
+			err(EXIT_FAILURE, "%s/hosts.save", MDNSDIR);
+	} else
+		warnx("renamer: removed stale %s/hosts.save", MDNSDIR);
+
+	warnx("renamer: /etc/hosts <-> /etc/hosts/mdns.save");
+
+	/* 
+	 * Back up our current /etc/hosts.
+	 * Then copy it into the writer directory.
+	 * XXX: if /etc/hosts.mdns.save exists, something bad happened
+	 * and we shouldn't touch the file: it may contain the real
+	 * /etc/hosts file.
+	 */
+
+	if (-1 == link("hosts", "hosts.mdns.save")) {
+		warn("link: /etc/hosts, /etc/hosts.mdns.save");
+		return(0);
+	} else if (-1 == link("hosts", "mdns/hosts.save")) {
+		warn("link: /etc/hosts, %s/hosts.save", MDNSDIR);
+		return(0);
+	}
+
+	warnx("renamer: notifying reader");
+
+	/* Notify the writer that we're ready. */
+
+	if ( ! write_token(fd, "reader up", 1))
+		return(0);
+
+	/*
+	 * Read loop.
+	 * When our writer notifies us, we rename the hard-link.
+	 * That's all.
+	 */
+
+	warnx("renamer: main loop");
+
+	for (;;) {
+		if (0 == (c = read_token(fd, "writer req", NULL))) {
+			warnx("renamer: writer has exited");
+			rc = 1;
+			break;
+		} else if (c < 0)
+			break;
+
+		warnx("renamer: %s/hosts -> /etc/hosts", MDNSDIR);
+
+		/*
+		 * The /etc/mdns/hosts file is created and managed by
+		 * another process.
+		 * While we're in this section, this other process will
+		 * not touch the file.
+		 * It will then re-create it when more updates are
+		 * necessary, leaving the inode secure.
+		 */
+
+		if (-1 == rename("mdns/hosts", "hosts")) {
+			warn("rename: %s/hosts, /etc/hosts", MDNSDIR);
+			break;
+		}
+
+		if ( ! write_token(fd, "writer resp", 1))
+			break;
+	}
+
+	/* Recovery: replace our /etc/hosts with the original. */
+
+	warnx("renamer: /etc/hosts.mdns.save -> /etc/hosts");
+
+	if (-1 == rename("hosts.mdns.save", "hosts")) {
+		warn("rename: /etc/hosts.mdns.save, /etc/hosts");
+		return(0);
+	}
+
+	warnx("renamer: /etc/hosts/mdns.save -> (remove)");
+	remove("hosts.mdns.save");
+	return(rc);
+}
+
+static void
+dosig(int code)
+{
+
+	doexit = 1;
+}
+
+int
+main(int argc, char *argv[])
+{
+	int		 c, sockfd;
+	int		 hsock[2], wsock[2];
+	struct mdns	 mdns;
+	ssize_t		 n;
+	pid_t		 hpid, wpid;
+	struct passwd	*pw;
+	struct pollfd	 pfd;
+
+	/* 
+	 * Check for root privileges.
+	 * This is required for the chroot() and touching /etc/hosts, if
+	 * nothing else.
+	 */
+
+	if (geteuid())
+		errx(EXIT_FAILURE, "need root privileges");
+
+	/* 
+	 * Check for mdnsd user.
+	 * This is the user with which we'll run our unprivileged
+	 * operations.
+	 */
+
+	if (NULL == (pw = getpwnam(MDNSD_USER)))
+		errx(EXIT_FAILURE, "missing user: %s", MDNSD_USER);
+
+	/* Create our working directory. */
+
+	if (-1 == mkdir(MDNSDIR, 0700) && EEXIST != errno)
+		err(EXIT_FAILURE, MDNSDIR);
+
+	/*
+	 * Create the renamer, which just sits there til it's woken, at
+	 * which point it renames /etc/mdns/hosts as /etc/hosts.
+	 */
+
+	signal(SIGINT, SIG_IGN);
+	signal(SIGHUP, SIG_IGN);
+	signal(SIGCHLD, dosig);
+
+	if (-1 == socketpair(AF_UNIX, SOCK_STREAM, 0, hsock))
+		err(EXIT_FAILURE, "socketpair");
+	if (-1 == socketpair(AF_UNIX, SOCK_STREAM, 0, wsock))
+		err(EXIT_FAILURE, "socketpair");
+
+	warnx("starting renamer");
+
+	if (-1 == (hpid = fork()))
+		err(EXIT_FAILURE, "fork");
+
+	if (0 == hpid) {
+		close(hsock[0]);
+		close(wsock[0]);
+		close(wsock[1]);
+		c = proc_renamer(hsock[1]);
+		close(hsock[1]);
+		_exit(c ? EXIT_SUCCESS : EXIT_FAILURE);
+	}
+
+	close(hsock[1]);
+
+	warnx("starting writer");
+
+	/*
+	 * Create the writer.
+	 * This keeps track of which hosts are up and down, and
+	 * serialies these changes to a file.
+	 * When it updates the file, it notifies the renamer.
+	 */
+
+	if (-1 == (wpid = fork()))
+		err(EXIT_FAILURE, "fork");
+
+	if (0 == wpid) {
+		close(wsock[0]);
+		c = proc_writer(hsock[0], wsock[1]);
+		close(wsock[1]);
+		close(hsock[1]);
+		_exit(c ? EXIT_SUCCESS : EXIT_FAILURE);
+	}
+
+	close(hsock[0]);
+	close(wsock[1]);
+
+	/* 
+	 * Set a global variable because the current interface won't let
+	 * us pass opaque data.
+	 */
+
+	writer = wsock[0];
+
+	warnx("updater: starting");
+
+	signal(SIGINT, dosig);
+
+	/*
+	 * Now we just have a communicator to the writer in wsock[0].
+	 * That's all we need.
+	 * We'll use it to pass host updates.
+	 */
+
+	if (-1 == (sockfd = mdns_open(&mdns)))
+		err(EXIT_FAILURE, "mdns_open");
+
+	/* 
+	 * Security: put is in /var/empty, drop our privileges to the
+	 * MDNSD_USER, and pledge.
+	 */
+
+	if (-1 == chroot(_PATH_VAREMPTY))
+		err(EXIT_FAILURE, "chroot: %s", _PATH_VAREMPTY);
+	if (-1 == chdir("/"))
+		err(EXIT_FAILURE, "chdir: %s", _PATH_VAREMPTY);
+	if (setgroups(1, &pw->pw_gid) ||
+	    setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) ||
+	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
+		err(EXIT_FAILURE, "privdrop: %s", MDNSD_USER);
+	if (-1 == pledge("stdio", NULL))
+		err(EXIT_FAILURE, NULL);
+
+	/* Set our callbacks. */
+
+	mdns_set_browse_hook(&mdns, hosts_browse_hook);
+	mdns_set_resolve_hook(&mdns, hosts_resolv_hook);
+
+	if (-1 == mdns_browse_add(&mdns, NULL, NULL))
+		err(EXIT_FAILURE, "mdns_browse_add");
+
+	warnx("updater: browse loop");
+
+	memset(&pfd, 0, sizeof(struct pollfd));
+
+	pfd.fd = sockfd;
+	pfd.events = POLLIN;
+
+	while ( ! doexit) {
+		/* 
+		 * To catch signals before entering mdns_read() (which
+		 * ignores them), set the file-descriptor to be
+		 * non-blocking then poll to read with a timeout.
+		 * The timeout is because we may have been signalled
+		 * between the check to "doexit" above and the poll
+		 * function.
+		 * Then poll.
+		 * Then loop is to reduce the number of mode-changes.
+		 */
+
+		if (-1 == fcntl(sockfd, F_SETFL, O_NONBLOCK))
+			err(EXIT_FAILURE, "fcntl");
+
+		do {
+			if (-1 == (c = poll(&pfd, 1, TIMEOUT)) &&
+			    EINTR != errno)
+				err(EXIT_FAILURE, "poll");
+		} while (0 == c && ! doexit);
+
+		if (-1 == fcntl(sockfd, F_SETFL, 0))
+			err(EXIT_FAILURE, "fcntl");
+
+		if (doexit)
+			break;
+
+		/* 
+		 * We're now blocking again.
+		 * Check the return values of the poller for errors.
+		 */
+
+		if ((POLLERR|POLLNVAL) & pfd.revents) 
+			errx(EXIT_FAILURE, "poll: bad descriptor");
+		if ( ! ((POLLIN|POLLHUP) & pfd.revents))
+			continue;
+
+		/* Process the incoming packets in blocking mode. */
+
+		if (-1 == (n = mdns_read(&mdns)))
+			errx(EXIT_FAILURE, "mdns_read");
+
+		if (n == 0) {
+			warnx("server closed socket");
+			break;
+		}
+	}
+
+	warnx("updater: exiting");
+	mdns_close(&mdns);
+	close(writer);
+	close(sockfd);
+
+	if (-1 == waitpid(hpid, NULL, 0))
+		warn("renamer: waiting for pid");
+	if (-1 == waitpid(wpid, NULL, 0))
+		warn("writer: waiting for pid");
+
+	return(EXIT_SUCCESS);
+}
