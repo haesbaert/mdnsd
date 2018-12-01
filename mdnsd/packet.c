@@ -1063,6 +1063,7 @@ handletype:
 		break;
 	case T_AAAA:
 	case T_NSEC:
+	case T_NULL:
 		break;
 	case T_OPT:
 		/*
