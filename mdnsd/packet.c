@@ -100,6 +100,94 @@ packet_init(void)
 	TAILQ_INIT(&deferred_queue);
 }
 
+static int
+is_sockaddr_mcast(struct sockaddr *addr) {
+	struct sockaddr_in *sa4;
+	struct sockaddr_in6 *sa6;
+	switch (addr->sa_family) {
+	case AF_INET:
+		sa4 = (struct sockaddr_in *)addr;
+		return (IN_MULTICAST(ntohl(sa4->sin_addr.s_addr)));
+		break;
+	case AF_INET6:
+		sa6 = (struct sockaddr_in6 *)addr;
+		return (IN6_IS_ADDR_MULTICAST(&sa6->sin6_addr));
+		break;
+	}
+	log_warn("AF not found");
+	return (0);
+}
+
+static int
+is_sockaddr_equal(struct sockaddr *sa, struct sockaddr *sb) {
+	struct sockaddr_in *sa4, *sb4;
+	struct sockaddr_in6 *sa6, *sb6;
+
+	if (sa->sa_family != sb->sa_family)
+		return (0);
+	switch (sa->sa_family) {
+	case AF_INET:
+		sa4 = (struct sockaddr_in *)sa;
+		sb4 = (struct sockaddr_in *)sb;
+		return (sa4->sin_addr.s_addr == sb4->sin_addr.s_addr);
+	case AF_INET6:
+		sa6 = (struct sockaddr_in6 *)sa;
+		sb6 = (struct sockaddr_in6 *)sb;
+		return (IN6_ARE_ADDR_EQUAL(&sa6->sin6_addr, &sb6->sin6_addr));
+	}
+	log_warn("AF not found");
+	return (0);
+}
+
+static int
+is_mdns_addr(struct sockaddr *addr) {
+	struct sockaddr_in *sa4;
+	struct sockaddr_in6 *sa6;
+	switch (addr->sa_family) {
+	case AF_INET:
+		sa4 = (struct sockaddr_in *)addr;
+		return (sa4->sin_addr.s_addr == MDNS_INADDR);
+		break;
+	case AF_INET6:
+		sa6 = (struct sockaddr_in6 *)addr;
+		return IN6_ARE_ADDR_EQUAL(&sa6->sin6_addr, &mdns_in6addr);
+		break;
+	}
+	log_warn("AF not found");
+	return (0);
+}
+
+static void
+patch_addr(struct rr *rr, struct iface *iface)
+{
+	struct sockaddr_in *sa4;
+	struct sockaddr_in6 *sa6;
+
+	switch (rr->rrs.type) {
+	case T_A:
+		sa4 = (struct sockaddr_in *)&if_get_addr(AF_INET, iface)->addr;
+		memcpy(&rr->rdata.A, &sa4->sin_addr, sizeof(struct in_addr));
+		break;
+	case T_AAAA:
+		sa6 = (struct sockaddr_in6 *)&if_get_addr(AF_INET6, iface)->addr;
+		memcpy(&rr->rdata.AAAA, &sa6->sin6_addr, sizeof(struct in6_addr));
+		break;
+	}
+}
+
+static void
+patch_addrany(struct rr *rr)
+{
+	switch (rr->rrs.type) {
+	case AF_INET:
+		rr->rdata.A.s_addr = INADDR_ANY;
+		break;
+	case AF_INET6:
+		memcpy(&rr->rdata.AAAA, &in6addr_any, sizeof(struct in6_addr));
+		break;
+	}
+}
+
 /* Send and receive packets */
 int
 send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
@@ -523,10 +611,10 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 		 */
 		inaddrany = RR_INADDRANY(rr);
 		if (inaddrany)
-			rr->rdata.A.s_addr = iface->addr.s_addr;
+			patch_addr(rr, iface);
 		n = serialize_rr(rr, pbuf, left);
 		if (inaddrany)
-			rr->rdata.A.s_addr = INADDR_ANY;
+			patch_addrany(rr);
 		/* Unexpected n */
 		if (n > left) {
 			log_warnx("No space left on packet for an section.");
@@ -581,10 +669,10 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	LIST_FOREACH(rr, &pkt->nslist, pentry) {
 		inaddrany = RR_INADDRANY(rr);
 		if (inaddrany)
-			rr->rdata.A.s_addr = iface->addr.s_addr;
+			patch_addr(rr, iface);
 		n = serialize_rr(rr, pbuf, left);
 		if (inaddrany)
-			rr->rdata.A.s_addr = INADDR_ANY;
+			patch_addrany(rr);
 		if (n == -1 || n > left) {
 			return (-1);
 		}
@@ -597,10 +685,10 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	LIST_FOREACH(rr, &pkt->arlist, pentry) {
 		inaddrany = RR_INADDRANY(rr);
 		if (inaddrany)
-			rr->rdata.A.s_addr = iface->addr.s_addr;
+			patch_addr(rr, iface);
 		n = serialize_rr(rr, pbuf, left);
 		if (inaddrany)
-			rr->rdata.A.s_addr = INADDR_ANY;
+			patch_addrany(rr);
 		if (n == -1 || n > left) {
 			return (-1);
 		}
@@ -731,6 +819,7 @@ int
 rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 {
 	struct iface *iface;
+	struct sockaddr_storage ssa, ssb;
 
 	if (rra->rrs.type != rrb->rrs.type)
 		return (-1);
@@ -742,10 +831,26 @@ rr_rdata_cmp(struct rr *rra, struct rr *rrb)
 	 * we must compare agains all our interface addresses.
 	 */
 	if (RR_INADDRANY(rra) || RR_INADDRANY(rrb)) {
+		bzero(&ssa, sizeof(ssa));
+		bzero(&ssb, sizeof(ssb));
+		switch(rra->rrs.type) {
+		case T_A:
+			ssa.ss_family = ssb.ss_family = AF_INET;
+			ssa.ss_len = ssb.ss_len = sizeof(struct sockaddr_in);
+			memcpy(&((struct sockaddr_in *)&ssa)->sin_addr.s_addr, &rra->rdata.A, sizeof(struct in_addr));
+			memcpy(&((struct sockaddr_in *)&ssb)->sin_addr.s_addr, &rrb->rdata.A, sizeof(struct in_addr));
+			break;
+		case T_AAAA:
+			ssa.ss_family = ssb.ss_family = AF_INET6;
+			ssa.ss_len = ssb.ss_len = sizeof(struct sockaddr_in6);
+			memcpy(&((struct sockaddr_in6 *)&ssa)->sin6_addr.s6_addr, &rra->rdata.AAAA, sizeof(struct in6_addr));
+			memcpy(&((struct sockaddr_in6 *)&ssb)->sin6_addr.s6_addr, &rrb->rdata.AAAA, sizeof(struct in6_addr));
+			break;
+		}
 		LIST_FOREACH(iface, &conf->iface_list, entry) {
-			if (iface->addr.s_addr == rra->rdata.A.s_addr)
+			if (if_find_addr(sstosa(&ssa), iface) != NULL)
 				return (0);
-			if (iface->addr.s_addr == rrb->rdata.A.s_addr)
+			if (if_find_addr(sstosa(&ssb), iface) != NULL)
 				return (0);
 		}
 	}
@@ -1062,6 +1167,17 @@ handletype:
 			return (-1);
 		break;
 	case T_AAAA:
+		buf = *pbuf;
+		if (rdlen != 16) {
+			log_debug("Invalid AAAA record rdlen %u", rdlen);
+			return (-1);
+		}
+		memcpy(&rr->rdata.AAAA, buf, rdlen);
+		if (IN6_ARE_ADDR_EQUAL(&rr->rdata.AAAA, &in6addr_any)) {
+			log_warnx("Invalid T_AAAA record with ip address ::0");
+			return (-1);
+		}
+		break;
 	case T_NSEC:
 		break;
 	case T_OPT:
@@ -1410,6 +1526,14 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		pbuf  += n;
 		len   -= n;
 		PUTSHORT(rdlen, prdlen);
+		break;
+	case T_AAAA:
+		rdlen = 16;
+		PUTSHORT(rdlen, pbuf);
+		len -= INT16SZ;
+		memcpy(pbuf, &rr->rdata.AAAA.s6_addr, rdlen);
+		pbuf += rdlen;
+		len  -= rdlen;
 		break;
 	default:
 		log_warnx("serialize_rdata: Don't know how to serialize %s (%d)",

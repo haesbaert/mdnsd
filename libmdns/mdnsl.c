@@ -35,6 +35,7 @@
 
 #include "../mdnsd/mdnsd.h"
 #include "mdns.h"
+const struct in6_addr mdns_in6addr = MDNS_IN6ADDR_INIT;
 
 static int	mdns_connect(void);
 static int 	mdns_lookup_do(struct mdns *, const char [MAXHOSTNAMELEN],
@@ -74,6 +75,12 @@ void
 mdns_set_lookup_A_hook(struct mdns *m, lookup_A_hook lhk)
 {
 	m->lhk_A = lhk;
+}
+
+void
+mdns_set_lookup_AAAA_hook(struct mdns *m, lookup_AAAA_hook lhk)
+{
+	m->lhk_AAAA = lhk;
 }
 
 void
@@ -119,13 +126,19 @@ mdns_lookup_A(struct mdns *m, const char *host)
 }
 
 int
+mdns_lookup_AAAA(struct mdns *m, const char *host)
+{
+	return (mdns_lookup_do(m, host, T_AAAA, C_IN));
+}
+
+int
 mdns_lookup_PTR(struct mdns *m, const char *ptr)
 {
 	return (mdns_lookup_do(m, ptr, T_PTR, C_IN));
 }
 
 int
-mdns_lookup_rev(struct mdns *m, struct in_addr *addr)
+mdns_lookup_rev(struct mdns *m, struct sockaddr *addr)
 {
 	char	name[MAXHOSTNAMELEN];
 
@@ -294,7 +307,7 @@ mdns_group_commit(struct mdns *m, const char *group)
 int
 mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
     const char *proto, u_int16_t port, const char *txt, const char *target,
-    struct in_addr *addr)
+    struct sockaddr *addr)
 {
 	bzero(ms, sizeof(*ms));
 	
@@ -313,7 +326,7 @@ mdns_service_init(struct mdns_service *ms, const char *name, const char *app,
 		if (strlcpy(ms->target, target, sizeof(ms->target)) >= sizeof(ms->target))
 			return (-1);
 	if (addr != NULL)
-		ms->addr = *addr;
+		memcpy(&ms->addr, addr, addr->sa_len);
 
 	return (0);
 }
@@ -403,6 +416,11 @@ mdns_handle_lookup(struct mdns *m, struct rr *rr, int ev)
 		if (m->lhk_A == NULL)
 			return (0);
 		m->lhk_A(m, ev, rr->rrs.dname, rr->rdata.A);
+		break;
+	case T_AAAA:
+		if (m->lhk_AAAA == NULL)
+			return (0);
+		m->lhk_AAAA(m, ev, rr->rrs.dname, rr->rdata.AAAA);
 		break;
 	case T_PTR:
 		if (m->lhk_PTR == NULL)
@@ -608,12 +626,46 @@ imsgctl_to_event(int msgtype)
 }
 
 void
-reversstr(char str[MAXHOSTNAMELEN], struct in_addr *addr)
+reversstr(char str[MAXHOSTNAMELEN], struct sockaddr *addr)
 {
-	const u_char *uaddr = (const u_char *)addr;
+	const u_char *uaddr;
+	struct sockaddr_in *sa4 = (struct sockaddr_in*)addr;
+	struct sockaddr_in6 *sa6 = (struct sockaddr_in6*)addr;
 
-	(void) snprintf(str, MAXHOSTNAMELEN, "%u.%u.%u.%u.in-addr.arpa",
-	    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
-	    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
+	switch(addr->sa_family) {
+	case AF_INET:
+		uaddr = (const u_char *)&sa4->sin_addr.s_addr;
+		(void) snprintf(str, MAXHOSTNAMELEN, "%u.%u.%u.%u.in-addr.arpa",
+		    (uaddr[3] & 0xff), (uaddr[2] & 0xff),
+		    (uaddr[1] & 0xff), (uaddr[0] & 0xff));
+		break;
+	case AF_INET6:
+		uaddr = (const u_char *)&sa6->sin6_addr;
+		(void) snprintf(str, MAXHOSTNAMELEN, "%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.%X.in6.arpa",
+		    (uaddr[15] & 0xf), (uaddr[15] >> 4 & 0xf), (uaddr[14] & 0xf), (uaddr[14] >> 4 & 0xf),
+		    (uaddr[13] & 0xf), (uaddr[13] >> 4 & 0xf), (uaddr[12] & 0xf), (uaddr[12] >> 4 & 0xf),
+		    (uaddr[11] & 0xf), (uaddr[11] >> 4 & 0xf), (uaddr[10] & 0xf), (uaddr[10] >> 4 & 0xf),
+		    (uaddr[9] & 0xf), (uaddr[9] >> 4 & 0xf), (uaddr[8] & 0xf), (uaddr[8] >> 4 & 0xf),
+		    (uaddr[7] & 0xf), (uaddr[7] >> 4 & 0xf), (uaddr[6] & 0xf), (uaddr[6] >> 4 & 0xf),
+		    (uaddr[5] & 0xf), (uaddr[5] >> 4 & 0xf), (uaddr[4] & 0xf), (uaddr[4] >> 4 & 0xf),
+		    (uaddr[3] & 0xf), (uaddr[3] >> 4 & 0xf), (uaddr[2] & 0xf), (uaddr[2] >> 4 & 0xf),
+		    (uaddr[1] & 0xf), (uaddr[1] >> 4 & 0xf), (uaddr[0] & 0xf), (uaddr[0] >> 4 & 0xf));
+		break;
+	}
 }
 
+const char *
+satop(struct sockaddr *addr, char *dst) {
+	struct sockaddr_in *sa4 = (struct sockaddr_in*)addr;
+	struct sockaddr_in6 *sa6 = (struct sockaddr_in6*)addr;
+
+	switch(addr->sa_family) {
+	case AF_INET:
+		return (inet_ntop(AF_INET, &sa4->sin_addr, dst, INET_ADDRSTRLEN));
+		break;
+	case AF_INET6:
+		return (inet_ntop(AF_INET6, &sa6->sin6_addr, dst, INET6_ADDRSTRLEN));
+		break;
+	}
+	return (NULL);
+}

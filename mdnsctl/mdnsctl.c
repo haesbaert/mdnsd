@@ -40,6 +40,7 @@
 
 __dead void	usage(void);
 void		my_lookup_A_hook(struct mdns *, int, const char *, struct in_addr);
+void		my_lookup_AAAA_hook(struct mdns *, int, const char *, struct in6_addr);
 void		my_lookup_PTR_hook(struct mdns *, int, const char *, const char *);
 void		my_lookup_HINFO_hook(struct mdns *, int, const char *,
     const char *, const char *);
@@ -81,6 +82,7 @@ main(int argc, char *argv[])
 		err(1, NULL);
 
 	mdns_set_lookup_A_hook(&mdns, my_lookup_A_hook);
+	mdns_set_lookup_AAAA_hook(&mdns, my_lookup_AAAA_hook);
 	mdns_set_lookup_PTR_hook(&mdns, my_lookup_PTR_hook);
 	mdns_set_lookup_HINFO_hook(&mdns, my_lookup_HINFO_hook);
 	mdns_set_browse_hook(&mdns, my_browse_hook);
@@ -98,17 +100,21 @@ main(int argc, char *argv[])
 			if (mdns_lookup_A(&mdns, res->hostname) == -1)
 				err(1, "mdns_lookup_A");
 
+		if (res->flags & F_AAAA)
+			if (mdns_lookup_AAAA(&mdns, res->hostname) == -1)
+				err(1, "mdns_lookup_AAAA");
+
 		if (res->flags & F_HINFO)
 			if (mdns_lookup_HINFO(&mdns, res->hostname) == -1)
-				err(1, "mdns_lookup_A");
+				err(1, "mdns_lookup_HINFO");
 
 		if (res->flags & F_PTR)
 			if (mdns_lookup_PTR(&mdns, res->hostname) == -1)
-				err(1, "mdns_lookup_A");
+				err(1, "mdns_lookup_PTR");
 		break;
 	case RLOOKUP:
-		if (mdns_lookup_rev(&mdns, &res->addr) == -1)
-			err(1, "mdns_lookup_A");
+		if (mdns_lookup_rev(&mdns, (struct sockaddr *)&res->addr) == -1)
+			err(1, "mdns_lookup_rev");
 		break;
 	case BROWSE_PROTO:
 		if (mdns_browse_add(&mdns, res->app, res->proto) == -1)
@@ -129,7 +135,7 @@ main(int argc, char *argv[])
 		if (mdns_group_add(&mdns, res->srvname) == -1)
 			err(1, "mdns_group_add");
 		if (mdns_service_init(&ms, res->srvname, res->app, res->proto,
-		    res->port, res->txtstring, res->hostname, &res->addr) == -1)
+		    res->port, res->txtstring, res->hostname, (struct sockaddr *)&res->addr) == -1)
 			errx(1, "mdns_service_init");
 		if (mdns_group_add_service(&mdns, res->srvname, &ms) == -1)
 			errx(1, "mdns_group_add_service");
@@ -173,6 +179,25 @@ my_lookup_A_hook(struct mdns *m, int ev, const char *host, struct in_addr a)
 	}
 
 	res->flags &= ~F_A;
+}
+
+void
+my_lookup_AAAA_hook(struct mdns *m, int ev, const char *host, struct in6_addr a)
+{
+	char straddr[INET6_ADDRSTRLEN];
+	switch (ev) {
+	case MDNS_LOOKUP_SUCCESS:
+		printf("Address: %s\n", inet_ntop(AF_INET6, &a, straddr, INET6_ADDRSTRLEN));
+		break;
+	case MDNS_LOOKUP_FAILURE:
+		printf("Address not found\n");
+		break;
+	default:
+		errx(1, "Unhandled event");
+		break;	/* NOTREACHED */
+	}
+
+	res->flags &= ~F_AAAA;
 }
 
 void
@@ -252,6 +277,7 @@ my_browse_hook(struct mdns *m, int ev, const char *name, const char *app,
 void
 my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
 {
+	char addrstr[INET6_ADDRSTRLEN];
 	switch (ev) {
 	case MDNS_RESOLVE_FAILURE:
 		fprintf(stderr, "Can't resolve %s", ms->name);
@@ -261,7 +287,7 @@ my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
 		if (res->flags & F_SCRIPT) {
 			printf("up|proto|%s|app|%s|name|%s|port|%u|target|%s|address|%s|txt|%s\n",
 			    ms->proto, ms->app, ms->name, ms->port, ms->target,
-			    inet_ntoa(ms->addr), ms->txt);
+			    satop((struct sockaddr *)&ms->addr, addrstr), ms->txt);
 		} else {
 			printf("+++ %-48s %-20s %-3s\n", ms->name, ms->app, ms->proto);
 			printf(" Name: %s\n", ms->name);
@@ -269,7 +295,7 @@ my_resolve_hook(struct mdns *m, int ev, struct mdns_service *ms)
 			/* printf(" Weight: %u\n", ms->weight); */
 			printf(" Port: %u\n", ms->port);
 			printf(" Target: %s\n", ms->target);
-			printf(" Address: %s\n", inet_ntoa(ms->addr));
+			printf(" Address: %s\n", satop((struct sockaddr *)&ms->addr, addrstr));
 			printf(" Txt: %s\n", ms->txt);
 		}
 		break;

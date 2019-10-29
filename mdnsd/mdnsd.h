@@ -40,7 +40,7 @@
 				   0x00, 0x00, 0x00, 0x00,  \
 				   0x00, 0x00, 0x00, 0x00,  \
 				   0x00, 0x00, 0x00, 0xfb }}}
-const struct in6_addr mdns_in6addr = MDNS_IN6ADDR_INIT;
+extern const struct in6_addr mdns_in6addr; /* assigned MDNS_IN6ADDR_INIT in mdnsd.c */
 #define MDNS_TTL		255
 #define MDNS_PORT		5353
 #define TTL_A			120
@@ -125,6 +125,7 @@ struct rr {
 		/* IPv4 Address, if INADDR_ANY, use the interface address, this
 		 * is how we can have the same RR with multiple addresses */
 		struct in_addr	A;
+		struct in6_addr	AAAA;
 		char		CNAME[MAXHOSTNAMELEN]; /* CNAME */
 		char		PTR[MAXHOSTNAMELEN];   /* PTR */
 		char		NS[MAXHOSTNAMELEN];    /* Name server */
@@ -331,7 +332,6 @@ void		 kev_cleanup(void);
 
 /* mdnsd.c */
 int	peersuser(int);
-void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 int	mdnsd_imsg_compose_ctl(struct ctl_conn *, u_int16_t, void *, u_int16_t);
 void	imsg_event_add(struct imsgev *);
 int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t, pid_t,

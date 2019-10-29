@@ -79,13 +79,15 @@ typedef void (*browse_hook) (struct mdns *, int event, const char *name,
 typedef void (*resolve_hook) (struct mdns *, int event, struct mdns_service *);
 typedef void (*lookup_A_hook) (struct mdns *, int event, const char *name,
     struct in_addr address);
+typedef void (*lookup_AAAA_hook) (struct mdns *, int event, const char *name,
+    struct in6_addr address);
 typedef void (*lookup_PTR_hook) (struct mdns *, int event, const char *name,
     const char *ptr);
 typedef void (*lookup_HINFO_hook) (struct mdns *, int event, const char *name,
     const char *cpu, const char *os);
 typedef void (*group_hook) (struct mdns *, int event, const char *name);
 
-/* Accepted RR: A, HINFO, CNAME, PTR, SRV, TXT, NS  */
+/* Accepted RR: A, AAAA, HINFO, CNAME, PTR, SRV, TXT, NS  */
 struct mdns_service {
 	LIST_ENTRY(mdns_service) entry;
 	char		app[MAXLABELLEN];
@@ -96,7 +98,7 @@ struct mdns_service {
 	u_int16_t	weight;
 	u_int16_t	port;
 	char		txt[MAXCHARSTR];
-	struct in_addr	addr;
+	struct sockaddr_storage	addr;
 };
 
 /* TODO browse_udata and group_udata */
@@ -104,6 +106,7 @@ struct mdns {
 	struct imsgbuf		 ibuf;
 	browse_hook		 bhk;
 	lookup_A_hook		 lhk_A;
+	lookup_AAAA_hook	 lhk_AAAA;
 	lookup_PTR_hook		 lhk_PTR;
 	lookup_HINFO_hook	 lhk_HINFO;
 	resolve_hook		 rhk;
@@ -120,22 +123,25 @@ void	mdns_close(struct mdns *);
 void	mdns_set_browse_hook(struct mdns *, browse_hook);
 void	mdns_set_resolve_hook(struct mdns *m, resolve_hook);
 void	mdns_set_lookup_A_hook(struct mdns *, lookup_A_hook);
+void	mdns_set_lookup_AAAA_hook(struct mdns *, lookup_AAAA_hook);
 void	mdns_set_lookup_PTR_hook(struct mdns *, lookup_PTR_hook);
 void	mdns_set_lookup_HINFO_hook(struct mdns *, lookup_HINFO_hook);
 void	mdns_set_group_hook(struct mdns *, group_hook);
 void	mdns_set_udata(struct mdns *, void *);
 
 int	mdns_lookup_A(struct mdns *, const char *);
+int	mdns_lookup_AAAA(struct mdns *, const char *);
 int	mdns_lookup_PTR(struct mdns *, const char *);
 int	mdns_lookup_HINFO(struct mdns *, const char *);
-int	mdns_lookup_rev(struct mdns *, struct in_addr *);
+int	mdns_lookup_rev(struct mdns *, struct sockaddr *);
 int	mdns_service_init(struct mdns_service *, const char *, const char *,
-    const char *, u_int16_t, const char *, const char *, struct in_addr *);
+    const char *, u_int16_t, const char *, const char *, struct sockaddr *);
 int	mdns_group_add(struct mdns *, const char *);
 int	mdns_group_reset(struct mdns *, const char *);
 int	mdns_group_add_service(struct mdns *, const char *, struct mdns_service *);
 int	mdns_group_commit(struct mdns *, const char *);
 
-void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
+void	reversstr(char [MAXHOSTNAMELEN], struct sockaddr *);
+const char*	satop(struct sockaddr *, char *);
 
 #endif	/* _MDNS_H_ */

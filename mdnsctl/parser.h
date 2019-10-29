@@ -31,6 +31,7 @@
 #define F_SRV		4
 #define F_TXT		8
 #define F_PTR		16
+#define F_AAAA		32
 
 /* BRFLAGS */
 #define F_RESOLV	1
@@ -46,7 +47,7 @@ enum actions {
 };
 
 struct parse_result {
-	struct in_addr	 addr;
+	struct sockaddr_storage	addr;
 	int		 flags;
 	enum actions	 action;
 	char		 hostname[MAXHOSTNAMELEN];
@@ -60,7 +61,7 @@ struct parse_result {
 struct parse_result	*parse(int, char *[]);
 const struct token	*match_token(const char *, const struct token *);
 void			 show_valid_args(const struct token *);
-int			 parse_addr(const char *, struct in_addr *);
+int			 parse_addr(const char *, struct sockaddr_storage *);
 int			 parse_hostname(const char *, char [MAXHOSTNAMELEN]);
 int			 parse_target_hostname(const char *, char [MAXHOSTNAMELEN]);
 int			 parse_proto(const char *, char [MAXHOSTNAMELEN]);
