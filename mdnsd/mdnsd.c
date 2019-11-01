@@ -73,17 +73,10 @@ conf_init_ifaces(int argc, char *argv[])
 {
 	int		 found = 0;
 	int		 i;
-	struct kif	*k;
 	struct iface	*iface;
 
 	for (i = 0; i < argc; i++) {
-		k = kif_findname(argv[i]);
-		if (k == NULL) {
-			log_warnx("Unknown interface %s", argv[i]);
-			continue;
-		}
-
-		iface = if_new(k);
+		iface = if_new(argv[i]);
 		if (iface == NULL)
 			continue;
 		found++;
@@ -139,7 +132,6 @@ mdnsd_shutdown(void)
 	}
 
 	kev_cleanup();
-	kif_cleanup();
 	control_cleanup();
 	free(conf);
 
@@ -164,17 +156,14 @@ mdns_sock(void)
 	if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1)
 		fatal("bind");
 
-	if (if_set_opt(sock) == -1)
+	if (if_set_opt(AF_INET, sock) == -1)
 		fatal("if_set_opt");
 
-	if (if_set_mcast_ttl(sock, MDNS_TTL) == -1)
+	if (if_set_mcast_ttl(AF_INET, sock, MDNS_TTL) == -1)
 		fatal("if_set_mcast_ttl");
 
-	if (if_set_mcast_loop(sock) == -1)
+	if (if_set_mcast_loop(AF_INET, sock) == -1)
 		fatal("if_set_mcast_loop");
-
-/*	if (if_set_tos(sock, IPTOS_PREC_INTERNETCONTROL) == -1) */
-/*		fatal("if_set_tos"); */
 
 	if_set_recvbuf(sock);
 
@@ -298,10 +287,6 @@ main(int argc, char *argv[])
 	signal_add(&ev_sighup, NULL);
 	signal(SIGPIPE, SIG_IGN);
 
-	/* fetch all kernel interfaces */
-	if (kif_init() != 0)
-		fatal("Can't get kernel interfaces");
-
 	/* init conf */
 	if ((conf = calloc(1, sizeof(*conf))) == NULL)
 		fatal("calloc");
@@ -332,17 +317,15 @@ main(int argc, char *argv[])
 	kev_init();
 
 	/* create mdns socket */
-	conf->mdns_sock = mdns_sock();
+	conf->udp4.fd = mdns_sock();
 
 	/* setup mdns events */
-	event_set(&conf->ev_mdns, conf->mdns_sock, EV_READ|EV_PERSIST,
+	event_set(&conf->udp4.ev, conf->udp4.fd, EV_READ|EV_PERSIST,
 	    recv_packet, NULL);
-	event_add(&conf->ev_mdns, NULL);
+	event_add(&conf->udp4.ev, NULL);
 
 	/* start interfaces */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		/* XXX yep it seems wrong indeed */
-		iface->fd = conf->mdns_sock;
 		if (if_fsm(iface, IF_EVT_UP))
 			log_warnx("error starting interface %s", iface->name);
 	}

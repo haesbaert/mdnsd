@@ -23,6 +23,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if.h>
+#include <net/if_dl.h>
 #include <net/if_types.h>
 #include <ctype.h>
 #include <err.h>
@@ -31,6 +32,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <event.h>
+
+#include <ifaddrs.h>
 
 #include "mdnsd.h"
 #include "log.h"
@@ -131,23 +134,86 @@ if_find_index(u_short ifindex)
 	return (NULL);
 }
 
-struct iface *
-if_find_iface(unsigned int ifindex, struct in_addr src)
+/* Return the first address matching the given af */
+struct iface_addr *
+if_get_addr(sa_family_t af, struct iface *iface)
 {
-	struct iface	*iface = NULL;
+	struct iface_addr *ifa;
 
-	/* returned interface needs to be active */
-	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		if (ifindex != 0 && ifindex == iface->ifindex &&
-		    (iface->addr.s_addr & iface->mask.s_addr) ==
-		    (src.s_addr & iface->mask.s_addr))
-			/*
-			 * XXX may fail on P2P links because src and dst don't
-			 * have to share a common subnet on the otherhand
-			 * checking something like this will help to support
-			 * multiple networks configured on one interface.
-			 */
-			return (iface);
+	LIST_FOREACH(ifa, &iface->addr_list, entry) {
+		if (ifa->addr.ss_family == af)
+			return (ifa);
+	}
+
+	return (NULL);
+}
+
+/* Find the interface address that matches the given addr */
+struct iface_addr *
+if_find_addr(struct sockaddr *addr, struct iface *iface) {
+	struct iface_addr *ifa;
+	struct sockaddr_in *sa4, *addr4;
+	struct sockaddr_in6 *sa6, *addr6;
+
+	LIST_FOREACH(ifa, &iface->addr_list, entry) {
+		if (ifa->addr.ss_family != addr->sa_family)
+			continue;
+
+		switch (ifa->addr.ss_family) {
+		case AF_INET:
+			sa4 = (struct sockaddr_in *)&ifa->addr;
+			addr4 = (struct sockaddr_in *)addr;
+			if (sa4->sin_addr.s_addr == addr4->sin_addr.s_addr)
+				return (ifa);
+			break;
+		case AF_INET6:
+			sa6 = (struct sockaddr_in6 *)&ifa->addr;
+			addr6 = (struct sockaddr_in6 *)addr;
+			if (IN6_ARE_ADDR_EQUAL(&sa6->sin6_addr, &addr6->sin6_addr))
+				return (ifa);
+			break;
+		default:
+			log_warn("if_find_addr: AF not found");
+		}
+	}
+
+	return (NULL);
+}
+
+/* Find the interface address that is in the same subnet as the given addr */
+struct iface_addr *
+if_contains_addr(struct sockaddr *addr, struct iface *iface)
+{
+	struct iface_addr *ifa;
+	struct sockaddr_in *sa4, *snm4, *addr4;
+	struct sockaddr_in6 *sa6, *snm6, *addr6;
+	uint8_t *uaddr;
+	int prefix;
+
+	LIST_FOREACH(ifa, &iface->addr_list, entry) {
+		if (ifa->addr.ss_family != addr->sa_family)
+			continue;
+
+		switch (ifa->addr.ss_family) {
+		case AF_INET:
+			sa4 = (struct sockaddr_in *)&ifa->addr;
+			snm4 = (struct sockaddr_in *)&ifa->netmask;
+			addr4 = (struct sockaddr_in *)addr;
+			if ((sa4->sin_addr.s_addr & snm4->sin_addr.s_addr) == (addr4->sin_addr.s_addr & snm4->sin_addr.s_addr))
+				return (ifa);
+			break;
+		case AF_INET6:
+			sa6 = (struct sockaddr_in6 *)&ifa->addr;
+			snm6 = (struct sockaddr_in6 *)&ifa->netmask;
+			addr6 = (struct sockaddr_in6 *)addr;
+			uaddr = (uint8_t *)&snm6->sin6_addr;
+			for (prefix = 0; prefix < 16 && *uaddr == 0xff; prefix++, uaddr++);
+			if (prefix != 0 && memcmp(&sa6->sin6_addr, &addr6->sin6_addr, prefix))
+				return (ifa);
+			break;
+		default:
+			log_warn("if_contains_addr: AF not found");
+		}
 	}
 
 	return (NULL);
@@ -157,7 +223,6 @@ if_find_iface(unsigned int ifindex, struct in_addr src)
 int
 if_act_start(struct iface *iface)
 {
-	struct in_addr	 addr;
 	struct timeval	 now;
 
 	if (!((iface->flags & IFF_UP) &&
@@ -175,10 +240,9 @@ if_act_start(struct iface *iface)
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
 	case IF_TYPE_BROADCAST:
-		inet_aton(ALL_MDNS_DEVICES, &addr);
-		if (if_join_group(iface, &addr)) {
+		if (if_join_group(iface)) {
 			log_warn("if_act_start: error joining group %s, "
-			    "interface %s", inet_ntoa(addr), iface->name);
+			    "interface %s", ALL_MDNS_DEVICES, iface->name);
 			return (-1);
 		}
 
@@ -197,15 +261,12 @@ if_act_start(struct iface *iface)
 int
 if_act_reset(struct iface *iface)
 {
-	struct in_addr		 addr;
-
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
 	case IF_TYPE_BROADCAST:
-		inet_aton(ALL_MDNS_DEVICES, &addr);
-		if (if_leave_group(iface, &addr)) {
+		if (if_leave_group(iface)) {
 			log_warn("if_act_reset: error leaving group %s, "
-			    "interface %s", inet_ntoa(addr), iface->name);
+			    "interface %s", ALL_MDNS_DEVICES, iface->name);
 		}
 		break;
 	default:
@@ -229,46 +290,64 @@ if_action_name(int action)
 
 /* misc */
 int
-if_set_mcast_ttl(int fd, u_int8_t ttl)
+if_set_mcast_ttl(sa_family_t af, int fd, u_int8_t ttl)
 {
-	if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL,
-	    (char *)&ttl, sizeof(ttl)) < 0) {
-		log_warn("if_set_mcast_ttl: error setting "
-		    "IP_MULTICAST_TTL to %d", ttl);
-		return (-1);
-	}
+	int hops;
+
+	switch (af) {
+	case AF_INET:
+		if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL,
+		    (char *)&ttl, sizeof(ttl)) < 0) {
+			log_warn("if_set_mcast_ttl: error setting "
+			    "IP_MULTICAST_TTL to %u", ttl);
+			return (-1);
+		}
+		break;
+	case AF_INET6:
+		hops = MDNS_TTL;
+		if (setsockopt(fd, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
+		   &hops, sizeof(hops)) < 0) {
+			log_warn("if_set_mcast_ttl: error setting "
+			    "IPV6_MULTICAST_HOPS to %u", ttl);
+			return (-1);
+		}
+		break;
+	default:
+		log_warn("if_set_mcast_ttl: AF not found");
+	};
 
 	return (0);
 }
 
 int
-if_set_opt(int fd)
+if_set_opt(sa_family_t af, int fd)
 {
 	int	 yes = 1;
 
-	if (setsockopt(fd, IPPROTO_IP, IP_RECVIF, &yes,
-	    sizeof(int)) < 0) {
-		log_warn("if_set_opt: error setting IP_RECVIF");
-		return (-1);
-	}
+	switch (af) {
+	case AF_INET:
+		if (setsockopt(fd, IPPROTO_IP, IP_RECVIF, &yes,
+		    sizeof(int)) < 0) {
+			log_warn("if_set_opt: error setting IP_RECVIF");
+			return (-1);
+		}
 
-	if (setsockopt(fd, IPPROTO_IP, IP_RECVDSTADDR, &yes,
-	    sizeof(int)) < 0) {
-		log_warn("if_set_opt: error setting IP_RECVDSTADDR");
-		return (-1);
-	}
-
-	return (0);
-}
-
-int
-if_set_tos(int fd, int tos)
-{
-	if (setsockopt(fd, IPPROTO_IP, IP_TOS,
-	    (int *)&tos, sizeof(tos)) < 0) {
-		log_warn("if_set_tos: error setting IP_TOS to 0x%x", tos);
-		return (-1);
-	}
+		if (setsockopt(fd, IPPROTO_IP, IP_RECVDSTADDR, &yes,
+		    sizeof(int)) < 0) {
+			log_warn("if_set_opt: error setting IP_RECVDSTADDR");
+			return (-1);
+		}
+		break;
+	case AF_INET6:
+		if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVPKTINFO, &yes,
+		    sizeof(int)) < 0) {
+			log_warn("if_set_opt: error setting IPV6_RECVPKTINFO");
+			return (-1);
+		}
+		break;
+	default:
+		log_warn("if_set_opt: AF not found");
+	};
 
 	return (0);
 }
@@ -276,33 +355,68 @@ if_set_tos(int fd, int tos)
 int
 if_set_mcast(struct iface *iface)
 {
+	struct iface_addr *ifa;
+
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
 	case IF_TYPE_BROADCAST:
-		if (setsockopt(iface->fd, IPPROTO_IP, IP_MULTICAST_IF,
-		    &iface->addr.s_addr, sizeof(iface->addr.s_addr)) < 0) {
+		break;
+	default:
+		fatalx("if_set_mcast: unknown interface type");
+		return (-0);
+	}
+
+	if (conf->udp4.fd != 0) {
+		ifa = if_get_addr(AF_INET, iface);
+
+		if (ifa == NULL)
+			fatal("if_set_mcast: No IP address found for iface");
+
+		if (setsockopt(conf->udp4.fd, IPPROTO_IP, IP_MULTICAST_IF,
+		    &((struct sockaddr_in *)&ifa->addr)->sin_addr.s_addr, sizeof(in_addr_t)) < 0) {
 			log_debug("if_set_mcast: error setting "
 				"IP_MULTICAST_IF, interface %s", iface->name);
 			return (-1);
 		}
-		break;
-	default:
-		fatalx("if_set_mcast: unknown interface type");
+	}
+
+	if (conf->udp6.fd != 0) {
+		if (setsockopt(conf->udp6.fd, IPPROTO_IPV6, IPV6_MULTICAST_IF,
+		    &iface->ifindex, sizeof(u_int)) < 0) {
+			log_debug("if_set_mcast: error setting "
+				"IPV6_MULTICAST_IF, interface %s", iface->name);
+			return (-1);
+		}
 	}
 
 	return (0);
 }
 
 int
-if_set_mcast_loop(int fd)
+if_set_mcast_loop(sa_family_t af, int fd)
 {
 	u_int8_t	 loop = 0;
+	uint loop6;
 
-	if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_LOOP,
-	    (char *)&loop, sizeof(loop)) < 0) {
-		log_warn("if_set_mcast_loop: error setting IP_MULTICAST_LOOP");
-		return (-1);
-	}
+	switch (af) {
+	case AF_INET:
+		if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_LOOP,
+		    (char *)&loop, sizeof(loop)) < 0) {
+			log_warn("if_set_mcast_loop: error setting IP_MULTICAST_LOOP");
+			return (-1);
+		}
+		break;
+	case AF_INET6:
+		loop6 = loop;
+		if (setsockopt(fd, IPPROTO_IPV6, IPV6_MULTICAST_LOOP,
+		    &loop6, sizeof(loop6)) < 0) {
+			log_warn("if_set_mcast_loop: error setting IPV6_MULTICAST_LOOP");
+			return (-1);
+		}
+		break;
+	default:
+		log_warn("if_set_mcast_loop: AF not found");
+	};
 
 	return (0);
 }
@@ -319,133 +433,205 @@ if_set_recvbuf(int fd)
 }
 
 int
-if_join_group(struct iface *iface, struct in_addr *addr)
+if_join_group(struct iface *iface)
 {
 	struct ip_mreq	 mreq;
+	struct ipv6_mreq mreq6;
+	struct iface_addr *ifa;
 
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
 	case IF_TYPE_BROADCAST:
-		mreq.imr_multiaddr.s_addr = addr->s_addr;
-		mreq.imr_interface.s_addr = iface->addr.s_addr;
-
-		if (setsockopt(iface->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-		    (void *)&mreq, sizeof(mreq)) < 0)
-			return (-1);
 		break;
 	default:
 		fatalx("if_join_group: unknown interface type");
+	}
+
+	if (conf->udp4.fd != 0) {
+		if ((ifa = if_get_addr(AF_INET, iface)) == NULL) {
+			log_warn("if_join_group: No IP address found for iface");
+		} else {
+			mreq.imr_multiaddr.s_addr = ntohl(MDNS_INADDR);
+			mreq.imr_interface.s_addr = ((struct sockaddr_in *)&ifa->addr)->sin_addr.s_addr;
+
+			if (setsockopt(conf->udp4.fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+			    (void *)&mreq, sizeof(mreq)) < 0) {
+				log_warn("Error joining IPV4 group");
+				return (-1);
+			}
+		}
+	}
+
+	if (conf->udp6.fd != 0) {
+		memcpy(&mreq6.ipv6mr_multiaddr, &mdns_in6addr, sizeof(struct in6_addr));
+		mreq6.ipv6mr_interface = iface->ifindex;
+
+		if (setsockopt(conf->udp6.fd, IPPROTO_IPV6, IPV6_JOIN_GROUP,
+		    (void *)&mreq6, sizeof(mreq6)) < 0) {
+			log_warn("Error joining IPV6 group");
+			return (-1);
+		}
 	}
 
 	return (0);
 }
 
 int
-if_leave_group(struct iface *iface, struct in_addr *addr)
+if_leave_group(struct iface *iface)
 {
 	struct ip_mreq	 mreq;
+	struct ipv6_mreq mreq6;
+	struct iface_addr *ifa;
 
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
 	case IF_TYPE_BROADCAST:
-		mreq.imr_multiaddr.s_addr = addr->s_addr;
-		mreq.imr_interface.s_addr = iface->addr.s_addr;
-
-		if (setsockopt(iface->fd, IPPROTO_IP, IP_DROP_MEMBERSHIP,
-		    (void *)&mreq, sizeof(mreq)) < 0)
-			return (-1);
 		break;
 	default:
 		fatalx("if_leave_group: unknown interface type");
+	}
+
+	if (conf->udp4.fd != 0) {
+		if ((ifa = if_get_addr(AF_INET, iface)) == NULL) {
+			log_warn("if_leave_group: No IP address found for iface");
+		} else {
+			mreq.imr_multiaddr.s_addr = ntohl(MDNS_INADDR);
+			mreq.imr_interface.s_addr = ((struct sockaddr_in *)&ifa->addr)->sin_addr.s_addr;
+
+			if (setsockopt(conf->udp4.fd, IPPROTO_IP, IP_DROP_MEMBERSHIP,
+			    (void *)&mreq, sizeof(mreq)) < 0)
+				return (-1);
+		}
+	}
+
+	if (conf->udp6.fd != 0) {
+		memcpy(&mreq6.ipv6mr_multiaddr, &mdns_in6addr, sizeof(struct in6_addr));
+		mreq6.ipv6mr_interface = iface->ifindex;
+
+		if (setsockopt(conf->udp6.fd, IPPROTO_IPV6, IPV6_LEAVE_GROUP,
+		    (void *)&mreq6, sizeof(mreq6)) < 0)
+			return (-1);
 	}
 
 	return (0);
 }
 
 struct iface *
-if_new(struct kif *kif)
+if_new(const char *name)
 {
-	struct sockaddr_in	*sain;
 	struct iface		*iface;
-	struct ifreq		*ifr;
-	int			s;
-	int succeed = 0;
+	struct iface_addr	*addr;
+	struct sockaddr_dl	*sdl;
+	struct if_data		*ifd;
+	struct ifaddrs		*ifa, *ifalist;
+
+	if (name == NULL)
+		return (NULL);
 
 	if ((iface = calloc(1, sizeof(*iface))) == NULL)
 		err(1, "if_new: calloc");
 
 	iface->state = IF_STA_DOWN;
 
-	strlcpy(iface->name, kif->ifname, sizeof(iface->name));
+	strlcpy(iface->name, name, sizeof(iface->name));
 
-	if ((ifr = calloc(1, sizeof(*ifr))) == NULL)
-		err(1, "if_new: calloc");
+	if (getifaddrs(&ifalist) == -1)
+		fatal("getifaddrs");
 
-	/* set up ifreq */
-	strlcpy(ifr->ifr_name, kif->ifname, sizeof(ifr->ifr_name));
-	if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-		err(1, "if_new: socket");
+	for (ifa = ifalist; ifa != NULL; ifa = ifa->ifa_next) {
+		if (strncmp(name, ifa->ifa_name, IF_NAMESIZE) != 0)
+			continue;
+
+		switch (ifa->ifa_addr->sa_family) {
+		case AF_LINK:
+			if ((ifa->ifa_flags & IFF_MULTICAST) == 0)
+				warn("%s: Interface cannot recieve multicast", name);
+			sdl = (struct sockaddr_dl *)ifa->ifa_addr;
+			ifd = (struct if_data *)ifa->ifa_data;
+			iface->flags = ifa->ifa_flags;
+			iface->ifindex = sdl->sdl_index;
+			iface->type = sdl->sdl_type;
+			iface->mtu = ifd->ifi_mtu;
+			iface->linkstate = ifd->ifi_link_state;
+			iface->media_type = sdl->sdl_type;
+			iface->baudrate = ifd->ifi_baudrate;
+			memcpy(&iface->ea, sdl->sdl_data + sdl->sdl_nlen, sdl->sdl_alen);
+			break;
+		case AF_INET:
+		case AF_INET6:
+			addr = calloc(1, sizeof(struct iface_addr));
+			if (addr == NULL)
+				fatal("calloc");
+
+			memcpy(&addr->addr, ifa->ifa_addr, ifa->ifa_addr->sa_len);
+
+			if (ifa->ifa_dstaddr != NULL)
+				memcpy(&addr->dstaddr, ifa->ifa_dstaddr, ifa->ifa_dstaddr->sa_len);
+
+			if (ifa->ifa_netmask != NULL)
+				memcpy(&addr->netmask, ifa->ifa_netmask, ifa->ifa_netmask->sa_len);
+
+			LIST_INSERT_HEAD(&iface->addr_list, addr, entry);
+			break;
+		default:
+			warnx("if_add AF unsupported: %u", ifa->ifa_addr->sa_family);
+		};
+	}
 
 	/* get type */
-	if (kif->flags & IFF_POINTOPOINT)
+	if (iface->flags & IFF_POINTOPOINT)
 		iface->type = IF_TYPE_POINTOPOINT;
-	if (kif->flags & IFF_BROADCAST &&
-	    kif->flags & IFF_MULTICAST)
+	if (iface->flags & IFF_BROADCAST &&
+	    iface->flags & IFF_MULTICAST)
 		iface->type = IF_TYPE_BROADCAST;
-	if (kif->flags & IFF_LOOPBACK) {
+	if (iface->flags & IFF_LOOPBACK) {
 		iface->type = IF_TYPE_POINTOPOINT;
 		/* XXX protect loopback from sending packets over lo? */
 	}
 
-	/* get mtu, index and flags */
-	iface->mtu = kif->mtu;
-	iface->ifindex = kif->ifindex;
-	iface->flags = kif->flags;
-	iface->linkstate = kif->link_state;
-	iface->media_type = kif->media_type;
-	iface->baudrate = kif->baudrate;
-	iface->ea = kif->ea;
-
-	/* get address */
-	if (ioctl(s, SIOCGIFADDR, ifr) < 0) {
-		log_warn("if_new: cannot get address");
-		goto end;
-	}
-	sain = (struct sockaddr_in *)&ifr->ifr_addr;
-	iface->addr = sain->sin_addr;
-
-	/* get mask */
-	if (ioctl(s, SIOCGIFNETMASK, ifr) < 0) {
-		log_warn("if_new: cannot get mask");
-		goto end;
-	}
-	sain = (struct sockaddr_in *)&ifr->ifr_addr;
-	iface->mask = sain->sin_addr;
-
-	/* get p2p dst address */
-	if (kif->flags & IFF_POINTOPOINT) {
-		if (ioctl(s, SIOCGIFDSTADDR, ifr) < 0) {
-			log_warn("if_new: cannot get dst addr");
-			goto end;
-		}
-		sain = (struct sockaddr_in *)&ifr->ifr_addr;
-		iface->dst = sain->sin_addr;
-	}
+	addr = if_get_addr(AF_INET, iface);
 
 	/* get the primary group for this interface */
 	if (conf->no_workstation == 0)
 		iface->pge_workstation = pge_new_workstation(iface);
 
-	succeed = 1;
-
-end:
-	if (!succeed) {
-		free(iface);
-		iface = NULL;
-	}
-
-	free(ifr);
-	close(s);
-
+	freeifaddrs(ifalist);
 	return (iface);
+}
+
+void
+if_newaddr(struct sockaddr *addr, struct sockaddr *dstaddr, struct sockaddr *netmask, struct iface *iface)
+{
+	struct iface_addr *ifa;
+
+	ifa = calloc(1, sizeof(struct iface_addr));
+	if (ifa == NULL)
+		fatal("calloc");
+
+	memcpy(&ifa->addr, addr, addr->sa_len);
+
+	if (dstaddr != NULL)
+		memcpy(&ifa->dstaddr, dstaddr, dstaddr->sa_len);
+
+	if (netmask != NULL)
+		memcpy(&ifa->netmask, netmask, netmask->sa_len);
+
+	/* TODO add address to the cache */
+	LIST_INSERT_HEAD(&iface->addr_list, ifa, entry);
+	return;
+}
+
+void
+if_deladdr(struct sockaddr *addr, struct iface *iface)
+{
+	struct iface_addr *ifa;
+
+	ifa = if_find_addr(addr, iface);
+	if (ifa == NULL) {
+		log_warn("if_deladdr: Address not found");
+	} else {
+		LIST_REMOVE(ifa, entry);
+		/* TODO purge address from cache */
+		free(ifa);
+	}
 }

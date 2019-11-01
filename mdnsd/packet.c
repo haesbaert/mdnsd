@@ -112,7 +112,7 @@ send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
 			return (-1);
 		}
 
-	if (sendto(iface->fd, pkt, len, 0,
+	if (sendto(conf->udp4.fd, pkt, len, 0,
 	    (struct sockaddr *)dst, sizeof(*dst)) == -1) {
 		log_warn("send_packet: error sending packet on interface "
 			 "%s, len %zd", iface->name, len);
