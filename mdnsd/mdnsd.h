@@ -35,7 +35,7 @@
 
 #define MDNSD_USER		"_mdnsd"
 #define ALL_MDNS_DEVICES	"224.0.0.251"
-#define MDNS_INADDR		__IPADDR(0xe00000fb)
+#define MDNS_INADDR		((in_addr_t)0xe00000fb)
 #define MDNS_IN6ADDR_INIT	{{{ 0xff, 0x02, 0x00, 0x00, \
 				   0x00, 0x00, 0x00, 0x00,  \
 				   0x00, 0x00, 0x00, 0x00,  \

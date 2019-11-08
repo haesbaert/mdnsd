@@ -54,6 +54,10 @@ struct {
 } kev_state;
 
 
+#ifdef __FreeBSD__
+#define rtm_hdrlen rtm_msglen
+#endif
+
 #define ROUNDUP(a) \
 	((a) > 0 ? (1 + (((a) - 1) | (sizeof(long) - 1))) : sizeof(long))
 
@@ -89,10 +93,12 @@ kev_init(void)
 	    &opt, sizeof(opt)) == -1)
 		log_warn("kev: setsockopt");	/* not fatal ? why ? */
 
+#ifdef __OpenBSD__
 	/* filter only for messages that can be handled */
 	rtfilter = ROUTE_FILTER(RTM_IFINFO) | ROUTE_FILTER(RTM_NEWADDR) | ROUTE_FILTER(RTM_DELADDR);
 	if (setsockopt(kev_state.fd, AF_ROUTE, ROUTE_MSGFILTER, &rtfilter, sizeof(rtfilter)) == -1)
 		log_warn("kev: route_msgfilter");
+#endif
 
 	/* grow receive buffer, don't wanna miss messages */
 	optlen = sizeof(default_rcvbuf);
