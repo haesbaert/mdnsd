@@ -41,7 +41,7 @@ __dead void	display_version(void);
 void		mdnsd_sig_handler(int, short, void *);
 void		conf_init_ifaces(int, char *[]);
 void		mdnsd_shutdown(void);
-int		mdns_sock(void);
+int		mdns_sock(struct sockaddr *);
 void		fetchmyname(char [MAXHOSTNAMELEN]);
 void		fetchhinfo(struct hinfo *);
 
@@ -141,34 +141,58 @@ mdnsd_shutdown(void)
 
 
 int
-mdns_sock(void)
+mdns_sock(struct sockaddr *addr)
 {
 	int sock;
-	struct sockaddr_in addr;
+	struct sockaddr_in *sa4;
+	struct sockaddr_in6 *sa6;
+	char addrstr[INET6_ADDRSTRLEN];
 
-	if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+	switch(addr->sa_family) {
+	case AF_INET:
+		sa4 = (struct sockaddr_in*)addr;
+		sa4->sin_len = sizeof(struct sockaddr_in);
+		sa4->sin_port = htons(MDNS_PORT);
+		sa4->sin_addr.s_addr = INADDR_ANY;
+		break;
+	case AF_INET6:
+		sa6 = (struct sockaddr_in6*)addr;
+		sa6->sin6_len = sizeof(struct sockaddr_in6);
+		sa6->sin6_port = htons(MDNS_PORT);
+		memcpy(&sa6->sin6_addr, &in6addr_any, sizeof(struct in6_addr));
+		break;
+	default:
+		fatal("mdns_sock AF not supported");
+	}
+
+	if ((sock = socket(addr->sa_family, SOCK_DGRAM, IPPROTO_UDP)) == -1)
 		fatal("socket");
 
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(MDNS_PORT);
-	addr.sin_addr.s_addr = INADDR_ANY;
-
-	if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1)
+	if (bind(sock, addr, addr->sa_len) == -1)
 		fatal("bind");
 
-	if (if_set_opt(AF_INET, sock) == -1)
+	/* XXX stupid patchup */
+	switch(addr->sa_family) {
+	case AF_INET:
+		sa4->sin_addr.s_addr = MDNS_INADDR;
+		break;
+	case AF_INET6:
+		memcpy(&sa6->sin6_addr, &mdns_in6addr, sizeof(struct in6_addr));
+		break;
+	}
+
+	if (if_set_opt(addr->sa_family, sock) == -1)
 		fatal("if_set_opt");
 
-	if (if_set_mcast_ttl(AF_INET, sock, MDNS_TTL) == -1)
+	if (if_set_mcast_ttl(addr->sa_family, sock, MDNS_TTL) == -1)
 		fatal("if_set_mcast_ttl");
 
-	if (if_set_mcast_loop(AF_INET, sock) == -1)
+	if (if_set_mcast_loop(addr->sa_family, sock) == -1)
 		fatal("if_set_mcast_loop");
 
 	if_set_recvbuf(sock);
 
-	log_debug("mdns sock bound to %s:%u", inet_ntoa(addr.sin_addr),
-	    ntohs(addr.sin_port));
+	log_debug("mdns sock bound to %s:%u", satop(addr, addrstr), MDNS_PORT);
 
 	return (sock);
 }
@@ -205,18 +229,25 @@ main(int argc, char *argv[])
 {
 	int		 ch;
 	int		 debug, no_workstation;
+	sa_family_t	 addrpref;
 	struct passwd	*pw;
 	struct iface	*iface;
 	struct event	 ev_sigint, ev_sigterm, ev_sighup;
 
-	debug = no_workstation = 0;
+	debug = no_workstation = addrpref = 0;
 	/*
 	 * XXX Carefull not to call anything that would malloc prior to setting
 	 * malloc_options, malloc will disregard malloc_options after the first
 	 * call.
 	 */
-	while ((ch = getopt(argc, argv, "dvw")) != -1) {
+	while ((ch = getopt(argc, argv, "46dvw")) != -1) {
 		switch (ch) {
+		case '4':
+			addrpref = AF_INET;
+			break;
+		case '6':
+			addrpref = AF_INET6;
+			break;
 		case 'd':
 			debug = 1;
 			malloc_options = "AFGJPX";
@@ -317,12 +348,25 @@ main(int argc, char *argv[])
 	kev_init();
 
 	/* create mdns socket */
-	conf->udp4.fd = mdns_sock();
+	if (addrpref == AF_UNSPEC || addrpref == AF_INET) {
+		conf->udp4.ss.ss_family = AF_INET;
+		conf->udp4.fd = mdns_sock(sstosa(&conf->udp4.ss));
 
-	/* setup mdns events */
-	event_set(&conf->udp4.ev, conf->udp4.fd, EV_READ|EV_PERSIST,
-	    recv_packet, NULL);
-	event_add(&conf->udp4.ev, NULL);
+		/* setup mdns events */
+		event_set(&conf->udp4.ev, conf->udp4.fd, EV_READ|EV_PERSIST,
+		    recv_packet, NULL);
+		event_add(&conf->udp4.ev, NULL);
+	}
+
+	if (addrpref == AF_UNSPEC || addrpref == AF_INET6) {
+		conf->udp6.ss.ss_family = AF_INET6;
+		conf->udp6.fd = mdns_sock(sstosa(&conf->udp6.ss));
+
+		/* setup mdns events */
+		event_set(&conf->udp6.ev, conf->udp6.fd, EV_READ|EV_PERSIST,
+		    recv_packet, NULL);
+		event_add(&conf->udp6.ev, NULL);
+	}
 
 	/* start interfaces */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {

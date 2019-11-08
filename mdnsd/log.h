@@ -38,5 +38,6 @@ const char *	if_type_name(enum iface_type);
 const char *	if_action_name(int);
 const char *	rr_type_name(uint16_t);
 char *		rrs_str(struct rrset *);
+char *		sa_str(struct sockaddr *);
 
 #endif /* _LOG_H_ */

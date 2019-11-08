@@ -282,3 +282,24 @@ rrs_str(struct rrset *rrs)
 
 	return (buf);
 }
+
+char *
+sa_str(struct sockaddr *addr) {
+	struct sockaddr_in *sa4;
+	struct sockaddr_in6 *sa6;
+	char addrstr[INET6_ADDRSTRLEN];
+	static char buf[INET6_ADDRSTRLEN + 6]; /* 6 is ':' + port (ushort) */
+
+	switch (addr->sa_family) {
+	case AF_INET:
+		sa4 = (struct sockaddr_in *)addr;
+		snprintf(buf, sizeof(buf), "%s:%u", satop(addr, addrstr), ntohs(sa4->sin_port));
+		break;
+	case AF_INET6:
+		sa6 = (struct sockaddr_in6 *)addr;
+		snprintf(buf, sizeof(buf), "%s:%u", satop(addr, addrstr), ntohs(sa6->sin6_port));
+		break;
+	}
+
+	return (buf);
+}

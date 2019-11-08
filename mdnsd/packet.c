@@ -157,26 +157,31 @@ is_mdns_addr(struct sockaddr *addr) {
 	return (0);
 }
 
-static void
-patch_addr(struct rr *rr, struct iface *iface)
+void
+rr_patch_addr(struct rr *rr, struct iface *iface)
 {
+	struct iface_addr *ifa;
 	struct sockaddr_in *sa4;
 	struct sockaddr_in6 *sa6;
 
 	switch (rr->rrs.type) {
 	case T_A:
-		sa4 = (struct sockaddr_in *)&if_get_addr(AF_INET, iface)->addr;
+		if ((ifa = if_get_addr(AF_INET, iface)) == NULL)
+			break;
+		sa4 = (struct sockaddr_in *)&ifa->addr;
 		memcpy(&rr->rdata.A, &sa4->sin_addr, sizeof(struct in_addr));
 		break;
 	case T_AAAA:
-		sa6 = (struct sockaddr_in6 *)&if_get_addr(AF_INET6, iface)->addr;
+		if ((ifa = if_get_addr(AF_INET6, iface)) == NULL)
+			break;
+		sa6 = (struct sockaddr_in6 *)&ifa->addr;
 		memcpy(&rr->rdata.AAAA, &sa6->sin6_addr, sizeof(struct in6_addr));
 		break;
 	}
 }
 
-static void
-patch_addrany(struct rr *rr)
+void
+rr_patch_addrany(struct rr *rr)
 {
 	switch (rr->rrs.type) {
 	case AF_INET:
@@ -190,18 +195,30 @@ patch_addrany(struct rr *rr)
 
 /* Send and receive packets */
 int
-send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr_in *dst)
+send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr *dst)
 {
+	int dstfd = 0;
+
 	/* set outgoing interface for multicast traffic */
-	if (IN_MULTICAST(ntohl(dst->sin_addr.s_addr)))
+	if (is_sockaddr_mcast(dst))
 		if (if_set_mcast(iface) == -1) {
 			log_warn("send_packet: error setting multicast "
 			    "interface, %s", iface->name);
 			return (-1);
 		}
 
-	if (sendto(conf->udp4.fd, pkt, len, 0,
-	    (struct sockaddr *)dst, sizeof(*dst)) == -1) {
+	switch (dst->sa_family) {
+	case AF_INET:
+		dstfd = conf->udp4.fd;
+		break;
+	case AF_INET6:
+		dstfd = conf->udp6.fd;
+		break;
+	default:
+		fatal("send_packet: Unknown AF");
+	}
+
+	if (sendto(dstfd, pkt, len, 0, dst, dst->sa_len) == -1) {
 		log_warn("send_packet: error sending packet on interface "
 			 "%s, len %zd", iface->name, len);
 		return (-1);
@@ -217,13 +234,12 @@ recv_packet(int fd, short event, void *bula)
 		struct cmsghdr hdr;
 		char	buf[CMSG_SPACE(sizeof(struct sockaddr_dl)) +
 		    CMSG_SPACE(sizeof(struct in_addr))];
+		char	in6buf[CMSG_SPACE(sizeof(struct in6_pktinfo))];
 	} cmsgbuf;
-	struct sockaddr_in	 ipsrc;
-	struct in_addr		 ipdst, mdns_addr;
+	struct sockaddr_storage	 ipsrc, ipdst;
 	struct iovec		 iov;
 	struct msghdr		 msg;
 	struct cmsghdr		*cmsg;
-	struct sockaddr_dl	*dst = NULL;
 	struct iface		*iface;
 	static u_int8_t		 buf[MAXPACKET];
 	struct rr		*rr;
@@ -232,11 +248,14 @@ recv_packet(int fd, short event, void *bula)
 	u_int8_t		*pbuf;
 	u_int16_t		 i, len;
 	ssize_t			 r;
+	u_short			 ifindex;
+	struct sockaddr_in	*sa4;
+	struct sockaddr_in6	*sa6;
+	struct in6_pktinfo	*spi;
 
 	if (event != EV_READ)
 		return;
 
-	inet_aton(ALL_MDNS_DEVICES, &mdns_addr);
 	bzero(&msg, sizeof(msg));
 	bzero(buf, sizeof(buf));
 	bzero(&ipdst, sizeof(ipdst));
@@ -262,35 +281,43 @@ recv_packet(int fd, short event, void *bula)
 	    cmsg = CMSG_NXTHDR(&msg, cmsg)) {
 		if (cmsg->cmsg_level == IPPROTO_IP &&
 		    cmsg->cmsg_type == IP_RECVIF) {
-			dst = (struct sockaddr_dl *)CMSG_DATA(cmsg);
-			continue;
-		}
-		if (cmsg->cmsg_level == IPPROTO_IP &&
+			ifindex = ((struct sockaddr_dl *)CMSG_DATA(cmsg))->sdl_index;
+		} else if (cmsg->cmsg_level == IPPROTO_IP &&
 		    cmsg->cmsg_type == IP_RECVDSTADDR) {
-			ipdst = *(struct in_addr *)CMSG_DATA(cmsg);
-			continue;
+			sa4 = (struct sockaddr_in *)&ipdst;
+			sa4->sin_family = AF_INET;
+			sa4->sin_len = sizeof(struct sockaddr_in);
+			sa4->sin_addr = *(struct in_addr *)CMSG_DATA(cmsg);
+		} else if (cmsg->cmsg_level == IPPROTO_IPV6 &&
+		    cmsg->cmsg_type == IPV6_PKTINFO) {
+			spi = (struct in6_pktinfo *)CMSG_DATA(cmsg);
+			sa6 = (struct sockaddr_in6 *)&ipdst;
+			sa6->sin6_family = AF_INET6;
+			sa6->sin6_len = sizeof(struct sockaddr_in6);
+			memcpy(&sa6->sin6_addr, &spi->ipi6_addr, sizeof(struct in6_addr));
+			ifindex = spi->ipi6_ifindex;
 		}
-
 	}
 	/*
 	 * We need a valid dst to lookup receiving interface, see below.
 	 * Ipdst must be filled so we can check for unicast answers, see below.
 	 */
-	if (dst == NULL || ipdst.s_addr == 0)
+	if (ifindex == 0 || ipdst.ss_family == 0)
+		return;
+	if ((iface = if_find_index(ifindex)) == NULL)
 		return;
 
 	len = (u_int16_t)r;
 
 	/* Check the packet is not from one of the local interfaces */
-	LIST_FOREACH(iface, &conf->iface_list, entry)
-		if (iface->addr.s_addr == ipsrc.sin_addr.s_addr)
-			return;
+	if (if_find_addr(sstosa(&ipsrc), iface) != NULL)
+		return;
 
 	if ((pkt = calloc(1, sizeof(*pkt))) == NULL)
 		fatal("calloc");
 	pkt_init(pkt);
 	pktcomp_reset(0, buf, len);
-	pkt->ipsrc = ipsrc;
+	memcpy(&pkt->ipsrc, &ipsrc, sizeof(ipsrc));
 	/*
 	 * Parse header, we'll use the HEADER structure in nameser.h
 	 */
@@ -306,31 +333,32 @@ recv_packet(int fd, short event, void *bula)
 	 * source ip address in the packet matches one of our subnets, if not,
 	 * drop it.
 	 */
-	if (pkt->h.qr == MDNS_RESPONSE && ipdst.s_addr != mdns_addr.s_addr) {
+	if (pkt->h.qr == MDNS_RESPONSE && is_mdns_addr(sstosa(&ipdst)) == 0) {
 		/* if_find_iface will try to match source address */
-		if ((iface = if_find_iface(dst->sdl_index,
-		    pkt->ipsrc.sin_addr)) == NULL) {
+		if (if_contains_addr(sstosa(&ipsrc), iface) == NULL) {
 			log_warn("recv_packet: "
-			    "cannot find a matching interface (1)");
+			    "cannot find a matching interface");
 			pkt_cleanup(pkt);
 			free(pkt);
 			return;
 		}
 	}
-	else /* Disregard source ip address, just find a matching iface */
-		if ((iface = if_find_index(dst->sdl_index)) == NULL) {
-			log_warn("recv_packet: "
-			    "cannot find a matching interface (2)");
-			pkt_cleanup(pkt);
-			free(pkt);
-			return;
-		}
 	/* Save the received interface */
 	pkt->iface = iface;
 
 	/* Check if this is a legacy dns packet */
-	if (ntohs(pkt->ipsrc.sin_port) != MDNS_PORT)
-		pkt->flags |= PKT_FLAG_LEGACY;
+	switch (ipsrc.ss_family) {
+	case AF_INET:
+		sa4 = (struct sockaddr_in *)&ipsrc;
+		if (ntohs(sa4->sin_port) != MDNS_PORT)
+			pkt->flags |= PKT_FLAG_LEGACY;
+		break;
+	case AF_INET6:
+		sa6 = (struct sockaddr_in6 *)&ipsrc;
+		if (ntohs(sa6->sin6_port) != MDNS_PORT)
+			pkt->flags |= PKT_FLAG_LEGACY;
+		break;
+	}
 
 	/* Parse question section */
 	if (pkt->h.qr == MDNS_QUERY)
@@ -407,8 +435,7 @@ recv_packet(int fd, short event, void *bula)
 
 		TAILQ_FOREACH(dpkt, &deferred_queue, entry) {
 			/* XXX: Should we compare source port as well ? */
-			if (dpkt->ipsrc.sin_addr.s_addr !=
-			    pkt->ipsrc.sin_addr.s_addr)
+			if (is_sockaddr_equal(sstosa(&dpkt->ipsrc), sstosa(&pkt->ipsrc)) != 0)
 				continue;
 			/* Found a match */
 			match = dpkt;
@@ -429,9 +456,8 @@ recv_packet(int fd, short event, void *bula)
 			pkt = match;
 		}
 		else
-			log_warnx("Got a continuation packet from %s:%s "
-			    "but no match", inet_ntoa(pkt->ipsrc.sin_addr),
-			    ntohs(pkt->ipsrc.sin_port));
+			log_warnx("Got a continuation packet from %s "
+			    "but no match", sa_str(sstosa(&pkt->ipsrc)));
 	}
 
 	/*
@@ -467,8 +493,7 @@ pkt_process(int unused, short event, void *v_pkt)
 	struct rr	*rr, *rraux;
 
 	if (event == EV_TIMEOUT) {
-		log_debug("pkt deferred from %s:%u",
-		    inet_ntoa(pkt->ipsrc.sin_addr), ntohs(pkt->ipsrc.sin_port));
+		log_debug("pkt deferred from %s", sa_str(sstosa(&pkt->ipsrc)));
 		TAILQ_REMOVE(&deferred_queue, pkt, entry);
 	}
 
@@ -534,9 +559,8 @@ bad:
 }
 
 int
-pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
+pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr *pdst)
 {
-	struct sockaddr_in	 all_mdns;
 	static u_int8_t		 buf[MAXPACKET];
 	struct question		*qst;
 	struct rr		*rr;
@@ -545,14 +569,9 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	ssize_t			 n, left;
 	int 			 inaddrany;
 
-	inet_aton(ALL_MDNS_DEVICES, &all_mdns.sin_addr);
-	all_mdns.sin_port   = htons(MDNS_PORT);
-	all_mdns.sin_family = AF_INET;
-	all_mdns.sin_len    = sizeof(struct sockaddr_in);
-
-	/* If dst not specified, send to mcast addr */
+	/* If dst not specified, die */
 	if (pdst == NULL)
-		pdst = &all_mdns;
+		fatal("pkt_sendto: Destination cannot be NULL");
 	if (iface->mtu > MAXPACKET) {
 		log_warnx("pkt_sendto: insane mtu");
 		return (-1);
@@ -611,10 +630,10 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 		 */
 		inaddrany = RR_INADDRANY(rr);
 		if (inaddrany)
-			patch_addr(rr, iface);
+			rr_patch_addr(rr, iface);
 		n = serialize_rr(rr, pbuf, left);
 		if (inaddrany)
-			patch_addrany(rr);
+			rr_patch_addrany(rr);
 		/* Unexpected n */
 		if (n > left) {
 			log_warnx("No space left on packet for an section.");
@@ -669,10 +688,10 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	LIST_FOREACH(rr, &pkt->nslist, pentry) {
 		inaddrany = RR_INADDRANY(rr);
 		if (inaddrany)
-			patch_addr(rr, iface);
+			rr_patch_addr(rr, iface);
 		n = serialize_rr(rr, pbuf, left);
 		if (inaddrany)
-			patch_addrany(rr);
+			rr_patch_addrany(rr);
 		if (n == -1 || n > left) {
 			return (-1);
 		}
@@ -685,10 +704,10 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	LIST_FOREACH(rr, &pkt->arlist, pentry) {
 		inaddrany = RR_INADDRANY(rr);
 		if (inaddrany)
-			patch_addr(rr, iface);
+			rr_patch_addr(rr, iface);
 		n = serialize_rr(rr, pbuf, left);
 		if (inaddrany)
-			patch_addrany(rr);
+			rr_patch_addrany(rr);
 		if (n == -1 || n > left) {
 			return (-1);
 		}
@@ -707,19 +726,40 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 int
 pkt_send(struct pkt *pkt, struct iface *iface)
 {
-	struct iface	*iface2;
 	int		 succ = 0;
 
-	if (iface != ALL_IFACE)
-		return (pkt_sendto(pkt, iface, NULL));
+	if (iface != ALL_IFACE) {
+		if (conf->udp4.fd != 0) {
+			if (pkt_sendto(pkt, iface, sstosa(&conf->udp4.ss))) {
+				log_warnx("Can't send IPV4 packet through %s", iface->name);
+				return(-1);
+			}
+		}
+		if (conf->udp6.fd != 0) {
+			if (pkt_sendto(pkt, iface, sstosa(&conf->udp6.ss))) {
+				log_warnx("Can't send IPV6 packet through %s", iface->name);
+				return(-1);
+			}
+		}
+		return (0);
+	}
 
-	LIST_FOREACH(iface2, &conf->iface_list, entry) {
-		if (iface2->state != IF_STA_ACTIVE)
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		if (iface->state != IF_STA_ACTIVE)
 			continue;
-		if (pkt_sendto(pkt, iface2, NULL) == -1)
-			log_warnx("Can't send packet through %s", iface2->name);
-		else
-			succ++;
+		if (conf->udp4.fd != 0) {
+			if (pkt_sendto(pkt, iface, sstosa(&conf->udp4.ss))) {
+				log_warnx("Can't send IPV4 packet through %s", iface->name);
+				continue;
+			}
+		}
+		if (conf->udp6.fd != 0) {
+			if (pkt_sendto(pkt, iface, sstosa(&conf->udp6.ss))) {
+				log_warnx("Can't send IPV6 packet through %s", iface->name);
+				continue;
+			}
+		}
+		succ++;
 	}
 	/* If we couldn't send to a single iface, consider an error */
 	if (succ == 0)
@@ -794,7 +834,7 @@ pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 int
 rr_set(struct rr *rr, char dname[MAXHOSTNAMELEN],
     u_int16_t type, u_int16_t class, u_int32_t ttl,
-    u_int flags, void *rdata, size_t rdlen)
+    u_int flags, const void *rdata, size_t rdlen)
 {
 	bzero(rr, sizeof(*rr));
 
@@ -1168,7 +1208,7 @@ handletype:
 		break;
 	case T_AAAA:
 		buf = *pbuf;
-		if (rdlen != 16) {
+		if (rdlen != IN6ADDRSZ) {
 			log_debug("Invalid AAAA record rdlen %u", rdlen);
 			return (-1);
 		}
@@ -1253,7 +1293,8 @@ pkt_handle_qst(struct pkt *pkt)
 	struct question		*qst, *lqst;
 	struct rr		*rr, *rrcopy, *rr_aux;
 	struct pkt		 sendpkt;
-	struct sockaddr_in	 dst, *pdst;
+	struct sockaddr		*pdst;
+	struct sockaddr_storage	 dst;
 	struct cache_node	*cn;
 	int			 probe;
 
@@ -1269,8 +1310,8 @@ pkt_handle_qst(struct pkt *pkt)
 	if (pkt->flags & PKT_FLAG_LEGACY) {
 		sendpkt.flags = pkt->flags;
 		sendpkt.h.id = pkt->h.id;
-		dst = pkt->ipsrc;
-		pdst = &dst;
+		memcpy(&dst, &pkt->ipsrc, sizeof(dst));
+		pdst = sstosa(&dst);
 	}
 
 	while ((qst = LIST_FIRST(&pkt->qlist)) != NULL) {
@@ -1281,8 +1322,8 @@ pkt_handle_qst(struct pkt *pkt)
 		 * be moved to pkt.
 		 */
 		if (qst->flags & QST_FLAG_UNIRESP) {
-			dst = pkt->ipsrc;
-			pdst = &dst;
+			memcpy(&dst, &pkt->ipsrc, sizeof(dst));
+			pdst = sstosa(&dst);
 		}
 
 		/* Check if it's a probe */
@@ -1528,7 +1569,7 @@ serialize_rdata(struct rr *rr, u_int8_t *buf, u_int16_t len)
 		PUTSHORT(rdlen, prdlen);
 		break;
 	case T_AAAA:
-		rdlen = 16;
+		rdlen = IN6ADDRSZ;
 		PUTSHORT(rdlen, pbuf);
 		len -= INT16SZ;
 		memcpy(pbuf, &rr->rdata.AAAA.s6_addr, rdlen);

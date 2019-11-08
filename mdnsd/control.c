@@ -724,34 +724,16 @@ control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
 	int r;
 	int inaddrany = RR_INADDRANY(rr);
-	struct sockaddr_in *sa4;
-	struct sockaddr_in6 *sa6;
 	
 	log_debug("control_send_rr (%s) %s", rr_type_name(rr->rrs.type),
 	    rr->rrs.dname);
 
 	/* Patch up T_A with the first interface address */
 	if (inaddrany)
-		switch (rr->rrs.type) {
-		case T_A:
-			sa4 = (struct sockaddr_in *)&if_get_addr(AF_INET, LIST_FIRST(&conf->iface_list))->addr;
-			memcpy(&rr->rdata.A, &sa4->sin_addr, sizeof(struct in_addr));
-			break;
-		case T_AAAA:
-			sa6 = (struct sockaddr_in6 *)&if_get_addr(AF_INET6, LIST_FIRST(&conf->iface_list))->addr;
-			memcpy(&rr->rdata.AAAA, &sa6->sin6_addr, sizeof(struct in6_addr));
-			break;
-		}
+		rr_patch_addr(rr, LIST_FIRST(&conf->iface_list));
 	r = mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr));
 	if (inaddrany)
-		switch (rr->rrs.type) {
-		case AF_INET:
-			rr->rdata.A.s_addr = INADDR_ANY;
-			break;
-		case AF_INET6:
-			memcpy(&rr->rdata.AAAA, &in6addr_any, sizeof(struct in6_addr));
-			break;
-		}
+		rr_patch_addrany(rr);
 
 	return (r);
 }
@@ -776,6 +758,7 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	struct sockaddr *addr;
 	struct sockaddr_in *sa4;
 	struct sockaddr_in6 *sa6;
+	struct iface_addr *ifa;
 
 	srv = txt = a = NULL;
 
@@ -794,10 +777,9 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	strlcpy(rrs.dname, srv->rdata.SRV.target, sizeof(rrs.dname));
 	rrs.type = T_A;
 	if ((a = cache_lookup(&rrs)) == NULL)
-		return (0);
-	rrs.type = T_AAAA;
-	if ((a = cache_lookup(&rrs)) == NULL)
-		return (0);
+		rrs.type = T_AAAA;
+		if ((a = cache_lookup(&rrs)) == NULL)
+			return (0);
 
 	bzero(&ms, sizeof(ms));
 	strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
@@ -810,10 +792,14 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	if (RR_INADDRANY(a)) {
 		switch (a->rrs.type) {
 		case T_A:
-			addr = (struct sockaddr *)&if_get_addr(AF_INET, LIST_FIRST(&conf->iface_list))->addr;
+			if ((ifa = if_get_addr(AF_INET, LIST_FIRST(&conf->iface_list))) == NULL)
+				return(1);
+			addr = (struct sockaddr *)&ifa->addr;
 			break;
 		case T_AAAA:
-			addr = (struct sockaddr *)&if_get_addr(AF_INET6, LIST_FIRST(&conf->iface_list))->addr;
+			if ((ifa = if_get_addr(AF_INET6, LIST_FIRST(&conf->iface_list))) == NULL)
+				return(1);
+			addr = (struct sockaddr *)&ifa->addr;
 			break;
 		}
 		memcpy(&ms.addr, addr, addr->sa_len);
@@ -828,9 +814,9 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 			break;
 		case T_AAAA:
 			sa6 = (struct sockaddr_in6 *)&ms.addr;
-			memcpy(&sa6->sin6_addr, &a->rdata.A, sizeof(struct in6_addr));
+			memcpy(&sa6->sin6_addr, &a->rdata.AAAA, sizeof(struct in6_addr));
 			sa6->sin6_len = sizeof(struct sockaddr_in6);
-			sa6->sin6_family = AF_INET;
+			sa6->sin6_family = AF_INET6;
 			break;
 		}
 	}

@@ -1063,6 +1063,7 @@ pge_initprimary(void)
 	    &inaddrany, sizeof(inaddrany));
 	if ((pge->rr[pge->nrr++] = auth_get(&rr)) == NULL)
 		goto bad;
+	bzero(&rr, sizeof(rr));
 	rr_set(&rr, conf->myname, T_AAAA, C_IN, TTL_HNAME,
 	    RR_FLAG_CACHEFLUSH,
 	    &in6addr_any, sizeof(struct in6_addr));

@@ -65,7 +65,8 @@ extern const struct in6_addr mdns_in6addr; /* assigned MDNS_IN6ADDR_INIT in mdns
 #define RR_UNIQ(rr) ((rr)->flags & RR_FLAG_CACHEFLUSH)
 #define RR_AUTH(rr) ((rr)->auth_refcount > 0)
 #define RR_INADDRANY(rr)						\
-	((rr)->rrs.type == T_A && (rr)->rdata.A.s_addr == INADDR_ANY)
+	(((rr)->rrs.type == T_A && (rr)->rdata.A.s_addr == INADDR_ANY)  \
+        || ((rr)->rrs.type == T_AAAA && IN6_ARE_ADDR_EQUAL(&(rr)->rdata.AAAA, &in6addr_any)))
 
 #define CACHE_FOREACH_RRS(var, rrs)		\
 	/* struct rr *var */			\
@@ -153,7 +154,7 @@ struct pkt {
 	LIST_HEAD(, rr)		anlist;	/* Answer section */
 	LIST_HEAD(, rr)		nslist;	/* Authority section */
 	LIST_HEAD(, rr)		arlist;	/* Additional section */
-	struct sockaddr_in	ipsrc;	/* Received ipsource */
+	struct sockaddr_storage	ipsrc;	/* Received ipsource */
 	struct event		timer;	/* Timer for truncated pkts */
 	struct iface	       *iface;  /* Received interface */
 };
@@ -317,8 +318,9 @@ struct iface_addr * if_contains_addr(struct sockaddr *, struct iface *);
 struct mdnsd_conf {
 	LIST_HEAD(, iface)	iface_list; /* Our interface list */
 	struct {
-		int		fd; /* MDNS socket bound to udp 5353 */
-		struct event	ev; /* MDNS socket event */
+		int		 	 fd; /* MDNS socket bound to udp 5353 */
+		struct event	 	 ev; /* MDNS socket event */
+		struct sockaddr_storage  ss; /* Socket for sendto() */
 	} udp4, udp6;
 	struct hinfo		hi;	    /* MDNS Host Info */
 	char			myname[MAXHOSTNAMELEN]; /* Hostname */
@@ -340,9 +342,9 @@ int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t, pid_t,
 /* packet.c */
 void	  packet_init(void);
 void	  recv_packet(int, short, void *);
-int	  send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+int	  send_packet(struct iface *, void *, size_t, struct sockaddr *);
 void	  pkt_process(int, short, void *);
-int	  pkt_sendto(struct pkt *, struct iface *, struct sockaddr_in *);
+int	  pkt_sendto(struct pkt *, struct iface *, struct sockaddr *);
 int	  pkt_send(struct pkt *, struct iface *);
 void	  pkt_init(struct pkt *);
 void	  pkt_cleanup(struct pkt *);
@@ -354,7 +356,9 @@ int	  rr_rdata_cmp(struct rr *, struct rr *);
 u_int32_t rr_ttl_left(struct rr *);
 void	  pktcomp_reset(int, u_int8_t *, u_int16_t);
 int	  rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
-    u_int32_t, u_int, void *, size_t);
+    u_int32_t, u_int, const void *, size_t);
+void rr_patch_addr(struct rr *, struct iface *);
+void rr_patch_addrany(struct rr *);
 
 /* mdns.c */
 void		 publish_init(void);
