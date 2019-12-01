@@ -54,10 +54,6 @@ struct {
 } kev_state;
 
 
-#ifdef __FreeBSD__
-#define rtm_hdrlen rtm_msglen
-#endif
-
 #define ROUNDUP(a) \
 	((a) > 0 ? (1 + (((a) - 1) | (sizeof(long) - 1))) : sizeof(long))
 
@@ -147,8 +143,12 @@ kev_dispatch_msg(int fd, short event, void *bula)
 		if (iface == NULL) /* this interface isn't configured */
 			continue;
 
-		sa = (struct sockaddr *)(buf + rtm->rtm_hdrlen);
-		get_rtaddrs(rtm->rtm_addrs, sa, rti_info);
+#ifdef __OpenBSD__
+		sa = (struct sockaddr *)(next + rtm->rtm_hdrlen);
+#else
+		sa = (struct sockaddr *)(next + sizeof(struct ifa_msghdr));
+#endif
+		get_rtaddrs(((struct ifa_msghdr *)rtm)->ifam_addrs, sa, rti_info);
 
 		switch (rtm->rtm_type) {
 		case RTM_IFINFO:
