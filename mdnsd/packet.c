@@ -201,7 +201,7 @@ send_packet(struct iface *iface, void *pkt, size_t len, struct sockaddr *dst)
 
 	/* set outgoing interface for multicast traffic */
 	if (is_sockaddr_mcast(dst))
-		if (if_set_mcast(iface) == -1) {
+		if (if_set_mcast(dst->sa_family, iface) == -1) {
 			log_warn("send_packet: error setting multicast "
 			    "interface, %s", iface->name);
 			return (-1);
@@ -729,7 +729,7 @@ pkt_send(struct pkt *pkt, struct iface *iface)
 	int		 succ = 0;
 
 	if (iface != ALL_IFACE) {
-		if (conf->udp4.fd != 0) {
+		if (conf->udp4.fd != 0 && if_get_addr(AF_INET, iface) != NULL) {
 			if (pkt_sendto(pkt, iface, sstosa(&conf->udp4.ss))) {
 				log_warnx("Can't send IPV4 packet through %s", iface->name);
 				return(-1);
@@ -747,7 +747,7 @@ pkt_send(struct pkt *pkt, struct iface *iface)
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		if (iface->state != IF_STA_ACTIVE)
 			continue;
-		if (conf->udp4.fd != 0) {
+		if (conf->udp4.fd != 0 && if_get_addr(AF_INET, iface) != NULL) {
 			if (pkt_sendto(pkt, iface, sstosa(&conf->udp4.ss))) {
 				log_warnx("Can't send IPV4 packet through %s", iface->name);
 				continue;

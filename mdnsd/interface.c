@@ -150,7 +150,8 @@ if_get_addr(sa_family_t af, struct iface *iface)
 
 /* Find the interface address that matches the given addr */
 struct iface_addr *
-if_find_addr(struct sockaddr *addr, struct iface *iface) {
+if_find_addr(struct sockaddr *addr, struct iface *iface)
+{
 	struct iface_addr *ifa;
 	struct sockaddr_in *sa4, *addr4;
 	struct sockaddr_in6 *sa6, *addr6;
@@ -240,17 +241,19 @@ if_act_start(struct iface *iface)
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
 	case IF_TYPE_BROADCAST:
-		if (if_join_group(iface)) {
-			log_warn("if_act_start: error joining group %s, "
-			    "interface %s", ALL_MDNS_DEVICES, iface->name);
-			return (-1);
-		}
-
-		iface->state = IF_STA_ACTIVE;
 		break;
 	default:
 		fatalx("if_act_start: unknown interface type");
 	}
+
+	if ((conf->udp4.fd != 0 && if_join_group(AF_INET, iface)) ||
+	    (conf->udp6.fd != 0 && if_join_group(AF_INET6, iface))) {
+		log_warn("if_act_start: error joining group %s, "
+		    "interface %s", ALL_MDNS_DEVICES, iface->name);
+		return (-1);
+	}
+
+	iface->state = IF_STA_ACTIVE;
 
 	/* publish all groups on this interface */
 	pg_publish_byiface(iface);
@@ -264,13 +267,15 @@ if_act_reset(struct iface *iface)
 	switch (iface->type) {
 	case IF_TYPE_POINTOPOINT:
 	case IF_TYPE_BROADCAST:
-		if (if_leave_group(iface)) {
-			log_warn("if_act_reset: error leaving group %s, "
-			    "interface %s", ALL_MDNS_DEVICES, iface->name);
-		}
 		break;
 	default:
 		fatalx("if_act_reset: unknown interface type");
+	}
+
+	if ((conf->udp4.fd != 0 && if_leave_group(AF_INET, iface)) ||
+	    (conf->udp6.fd != 0 && if_leave_group(AF_INET6, iface))) {
+		log_warn("if_act_reset: error leaving group %s, "
+		    "interface %s", ALL_MDNS_DEVICES, iface->name);
 	}
 
 	return (0);
@@ -314,6 +319,7 @@ if_set_mcast_ttl(sa_family_t af, int fd, u_int8_t ttl)
 		break;
 	default:
 		log_warn("if_set_mcast_ttl: AF not found");
+		return (-1);
 	};
 
 	return (0);
@@ -347,13 +353,14 @@ if_set_opt(sa_family_t af, int fd)
 		break;
 	default:
 		log_warn("if_set_opt: AF not found");
+		return (-1);
 	};
 
 	return (0);
 }
 
 int
-if_set_mcast(struct iface *iface)
+if_set_mcast(sa_family_t af, struct iface *iface)
 {
 	struct iface_addr *ifa;
 
@@ -366,27 +373,30 @@ if_set_mcast(struct iface *iface)
 		return (-0);
 	}
 
-	if (conf->udp4.fd != 0) {
-		ifa = if_get_addr(AF_INET, iface);
-
-		if (ifa == NULL)
-			fatal("if_set_mcast: No IP address found for iface");
-
-		if (setsockopt(conf->udp4.fd, IPPROTO_IP, IP_MULTICAST_IF,
-		    &((struct sockaddr_in *)&ifa->addr)->sin_addr.s_addr, sizeof(in_addr_t)) < 0) {
-			log_debug("if_set_mcast: error setting "
-				"IP_MULTICAST_IF, interface %s", iface->name);
-			return (-1);
+	switch (af) {
+	case AF_INET:
+		if ((ifa = if_get_addr(AF_INET, iface)) == NULL) {
+			log_warn("if_set_mcast: No IP address found for iface");
+		} else {
+			if (setsockopt(conf->udp4.fd, IPPROTO_IP, IP_MULTICAST_IF,
+			    &((struct sockaddr_in *)&ifa->addr)->sin_addr.s_addr, sizeof(in_addr_t)) < 0) {
+				log_debug("if_set_mcast: error setting "
+					"IP_MULTICAST_IF, interface %s", iface->name);
+				return (-1);
+			}
 		}
-	}
-
-	if (conf->udp6.fd != 0) {
+		break;
+	case AF_INET6:
 		if (setsockopt(conf->udp6.fd, IPPROTO_IPV6, IPV6_MULTICAST_IF,
 		    &iface->ifindex, sizeof(u_int)) < 0) {
 			log_debug("if_set_mcast: error setting "
 				"IPV6_MULTICAST_IF, interface %s", iface->name);
 			return (-1);
 		}
+		break;
+	default:
+		log_warn("if_set_mcast: AF not found");
+		return (-1);
 	}
 
 	return (0);
@@ -416,6 +426,7 @@ if_set_mcast_loop(sa_family_t af, int fd)
 		break;
 	default:
 		log_warn("if_set_mcast_loop: AF not found");
+		return (-1);
 	};
 
 	return (0);
@@ -433,7 +444,7 @@ if_set_recvbuf(int fd)
 }
 
 int
-if_join_group(struct iface *iface)
+if_join_group(sa_family_t af, struct iface *iface)
 {
 	struct ip_mreq	 mreq;
 	struct ipv6_mreq mreq6;
@@ -447,7 +458,8 @@ if_join_group(struct iface *iface)
 		fatalx("if_join_group: unknown interface type");
 	}
 
-	if (conf->udp4.fd != 0) {
+	switch (af) {
+	case AF_INET:
 		if ((ifa = if_get_addr(AF_INET, iface)) == NULL) {
 			log_warn("if_join_group: No IP address found for iface");
 		} else {
@@ -460,9 +472,8 @@ if_join_group(struct iface *iface)
 				return (-1);
 			}
 		}
-	}
-
-	if (conf->udp6.fd != 0) {
+		break;
+	case AF_INET6:
 		memcpy(&mreq6.ipv6mr_multiaddr, &mdns_in6addr, sizeof(struct in6_addr));
 		mreq6.ipv6mr_interface = iface->ifindex;
 
@@ -471,13 +482,17 @@ if_join_group(struct iface *iface)
 			log_warn("Error joining IPV6 group");
 			return (-1);
 		}
+		break;
+	default:
+		log_warn("if_join_group: AF not found");
+		return (-1);
 	}
 
 	return (0);
 }
 
 int
-if_leave_group(struct iface *iface)
+if_leave_group(sa_family_t af, struct iface *iface)
 {
 	struct ip_mreq	 mreq;
 	struct ipv6_mreq mreq6;
@@ -491,7 +506,8 @@ if_leave_group(struct iface *iface)
 		fatalx("if_leave_group: unknown interface type");
 	}
 
-	if (conf->udp4.fd != 0) {
+	switch (af) {
+	case AF_INET:
 		if ((ifa = if_get_addr(AF_INET, iface)) == NULL) {
 			log_warn("if_leave_group: No IP address found for iface");
 		} else {
@@ -502,15 +518,18 @@ if_leave_group(struct iface *iface)
 			    (void *)&mreq, sizeof(mreq)) < 0)
 				return (-1);
 		}
-	}
-
-	if (conf->udp6.fd != 0) {
+		break;
+	case AF_INET6:
 		memcpy(&mreq6.ipv6mr_multiaddr, &mdns_in6addr, sizeof(struct in6_addr));
 		mreq6.ipv6mr_interface = iface->ifindex;
 
 		if (setsockopt(conf->udp6.fd, IPPROTO_IPV6, IPV6_LEAVE_GROUP,
 		    (void *)&mreq6, sizeof(mreq6)) < 0)
 			return (-1);
+		break;
+	default:
+		log_warn("if_leave_group: AF not found");
+		return (-1);
 	}
 
 	return (0);
@@ -616,8 +635,15 @@ if_newaddr(struct sockaddr *addr, struct sockaddr *dstaddr, struct sockaddr *net
 	if (netmask != NULL)
 		memcpy(&ifa->netmask, netmask, netmask->sa_len);
 
-	/* TODO add address to the cache */
+	/* XXX add address to the cache */
+	/*
+	rr = rr_set;
+	if ((cn = cache_lookup_dname(rr->rrs.dname)) == NULL)
+		return (cache_insert(rr));
+	*/
+
 	LIST_INSERT_HEAD(&iface->addr_list, ifa, entry);
+	/* XXX If this is the first AF_INET address added after startup, then trigger if_group_join here */
 	return;
 }
 
@@ -629,9 +655,10 @@ if_deladdr(struct sockaddr *addr, struct iface *iface)
 	ifa = if_find_addr(addr, iface);
 	if (ifa == NULL) {
 		log_warn("if_deladdr: Address not found");
-	} else {
-		LIST_REMOVE(ifa, entry);
-		/* TODO purge address from cache */
-		free(ifa);
+		return;
 	}
+
+	LIST_REMOVE(ifa, entry);
+	/* TODO purge address from cache */
+	free(ifa);
 }
