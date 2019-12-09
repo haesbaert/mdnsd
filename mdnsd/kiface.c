@@ -76,7 +76,9 @@ void
 kev_init(void)
 {
 	int		opt = 0, rcvbuf, default_rcvbuf;
+#ifdef __OpenBSD__
 	int		rtfilter;
+#endif
 	socklen_t	optlen;
 
 	if ((kev_state.fd = socket(AF_ROUTE, SOCK_RAW, 0)) == -1)
