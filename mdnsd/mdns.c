@@ -1072,6 +1072,10 @@ pge_initprimary(void)
 	/* T_PTR record reverse address, one for every address */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
 		LIST_FOREACH(ifa, &iface->addr_list, entry) {
+			if (pge->nrr >= PGE_RR_MAX) {
+				warnx("Cannot fit all interface addresses in pge->rr.");
+				goto bad;
+			}
 			bzero(&rr, sizeof(rr));
 			reversstr(revaddr, sstosa(&ifa->addr));
 			rr_set(&rr, revaddr, T_PTR, C_IN, TTL_HNAME,

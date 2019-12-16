@@ -218,7 +218,7 @@ enum pge_state {
 	PGE_STA_PUBLISHED,		/* Finished announcing */
 };
 
-#define PGE_RR_MAX 32
+#define PGE_RR_MAX 1024
 struct pge {
 	TAILQ_ENTRY(pge)  entry;	/* pge_queue link */
 	LIST_ENTRY(pge)	  pge_entry;	/* Group link */
