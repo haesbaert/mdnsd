@@ -364,7 +364,7 @@ show_valid_args(const struct token *table)
 			fprintf(stderr, "  <application protocol>\n");
 			break;
 		case FLAGS:
-			fprintf(stderr, "  <-ahst>\n");
+			fprintf(stderr, "  <-6ahst>\n");
 			break;
 		case BRFLAGS:
 			fprintf(stderr, "  <-r>\n");
