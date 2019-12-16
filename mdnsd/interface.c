@@ -621,7 +621,10 @@ if_new(const char *name)
 void
 if_newaddr(struct sockaddr *addr, struct sockaddr *dstaddr, struct sockaddr *netmask, struct iface *iface)
 {
+	int idx;
+	struct rr rr;
 	struct iface_addr *ifa;
+	char revaddr[MAXHOSTNAMELEN];
 
 	ifa = calloc(1, sizeof(struct iface_addr));
 	if (ifa == NULL)
@@ -635,12 +638,22 @@ if_newaddr(struct sockaddr *addr, struct sockaddr *dstaddr, struct sockaddr *net
 	if (netmask != NULL)
 		memcpy(&ifa->netmask, netmask, netmask->sa_len);
 
-	/* XXX add address to the cache */
-	/*
-	rr = rr_set;
-	if ((cn = cache_lookup_dname(rr->rrs.dname)) == NULL)
-		return (cache_insert(rr));
-	*/
+	/* add address to the pge and cache */
+	bzero(&rr, sizeof(rr));
+	reversstr(revaddr, sstosa(&ifa->addr));
+	rr_set(&rr, revaddr, T_PTR, C_IN, TTL_HNAME,
+	    RR_FLAG_CACHEFLUSH,
+	    conf->myname, sizeof(conf->myname));
+	for (idx = 0; idx < conf->pge_primary->nrr; idx++) {
+		if (conf->pge_primary->rr[idx] == NULL)
+			break;
+	}
+
+	if (idx == conf->pge_primary->nrr)
+		conf->pge_primary->nrr += 1;
+
+	if ((conf->pge_primary->rr[idx] = auth_get(&rr)) == NULL)
+		warnx("Could not add address to Primary PGE.");
 
 	LIST_INSERT_HEAD(&iface->addr_list, ifa, entry);
 	/* XXX If this is the first AF_INET address added after startup, then trigger if_group_join here */
@@ -650,7 +663,10 @@ if_newaddr(struct sockaddr *addr, struct sockaddr *dstaddr, struct sockaddr *net
 void
 if_deladdr(struct sockaddr *addr, struct iface *iface)
 {
+	int idx;
+	struct rr *rr;
 	struct iface_addr *ifa;
+	char revaddr[MAXHOSTNAMELEN];
 
 	ifa = if_find_addr(addr, iface);
 	if (ifa == NULL) {
@@ -659,6 +675,21 @@ if_deladdr(struct sockaddr *addr, struct iface *iface)
 	}
 
 	LIST_REMOVE(ifa, entry);
-	/* TODO purge address from cache */
+
+	/* remove address from primary pge and cache */
+	reversstr(revaddr, addr);
+	for (idx = 0; idx < conf->pge_primary->nrr; idx++) {
+		rr = conf->pge_primary->rr[idx];
+		if (rr == NULL)
+			continue;
+		if (rr->rrs.type == T_PTR && strcmp(revaddr, rr->rrs.dname) == 0)
+			break;
+	}
+
+	if (idx < conf->pge_primary->nrr) {
+		auth_release(rr);
+		conf->pge_primary->rr[idx] = NULL;
+	}
+
 	free(ifa);
 }
