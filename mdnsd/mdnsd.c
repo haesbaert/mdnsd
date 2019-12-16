@@ -53,7 +53,7 @@ usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s [-dw] ifname [ifnames...]\n",
+	fprintf(stderr, "usage: %s [-46dw] ifname [ifnames...]\n",
 	    __progname);
 	fprintf(stderr, "usage: %s -v\n", __progname);
 	exit(1);
