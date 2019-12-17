@@ -723,17 +723,19 @@ int
 control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
 	int r;
-	int inaddrany = RR_INADDRANY(rr);
+	struct rr anrr;
+	struct iface *ifi;
 	
 	log_debug("control_send_rr (%s) %s", rr_type_name(rr->rrs.type),
 	    rr->rrs.dname);
 
 	/* Patch up T_A with the first interface address */
-	if (inaddrany)
-		rr_patch_addr(rr, LIST_FIRST(&conf->iface_list));
+	if (RR_INADDRANY(rr)) {
+		ifi = LIST_FIRST(&conf->iface_list);
+		rr_patch_ifa(&anrr, LIST_FIRST(&ifi->addr_list));
+		rr = &anrr;
+	}
 	r = mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr));
-	if (inaddrany)
-		rr_patch_addrany(rr);
 
 	return (r);
 }

@@ -158,38 +158,26 @@ is_mdns_addr(struct sockaddr *addr) {
 }
 
 void
-rr_patch_addr(struct rr *rr, struct iface *iface)
-{
-	struct iface_addr *ifa;
+rr_patch_ifa(struct rr *rr, struct iface_addr *ifa) {
 	struct sockaddr_in *sa4;
 	struct sockaddr_in6 *sa6;
 
-	switch (rr->rrs.type) {
-	case T_A:
-		if ((ifa = if_get_addr(AF_INET, iface)) == NULL)
-			break;
-		sa4 = (struct sockaddr_in *)&ifa->addr;
-		memcpy(&rr->rdata.A, &sa4->sin_addr, sizeof(struct in_addr));
-		break;
-	case T_AAAA:
-		if ((ifa = if_get_addr(AF_INET6, iface)) == NULL)
-			break;
-		sa6 = (struct sockaddr_in6 *)&ifa->addr;
-		memcpy(&rr->rdata.AAAA, &sa6->sin6_addr, sizeof(struct in6_addr));
-		break;
-	}
-}
-
-void
-rr_patch_addrany(struct rr *rr)
-{
-	switch (rr->rrs.type) {
+	bzero(rr, sizeof(struct rr));
+	switch (ifa->addr.ss_family) {
 	case AF_INET:
-		rr->rdata.A.s_addr = INADDR_ANY;
+		sa4 = (struct sockaddr_in *)&ifa->addr;
+		rr_set(rr, conf->myname, T_A, C_IN, TTL_HNAME,
+		    RR_FLAG_CACHEFLUSH,
+		    &sa4->sin_addr, sizeof(struct in_addr));
 		break;
 	case AF_INET6:
-		memcpy(&rr->rdata.AAAA, &in6addr_any, sizeof(struct in6_addr));
+		sa6 = (struct sockaddr_in6 *)&ifa->addr;
+		rr_set(rr, conf->myname, T_AAAA, C_IN, TTL_HNAME,
+		    RR_FLAG_CACHEFLUSH,
+		    &sa6->sin6_addr, sizeof(struct in6_addr));
 		break;
+	default:
+		log_warnx("AF not supported.");
 	}
 }
 
@@ -563,11 +551,12 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr *pdst)
 {
 	static u_int8_t		 buf[MAXPACKET];
 	struct question		*qst;
-	struct rr		*rr;
+	struct rr		*rr, *orr, anrr;
 	HEADER			*h;
 	u_int8_t		*pbuf;
 	ssize_t			 n, left;
-	int 			 inaddrany;
+	struct iface_addr	*ifa;
+	struct iface		*ifi;
 
 	/* If dst not specified, die */
 	if (pdst == NULL)
@@ -576,6 +565,8 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr *pdst)
 		log_warnx("pkt_sendto: insane mtu");
 		return (-1);
 	}
+	ifa = NULL;
+	ifi = NULL;
 	bzero(buf, sizeof(buf));
 	left = iface->mtu - 28;
 	h    = (HEADER *) buf;
@@ -623,17 +614,21 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr *pdst)
 		int in_retry;
 
 		in_retry = 0;
-	retry:
+
 		/*
-		 * Have to patch T_A if INADDR_ANY with the correct interface
-		 * address.
+                 * If we are reading from the Primary PGE, we want return all
+                 * the addresses for all interfaces.
 		 */
-		inaddrany = RR_INADDRANY(rr);
-		if (inaddrany)
-			rr_patch_addr(rr, iface);
+		if (ifi == NULL && ifa == NULL && RR_INADDRANY(rr)) {
+			ifi = iface;
+			ifa = LIST_FIRST(&ifi->addr_list);
+			orr = rr;
+			rr = &anrr;
+		}
+	retry:
+		if (ifa != NULL)
+			rr_patch_ifa(rr, ifa);
 		n = serialize_rr(rr, pbuf, left);
-		if (inaddrany)
-			rr_patch_addrany(rr);
 		/* Unexpected n */
 		if (n > left) {
 			log_warnx("No space left on packet for an section.");
@@ -682,16 +677,22 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr *pdst)
 		h->ancount++;
 		pbuf += n;
 		left -= n;
+		if (ifa != NULL) {
+			if ((ifa = LIST_NEXT(ifa, entry)) != NULL) {
+				goto retry;
+			}
+			rr = orr;
+		}
 	}
 
 	/* Append all authorities, they must fit a single packet. */
 	LIST_FOREACH(rr, &pkt->nslist, pentry) {
-		inaddrany = RR_INADDRANY(rr);
-		if (inaddrany)
-			rr_patch_addr(rr, iface);
-		n = serialize_rr(rr, pbuf, left);
-		if (inaddrany)
-			rr_patch_addrany(rr);
+		if (RR_INADDRANY(rr)) {
+			rr_patch_ifa(&anrr, LIST_FIRST(&iface->addr_list));
+			n = serialize_rr(&anrr, pbuf, left);
+		} else {
+			n = serialize_rr(rr, pbuf, left);
+		}
 		if (n == -1 || n > left) {
 			return (-1);
 		}
@@ -702,12 +703,12 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr *pdst)
 
 	/* Append all additionals, they must fit a single packet. */
 	LIST_FOREACH(rr, &pkt->arlist, pentry) {
-		inaddrany = RR_INADDRANY(rr);
-		if (inaddrany)
-			rr_patch_addr(rr, iface);
-		n = serialize_rr(rr, pbuf, left);
-		if (inaddrany)
-			rr_patch_addrany(rr);
+		if (RR_INADDRANY(rr)) {
+			rr_patch_ifa(&anrr, LIST_FIRST(&iface->addr_list));
+			n = serialize_rr(&anrr, pbuf, left);
+		} else {
+			n = serialize_rr(rr, pbuf, left);
+		}
 		if (n == -1 || n > left) {
 			return (-1);
 		}

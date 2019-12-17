@@ -357,8 +357,7 @@ u_int32_t rr_ttl_left(struct rr *);
 void	  pktcomp_reset(int, u_int8_t *, u_int16_t);
 int	  rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, u_int, const void *, size_t);
-void rr_patch_addr(struct rr *, struct iface *);
-void rr_patch_addrany(struct rr *);
+void rr_patch_ifa(struct rr *, struct iface_addr *);
 
 /* mdns.c */
 void		 publish_init(void);
