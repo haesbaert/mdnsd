@@ -616,7 +616,7 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr *pdst)
 		in_retry = 0;
 
 		/*
-                 * If we are reading from the Primary PGE, we want return all
+                 * If we are reading from the Primary PGE, return all
                  * the addresses for all interfaces.
 		 */
 		if (ifi == NULL && ifa == NULL && RR_INADDRANY(rr)) {

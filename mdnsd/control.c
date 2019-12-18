@@ -724,16 +724,29 @@ control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
 	int r;
 	struct rr anrr;
-	struct iface *ifi;
+	struct iface *iface;
+	struct iface_addr *ifa;
 	
 	log_debug("control_send_rr (%s) %s", rr_type_name(rr->rrs.type),
 	    rr->rrs.dname);
 
 	/* Patch up T_A with the first interface address */
 	if (RR_INADDRANY(rr)) {
-		ifi = LIST_FIRST(&conf->iface_list);
-		rr_patch_ifa(&anrr, LIST_FIRST(&ifi->addr_list));
-		rr = &anrr;
+		LIST_FOREACH(iface, &conf->iface_list, entry) {
+			switch (rr->rrs.type) {
+			case T_A:
+				ifa = if_get_addr(AF_INET, iface);
+				break;
+			case T_AAAA:
+				ifa = if_get_addr(AF_INET6, iface);
+				break;
+			}
+			if (ifa != NULL) {
+				rr_patch_ifa(&anrr, ifa);
+				rr = &anrr;
+				break;
+			}
+		}
 	}
 	r = mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr));
 
@@ -757,9 +770,9 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	struct rr *srv, *txt, *a;
 	struct rrset rrs;
 	struct mdns_service ms;
-	struct sockaddr *addr;
 	struct sockaddr_in *sa4;
 	struct sockaddr_in6 *sa6;
+	struct iface *iface;
 	struct iface_addr *ifa;
 
 	srv = txt = a = NULL;
@@ -792,19 +805,22 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	ms.port = srv->rdata.SRV.port;
 	/* Patch up T_A with the first interface address */
 	if (RR_INADDRANY(a)) {
-		switch (a->rrs.type) {
-		case T_A:
-			if ((ifa = if_get_addr(AF_INET, LIST_FIRST(&conf->iface_list))) == NULL)
-				return(1);
-			addr = (struct sockaddr *)&ifa->addr;
-			break;
-		case T_AAAA:
-			if ((ifa = if_get_addr(AF_INET6, LIST_FIRST(&conf->iface_list))) == NULL)
-				return(1);
-			addr = (struct sockaddr *)&ifa->addr;
-			break;
+		LIST_FOREACH(iface, &conf->iface_list, entry) {
+			switch (a->rrs.type) {
+			case T_A:
+				ifa = if_get_addr(AF_INET, iface);
+				break;
+			case T_AAAA:
+				ifa = if_get_addr(AF_INET6, iface);
+				break;
+			}
+			if (ifa != NULL) {
+				memcpy(&ms.addr, &ifa->addr, ifa->addr.ss_len);
+				break;
+			}
 		}
-		memcpy(&ms.addr, addr, addr->sa_len);
+		if (ifa == NULL)
+			return (-1);
 	} else {
 		bzero(&ms.addr, sizeof(struct sockaddr_storage));
 		switch (a->rrs.type) {
