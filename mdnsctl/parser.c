@@ -25,6 +25,7 @@
 #include <err.h>
 #include <errno.h>
 #include <limits.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -363,7 +364,7 @@ show_valid_args(const struct token *table)
 			fprintf(stderr, "  <application protocol>\n");
 			break;
 		case FLAGS:
-			fprintf(stderr, "  <-ahst>\n");
+			fprintf(stderr, "  <-6ahst>\n");
 			break;
 		case BRFLAGS:
 			fprintf(stderr, "  <-r>\n");
@@ -384,19 +385,43 @@ show_valid_args(const struct token *table)
 }
 
 int
-parse_addr(const char *word, struct in_addr *addr)
+parse_addr(const char *word, struct sockaddr_storage *addr)
 {
-	struct in_addr	ina;
+	int error;
+	struct addrinfo hints, *rai;
+	struct sockaddr_in *sa4;
+	struct sockaddr_in6 *sa6;
 
-	if (word == NULL || !isdigit(*word))
+	if (word == NULL)
 		return (0);
 
-	bzero(addr, sizeof(struct in_addr));
-	bzero(&ina, sizeof(ina));
-	if (inet_pton(AF_INET, word, &ina)) {
-		addr->s_addr = ina.s_addr;
-		return (1);
+	bzero(addr, sizeof(struct sockaddr_storage));
+	bzero(&hints, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_flags = AI_NUMERICHOST;
+	if ((error = getaddrinfo(word, NULL, &hints, &rai)) != 0) {
+		fprintf(stderr, "parse_addr: %s\n", gai_strerror(error));
+		return (0);
 	}
+	switch (rai->ai_family) {
+	case AF_INET:
+		sa4 = (struct sockaddr_in *)addr;
+		sa4->sin_len = sizeof(struct sockaddr_in);
+		sa4->sin_family = rai->ai_family;
+		memcpy(sa4, rai->ai_addr, rai->ai_addrlen);
+		return (1);
+		break;
+	case AF_INET6:
+		sa6 = (struct sockaddr_in6 *)addr;
+		sa6->sin6_len = sizeof(struct sockaddr_in6);
+		sa6->sin6_family = rai->ai_family;
+		memcpy(sa6, rai->ai_addr, rai->ai_addrlen);
+		return (1);
+		break;
+	default:
+		fprintf(stderr, "parse_addr: Address family not supported: %i\n", rai->ai_family);
+	}
+	freeaddrinfo(rai);
 
 	return (0);
 }
@@ -446,6 +471,10 @@ parse_flags(const char *word, int *flags)
 		switch (*word) {
 		case 'a':
 			*flags |= F_A;
+			r++;
+			break;
+		case '6':
+			*flags |= F_AAAA;
 			r++;
 			break;
 		case 'h':

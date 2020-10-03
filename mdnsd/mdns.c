@@ -323,7 +323,7 @@ cache_schedrev(struct rr *rr)
 		break;
 	}
 /*	log_debug("cache_schedrev: schedule rr type: %s, name: %s (%d)", */
-/*	    rr_type_name(rr->type), rr->dname, tv.tv_sec); */
+/*	    rr_type_name(rr->rrs.type), rr->rrs.dname, tv.tv_sec); */
 
 	rr->revision++;
 
@@ -341,7 +341,7 @@ cache_rev(int unused, short event, void *v_rr)
 	struct pkt	 pkt;
 
 /*	log_debug("cache_rev: timeout rr type: %s, name: %s (%u)", */
-/*	    rr_type_name(rr->type), rr->dname, rr->ttl); */
+/*	    rr_type_name(rr->rrs.type), rr->rrs.dname, rr->ttl); */
 
 	/* If we have an active question, try to renew the answer */
 	if ((qst = question_lookup(&rr->rrs)) != NULL) {
@@ -1034,6 +1034,7 @@ pge_initprimary(void)
 	struct rr	 rr;
 	char		 revaddr[MAXHOSTNAMELEN];
 	struct in_addr	 inaddrany;
+	struct iface_addr *ifa;
 
 	if ((conf->pge_primary = calloc(1, sizeof(*pge))) == NULL)
 		fatal("calloc");
@@ -1062,15 +1063,27 @@ pge_initprimary(void)
 	    &inaddrany, sizeof(inaddrany));
 	if ((pge->rr[pge->nrr++] = auth_get(&rr)) == NULL)
 		goto bad;
+	bzero(&rr, sizeof(rr));
+	rr_set(&rr, conf->myname, T_AAAA, C_IN, TTL_HNAME,
+	    RR_FLAG_CACHEFLUSH,
+	    &in6addr_any, sizeof(struct in6_addr));
+	if ((pge->rr[pge->nrr++] = auth_get(&rr)) == NULL)
+		goto bad;
 	/* T_PTR record reverse address, one for every address */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		bzero(&rr, sizeof(rr));
-		reversstr(revaddr, &iface->addr);
-		rr_set(&rr, revaddr, T_PTR, C_IN, TTL_HNAME,
-		    RR_FLAG_CACHEFLUSH,
-		    conf->myname, sizeof(conf->myname));
-		if ((pge->rr[pge->nrr++] = auth_get(&rr)) == NULL)
-			goto bad;
+		LIST_FOREACH(ifa, &iface->addr_list, entry) {
+			if (pge->nrr >= PGE_RR_MAX) {
+				warnx("Cannot fit all interface addresses in pge->rr.");
+				goto bad;
+			}
+			bzero(&rr, sizeof(rr));
+			reversstr(revaddr, sstosa(&ifa->addr));
+			rr_set(&rr, revaddr, T_PTR, C_IN, TTL_HNAME,
+			    RR_FLAG_CACHEFLUSH,
+			    conf->myname, sizeof(conf->myname));
+			if ((pge->rr[pge->nrr++] = auth_get(&rr)) == NULL)
+				goto bad;
+		}
 	}
 	/* T_HINFO record */
 	bzero(&rr, sizeof(rr));

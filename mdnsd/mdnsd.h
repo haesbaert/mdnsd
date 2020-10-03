@@ -35,6 +35,12 @@
 
 #define MDNSD_USER		"_mdnsd"
 #define ALL_MDNS_DEVICES	"224.0.0.251"
+#define MDNS_INADDR		((in_addr_t)0xe00000fb)
+#define MDNS_IN6ADDR_INIT	{{{ 0xff, 0x02, 0x00, 0x00, \
+				   0x00, 0x00, 0x00, 0x00,  \
+				   0x00, 0x00, 0x00, 0x00,  \
+				   0x00, 0x00, 0x00, 0xfb }}}
+extern const struct in6_addr mdns_in6addr; /* assigned MDNS_IN6ADDR_INIT in mdnsd.c */
 #define MDNS_TTL		255
 #define MDNS_PORT		5353
 #define TTL_A			120
@@ -59,7 +65,8 @@
 #define RR_UNIQ(rr) ((rr)->flags & RR_FLAG_CACHEFLUSH)
 #define RR_AUTH(rr) ((rr)->auth_refcount > 0)
 #define RR_INADDRANY(rr)						\
-	((rr)->rrs.type == T_A && (rr)->rdata.A.s_addr == INADDR_ANY)
+	(((rr)->rrs.type == T_A && (rr)->rdata.A.s_addr == INADDR_ANY)  \
+        || ((rr)->rrs.type == T_AAAA && IN6_ARE_ADDR_EQUAL(&(rr)->rdata.AAAA, &in6addr_any)))
 
 #define CACHE_FOREACH_RRS(var, rrs)		\
 	/* struct rr *var */			\
@@ -77,6 +84,13 @@
 		 ((var) = LIST_FIRST(&(var2)->rr_list)) : NULL ;	\
 	     (var2) != NULL && (var) != NULL;				\
 	     (var) = LIST_NEXT(var, centry))				\
+
+/* as defined in OpenBSD sys/socket.h */
+static inline struct sockaddr *
+sstosa(struct sockaddr_storage *ss)
+{
+	return ((struct sockaddr *)(ss));
+}
 
 struct rrset {
 	LIST_ENTRY(rrset) entry;	       /* List link */
@@ -112,6 +126,7 @@ struct rr {
 		/* IPv4 Address, if INADDR_ANY, use the interface address, this
 		 * is how we can have the same RR with multiple addresses */
 		struct in_addr	A;
+		struct in6_addr	AAAA;
 		char		CNAME[MAXHOSTNAMELEN]; /* CNAME */
 		char		PTR[MAXHOSTNAMELEN];   /* PTR */
 		char		NS[MAXHOSTNAMELEN];    /* Name server */
@@ -139,7 +154,7 @@ struct pkt {
 	LIST_HEAD(, rr)		anlist;	/* Answer section */
 	LIST_HEAD(, rr)		nslist;	/* Authority section */
 	LIST_HEAD(, rr)		arlist;	/* Additional section */
-	struct sockaddr_in	ipsrc;	/* Received ipsource */
+	struct sockaddr_storage	ipsrc;	/* Received ipsource */
 	struct event		timer;	/* Timer for truncated pkts */
 	struct iface	       *iface;  /* Received interface */
 };
@@ -203,7 +218,7 @@ enum pge_state {
 	PGE_STA_PUBLISHED,		/* Finished announcing */
 };
 
-#define PGE_RR_MAX 32
+#define PGE_RR_MAX 1024
 struct pge {
 	TAILQ_ENTRY(pge)  entry;	/* pge_queue link */
 	LIST_ENTRY(pge)	  pge_entry;	/* Group link */
@@ -226,17 +241,6 @@ struct pge {
 TAILQ_HEAD(, pg)  pg_queue;
 /* Publish Group Entry Queue, should hold all publishing group entries */
 TAILQ_HEAD(, pge) pge_queue;
-
-struct kif {
-	char			ifname[IF_NAMESIZE];
-	u_int64_t		baudrate;
-	int			flags;
-	int			mtu;
-	u_short			ifindex;
-	u_int8_t		media_type;
-	u_int8_t		link_state;
-	struct ether_addr	ea;
-};
 
 /* interface states */
 #define IF_STA_DOWN		0x01
@@ -265,17 +269,18 @@ enum iface_type {
 	IF_TYPE_POINTOMULTIPOINT
 };
 
+struct iface_addr {
+	LIST_ENTRY(iface_addr)	 entry;
+	struct sockaddr_storage	 addr, dstaddr, netmask;
+};
+
 struct iface {
 	LIST_ENTRY(iface)	 entry;
 	struct pge		*pge_workstation;
 	char			 name[IF_NAMESIZE];
-	struct in_addr		 addr;
-	struct in_addr		 dst;
-	struct in_addr		 mask;
 	u_int64_t		 baudrate;
 	time_t			 uptime;
 	u_int			 mtu;
-	int			 fd; /* XXX */
 	int			 state;
 	u_short			 ifindex;
 	u_int16_t		 cost;
@@ -285,6 +290,7 @@ struct iface {
 	u_int8_t		 media_type;
 	u_int8_t		 linkstate;
 	struct ether_addr	 ea;
+	LIST_HEAD(,iface_addr)	 addr_list;
 };
 
 /* interface.c */
@@ -293,22 +299,29 @@ const char	*if_event_name(int);
 int		 if_act_reset(struct iface *);
 int		 if_act_start(struct iface *);
 int		 if_fsm(struct iface *, enum iface_event);
-int		 if_join_group(struct iface *, struct in_addr *);
-int		 if_leave_group(struct iface *, struct in_addr *);
-int		 if_set_mcast(struct iface *);
-int		 if_set_mcast_loop(int);
-int		 if_set_mcast_ttl(int, u_int8_t);
-int		 if_set_opt(int);
-int		 if_set_tos(int, int);
+int		 if_join_group(sa_family_t, struct iface *);
+int		 if_leave_group(sa_family_t, struct iface *);
+int		 if_set_mcast(sa_family_t, struct iface *);
+int		 if_set_mcast_loop(sa_family_t, int);
+int		 if_set_mcast_ttl(sa_family_t, int, u_int8_t);
+int		 if_set_opt(sa_family_t, int);
 struct iface	*if_find_index(u_short);
 struct iface	*if_find_iface(unsigned int, struct in_addr);
-struct iface	*if_new(struct kif *);
+struct iface	*if_new(const char *);
 void		 if_set_recvbuf(int);
+void		 if_newaddr(struct sockaddr *, struct sockaddr *, struct sockaddr *, struct iface *);
+void		 if_deladdr(struct sockaddr *, struct iface *);
+struct iface_addr * if_get_addr(sa_family_t, struct iface *);
+struct iface_addr * if_find_addr(struct sockaddr *, struct iface *);
+struct iface_addr * if_contains_addr(struct sockaddr *, struct iface *);
 
 struct mdnsd_conf {
 	LIST_HEAD(, iface)	iface_list; /* Our interface list */
-	int			mdns_sock;  /* MDNS socket bound to udp 5353 */
-	struct event		ev_mdns;    /* MDNS socket event */
+	struct {
+		int		 	 fd; /* MDNS socket bound to udp 5353 */
+		struct event	 	 ev; /* MDNS socket event */
+		struct sockaddr_storage  ss; /* Socket for sendto() */
+	} udp4, udp6;
 	struct hinfo		hi;	    /* MDNS Host Info */
 	char			myname[MAXHOSTNAMELEN]; /* Hostname */
 	struct pge	       *pge_primary;/* Primary pge addresses */
@@ -316,15 +329,11 @@ struct mdnsd_conf {
 };
 
 /* kiface.c */
-int		 kif_init(void);
-void		 kif_cleanup(void);
-struct kif	*kif_findname(char *);
 void		 kev_init(void);
 void		 kev_cleanup(void);
 
 /* mdnsd.c */
 int	peersuser(int);
-void	reversstr(char [MAXHOSTNAMELEN], struct in_addr *);
 int	mdnsd_imsg_compose_ctl(struct ctl_conn *, u_int16_t, void *, u_int16_t);
 void	imsg_event_add(struct imsgev *);
 int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t, pid_t,
@@ -333,9 +342,9 @@ int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t, pid_t,
 /* packet.c */
 void	  packet_init(void);
 void	  recv_packet(int, short, void *);
-int	  send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+int	  send_packet(struct iface *, void *, size_t, struct sockaddr *);
 void	  pkt_process(int, short, void *);
-int	  pkt_sendto(struct pkt *, struct iface *, struct sockaddr_in *);
+int	  pkt_sendto(struct pkt *, struct iface *, struct sockaddr *);
 int	  pkt_send(struct pkt *, struct iface *);
 void	  pkt_init(struct pkt *);
 void	  pkt_cleanup(struct pkt *);
@@ -347,7 +356,8 @@ int	  rr_rdata_cmp(struct rr *, struct rr *);
 u_int32_t rr_ttl_left(struct rr *);
 void	  pktcomp_reset(int, u_int8_t *, u_int16_t);
 int	  rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
-    u_int32_t, u_int, void *, size_t);
+    u_int32_t, u_int, const void *, size_t);
+void rr_patch_ifa(struct rr *, struct iface_addr *);
 
 /* mdns.c */
 void		 publish_init(void);

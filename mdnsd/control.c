@@ -68,6 +68,7 @@ control_lookup(struct ctl_conn *c, struct imsg *imsg)
 
 	switch (mlkup.type) {
 	case T_A:		/* FALLTHROUGH */
+	case T_AAAA:		/* FALLTHROUGH */
 	case T_HINFO:		/* FALLTHROUGH */
 	case T_PTR:		/* FALLTHROUGH */
 	case T_SRV:		/* FALLTHROUGH */
@@ -722,17 +723,32 @@ int
 control_send_rr(struct ctl_conn *c, struct rr *rr, int msgtype)
 {
 	int r;
-	int inaddrany = RR_INADDRANY(rr);
+	struct rr anrr;
+	struct iface *iface;
+	struct iface_addr *ifa;
 	
 	log_debug("control_send_rr (%s) %s", rr_type_name(rr->rrs.type),
 	    rr->rrs.dname);
 
 	/* Patch up T_A with the first interface address */
-	if (inaddrany)
-		rr->rdata.A.s_addr = LIST_FIRST(&conf->iface_list)->addr.s_addr;
+	if (RR_INADDRANY(rr)) {
+		LIST_FOREACH(iface, &conf->iface_list, entry) {
+			switch (rr->rrs.type) {
+			case T_A:
+				ifa = if_get_addr(AF_INET, iface);
+				break;
+			case T_AAAA:
+				ifa = if_get_addr(AF_INET6, iface);
+				break;
+			}
+			if (ifa != NULL) {
+				rr_patch_ifa(&anrr, ifa);
+				rr = &anrr;
+				break;
+			}
+		}
+	}
 	r = mdnsd_imsg_compose_ctl(c, msgtype, rr, sizeof(*rr));
-	if (inaddrany)
-		rr->rdata.A.s_addr = INADDR_ANY;
 
 	return (r);
 }
@@ -754,6 +770,10 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	struct rr *srv, *txt, *a;
 	struct rrset rrs;
 	struct mdns_service ms;
+	struct sockaddr_in *sa4;
+	struct sockaddr_in6 *sa6;
+	struct iface *iface;
+	struct iface_addr *ifa;
 
 	srv = txt = a = NULL;
 
@@ -772,7 +792,9 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	strlcpy(rrs.dname, srv->rdata.SRV.target, sizeof(rrs.dname));
 	rrs.type = T_A;
 	if ((a = cache_lookup(&rrs)) == NULL)
-		return (0);
+		rrs.type = T_AAAA;
+		if ((a = cache_lookup(&rrs)) == NULL)
+			return (0);
 
 	bzero(&ms, sizeof(ms));
 	strlcpy(ms.name, srv->rrs.dname, sizeof(ms.name));
@@ -782,10 +804,40 @@ control_try_answer_ms(struct ctl_conn *c, char dname[MAXHOSTNAMELEN])
 	ms.weight = srv->rdata.SRV.weight;
 	ms.port = srv->rdata.SRV.port;
 	/* Patch up T_A with the first interface address */
-	if (RR_INADDRANY(a))
-		ms.addr = LIST_FIRST(&conf->iface_list)->addr;
-	else
-		ms.addr = a->rdata.A;
+	if (RR_INADDRANY(a)) {
+		LIST_FOREACH(iface, &conf->iface_list, entry) {
+			switch (a->rrs.type) {
+			case T_A:
+				ifa = if_get_addr(AF_INET, iface);
+				break;
+			case T_AAAA:
+				ifa = if_get_addr(AF_INET6, iface);
+				break;
+			}
+			if (ifa != NULL) {
+				memcpy(&ms.addr, &ifa->addr, ifa->addr.ss_len);
+				break;
+			}
+		}
+		if (ifa == NULL)
+			return (-1);
+	} else {
+		bzero(&ms.addr, sizeof(struct sockaddr_storage));
+		switch (a->rrs.type) {
+		case T_A:
+			sa4 = (struct sockaddr_in *)&ms.addr;
+			memcpy(&sa4->sin_addr, &a->rdata.A, sizeof(struct in_addr));
+			sa4->sin_len = sizeof(struct sockaddr_in);
+			sa4->sin_family = AF_INET;
+			break;
+		case T_AAAA:
+			sa6 = (struct sockaddr_in6 *)&ms.addr;
+			memcpy(&sa6->sin6_addr, &a->rdata.AAAA, sizeof(struct in6_addr));
+			sa6->sin6_len = sizeof(struct sockaddr_in6);
+			sa6->sin6_family = AF_INET6;
+			break;
+		}
+	}
 	if (control_send_ms(c, &ms, IMSG_CTL_RESOLVE) == -1)
 		log_warnx("control_send_ms error");
 

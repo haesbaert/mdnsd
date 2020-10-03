@@ -45,15 +45,7 @@
 #define RT_BUF_SIZE		16384
 #define MAX_RTSOCK_BUF		128 * 1024
 
-struct kif_node {
-	RB_ENTRY(kif_node)	 entry;
-	struct kif		 k;
-};
-
 void	get_rtaddrs(int, struct sockaddr *, struct sockaddr **);
-int	kif_compare(struct kif_node *, struct kif_node *);
-int	kif_insert(struct kif_node *);
-int	fetchifs(int);
 void	kev_dispatch_msg(int, short, void *);
 
 struct {
@@ -62,59 +54,8 @@ struct {
 } kev_state;
 
 
-RB_HEAD(kif_tree, kif_node) kit;
-RB_PROTOTYPE(kif_tree, kif_node, entry, kif_compare);
-RB_GENERATE(kif_tree, kif_node, entry, kif_compare);
-
-int
-kif_init(void)
-{
-	RB_INIT(&kit);
-
-	if (fetchifs(0) == -1)
-		return (-1);
-
-	return (0);
-}
-
-struct kif *
-kif_findname(char *ifname)
-{
-	struct kif_node	*kif;
-
-	RB_FOREACH(kif, kif_tree, &kit)
-	    if (!strcmp(ifname, kif->k.ifname))
-		    return (&kif->k);
-
-	return (NULL);
-}
-
-int
-kif_insert(struct kif_node *kif)
-{
-	if (RB_INSERT(kif_tree, &kit, kif) != NULL) {
-		log_warnx("RB_INSERT(kif_tree, &kit, kif)");
-		free(kif);
-		return (-1);
-	}
-
-	return (0);
-}
-
-int
-kif_compare(struct kif_node *a, struct kif_node *b)
-{
-	return (b->k.ifindex - a->k.ifindex);
-}
-
-#define	ROUNDUP(a, size)						\
-	(((a) & ((size) - 1)) ? (1 + ((a) | ((size) - 1))) : (a))
-
-void
-kif_cleanup(void)
-{
-	/* TODO */
-}
+#define ROUNDUP(a) \
+	((a) > 0 ? (1 + (((a) - 1) | (sizeof(long) - 1))) : sizeof(long))
 
 void
 get_rtaddrs(int addrs, struct sockaddr *sa, struct sockaddr **rti_info)
@@ -125,98 +66,19 @@ get_rtaddrs(int addrs, struct sockaddr *sa, struct sockaddr **rti_info)
 		if (addrs & (1 << i)) {
 			rti_info[i] = sa;
 			sa = (struct sockaddr *)((char *)(sa) +
-			    ROUNDUP(sa->sa_len, sizeof(long)));
+			    ROUNDUP(sa->sa_len));
 		} else
 			rti_info[i] = NULL;
 	}
-}
-
-int
-fetchifs(int ifindex)
-{
-	size_t			 len;
-	int			 mib[6];
-	char			*buf, *next, *lim;
-	struct if_msghdr	 ifm;
-	struct kif_node		*kif;
-	struct sockaddr		*sa, *rti_info[RTAX_MAX];
-	struct sockaddr_dl	*sdl;
-
-	mib[0] = CTL_NET;
-	mib[1] = AF_ROUTE;
-	mib[2] = 0;
-	mib[3] = AF_INET;
-	mib[4] = NET_RT_IFLIST;
-	mib[5] = ifindex;
-
-	if (sysctl(mib, 6, NULL, &len, NULL, 0) == -1) {
-		log_warn("sysctl");
-		return (-1);
-	}
-	if ((buf = malloc(len)) == NULL) {
-		log_warn("fetchif");
-		return (-1);
-	}
-	if (sysctl(mib, 6, buf, &len, NULL, 0) == -1) {
-		log_warn("sysctl");
-		free(buf);
-		return (-1);
-	}
-
-	lim = buf + len;
-	for (next = buf; next < lim; next += ifm.ifm_msglen) {
-		memcpy(&ifm, next, sizeof(ifm));
-		if (ifm.ifm_version != RTM_VERSION)
-			continue;
-		if (ifm.ifm_type != RTM_IFINFO)
-			continue;
-
-		sa = (struct sockaddr *)(next + sizeof(ifm));
-		get_rtaddrs(ifm.ifm_addrs, sa, rti_info);
-
-		if ((kif = calloc(1, sizeof(struct kif_node))) == NULL) {
-			log_warn("fetchifs");
-			free(buf);
-			return (-1);
-		}
-
-		kif->k.ifindex = ifm.ifm_index;
-		kif->k.flags = ifm.ifm_flags;
-		kif->k.link_state = ifm.ifm_data.ifi_link_state;
-		kif->k.media_type = ifm.ifm_data.ifi_type;
-		kif->k.baudrate = ifm.ifm_data.ifi_baudrate;
-		kif->k.mtu = ifm.ifm_data.ifi_mtu;
-		if ((sa = rti_info[RTAX_IFP]) != NULL)
-			if (sa->sa_family == AF_LINK) {
-				sdl = (struct sockaddr_dl *)sa;
-				if (sdl->sdl_nlen >= sizeof(kif->k.ifname))
-					memcpy(kif->k.ifname, sdl->sdl_data,
-					    sizeof(kif->k.ifname) - 1);
-				else if (sdl->sdl_nlen > 0)
-					memcpy(kif->k.ifname, sdl->sdl_data,
-					    sdl->sdl_nlen);
-				if (sdl->sdl_alen > 0) {
-					if (sdl->sdl_alen != ETHER_ADDR_LEN)
-						log_warnx("sdl->sdl_alen = %u\n",
-						    sdl->sdl_alen);
-					memcpy(&kif->k.ea,
-					    sdl->sdl_data + sdl->sdl_nlen,
-					    MIN(sizeof(kif->k.ea),
-					    sdl->sdl_alen));
-				}
-
-				/* string already terminated via calloc() */
-			}
-		kif_insert(kif);
-	}
-	free(buf);
-	return (0);
 }
 
 void
 kev_init(void)
 {
 	int		opt = 0, rcvbuf, default_rcvbuf;
+#ifdef __OpenBSD__
+	int		rtfilter;
+#endif
 	socklen_t	optlen;
 
 	if ((kev_state.fd = socket(AF_ROUTE, SOCK_RAW, 0)) == -1)
@@ -228,6 +90,13 @@ kev_init(void)
 	if (setsockopt(kev_state.fd, SOL_SOCKET, SO_USELOOPBACK,
 	    &opt, sizeof(opt)) == -1)
 		log_warn("kev: setsockopt");	/* not fatal ? why ? */
+
+#ifdef __OpenBSD__
+	/* filter only for messages that can be handled */
+	rtfilter = ROUTE_FILTER(RTM_IFINFO) | ROUTE_FILTER(RTM_NEWADDR) | ROUTE_FILTER(RTM_DELADDR);
+	if (setsockopt(kev_state.fd, AF_ROUTE, ROUTE_MSGFILTER, &rtfilter, sizeof(rtfilter)) == -1)
+		log_warn("kev: route_msgfilter");
+#endif
 
 	/* grow receive buffer, don't wanna miss messages */
 	optlen = sizeof(default_rcvbuf);
@@ -257,6 +126,7 @@ kev_dispatch_msg(int fd, short event, void *bula)
 	struct rt_msghdr	*rtm;
 	struct if_msghdr	 ifm;
 	struct iface		*iface;
+	struct sockaddr		*sa, *rti_info[RTAX_MAX];
 
 	if ((n = read(kev_state.fd, &buf, sizeof(buf))) == -1)
 		fatal("kev_dispatch_rtmsg: read error");
@@ -275,6 +145,13 @@ kev_dispatch_msg(int fd, short event, void *bula)
 		if (iface == NULL) /* this interface isn't configured */
 			continue;
 
+#ifdef __OpenBSD__
+		sa = (struct sockaddr *)(next + rtm->rtm_hdrlen);
+#else
+		sa = (struct sockaddr *)(next + sizeof(struct ifa_msghdr));
+#endif
+		get_rtaddrs(((struct ifa_msghdr *)rtm)->ifam_addrs, sa, rti_info);
+
 		switch (rtm->rtm_type) {
 		case RTM_IFINFO:
 			log_debug("RTM_IFINFO");
@@ -287,14 +164,12 @@ kev_dispatch_msg(int fd, short event, void *bula)
 			log_debug("RTM_IFANNOUNCE");
 			break;
 		case RTM_NEWADDR:
-			/* XXX this is SO wrong */
-			if_fsm(iface, IF_EVT_UP);
+			if_newaddr(rti_info[RTAX_IFA], rti_info[RTAX_DST], rti_info[RTAX_NETMASK], iface);
 			log_debug("RTM_NEWADDR");
 			break;
 		case RTM_DELADDR:
-			/* XXX this is SO wrong */
+			if_deladdr(rti_info[RTAX_IFA], iface);
 			log_debug("RTM_DELADDR");
-			if_fsm(iface, IF_EVT_DOWN);
 			break;
 		default:
 			/* ignore for now */
