@@ -18,7 +18,7 @@
 .Os
 .Sh NAME
 .Nm mdnsctl
-.Nd control the Multicast Domain Server daemon
+.Nd control the Multicast DNS server daemon
 .Sh SYNOPSIS
 .Nm
 .Ar command
@@ -28,8 +28,8 @@ The
 .Nm
 program controls the
 .Xr mdnsd 8
-daemon, it can perform simples MDNS lookups, as well as browsing and publishing
-MDNS/DNS-SD services.
+daemon, it can perform simples mDNS lookups, as well as browsing and publishing
+mDNS/DNS-SD services.
 .Pp
 The following commands are available:
 .Bl -tag -width xxxxxx
@@ -55,7 +55,6 @@ SRV record (Service). Unimplemented.
 .It Cm -t
 TXT record (Text). Unimplemented.
 .El
-.Pp
 .It Cm rlookup Ar a.b.c.d
 Reverse lookup an IPv4 address in the
 .Ar a.b.c.d
@@ -120,7 +119,7 @@ form.
 .El
 .Sh FILES
 .Bl -tag -width "/var/run/mdnsctl.sockXX" -compact
-.It /var/run/mdnsctl.sock
+.It Pa /var/run/mdnsctl.sock
 .Ux Ns -domain
 socket used for communication with
 .Xr mdnsd 8 .
@@ -128,31 +127,38 @@ socket used for communication with
 .Sh EXAMPLES
 The following examples demonstrate some basic uses of
 .Nm .
-.Bd -literal
-# Lookup a host A and HINFO record
-mdnsctl lookup -ah foobar.local
-
-# Reverse lookup an address
-mdnsctl rlookup 192.168.8.32
-
-# Browse up all services in the local network
-mdnsctl browse
-
-# Browse and resolve all services
-mdnsctl browse -r
-
-# Browse and resolve all services and output in script-readable format
-mdnsctl browse -rs
-
-# Browse and resolve all the http services in the local network
-mdnsctl browse -r http tcp
-
-# Publish a simple ftp service
-mdnsctl publish myftp ftp tcp 21 "user=foobar"
-
-# Proxy publish a https service that has www.mysite.com as the target
-mdnsctl proxy mysite https tcp 443 www.mysite.com 12.3.45.6 "user=foobar"
-.Ed
+.Pp
+Lookup a host A and HINFO record
+.Pp
+.Dl # mdnsctl lookup -ah foobar.local
+.Pp
+Reverse lookup an address
+.Pp
+.Dl # mdnsctl rlookup 192.168.8.32
+.Pp
+Browse up all services in the local network
+.Pp
+.Dl # mdnsctl browse
+.Pp
+Browse and resolve all services
+.Pp
+.Dl # mdnsctl browse -r
+.Pp
+Browse and resolve all services and output in script-readable format
+.Pp
+.Dl # mdnsctl browse -rs
+.Pp
+Browse and resolve all the http services in the local network
+.Pp
+.Dl # mdnsctl browse -r http tcp
+.Pp
+Publish a simple ftp service
+.Pp
+.Dl # mdnsctl publish myftp ftp tcp 21 "user=foobar"
+.Pp
+Proxy publish a https service that has www.mysite.com as the target
+.Pp
+.Dl # mdnsctl proxy mysite https tcp 443 www.mysite.com 12.3.45.6 "user=foobar"
 .Sh SEE ALSO
 .Xr mdnsd 8
 .Sh LICENSE
@@ -163,4 +169,4 @@ The
 .Nm
 program version 0.1 was released in 13 February 2011.
 .Sh AUTHORS
-Christiano Farina Haesbaert <haesbaert@haesbaert.org>
+.An Christiano Farina Haesbaert Aq Mt haesbaert@haesbaert.org
