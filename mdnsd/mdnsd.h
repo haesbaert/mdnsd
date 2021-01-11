@@ -305,6 +305,26 @@ struct iface	*if_find_iface(unsigned int, struct in_addr);
 struct iface	*if_new(struct kif *);
 void		 if_set_recvbuf(int);
 
+/* Host type is any (wildcard), an ipv4 or a mac address */
+enum reflect_rule_htype {
+	REFLECT_HTYPE_ANY,
+	REFLECT_HTYPE_IP4,
+	REFLECT_HTYPE_MAC
+};
+
+TAILQ_HEAD(reflect_rules, reflect_rule);
+
+struct reflect_rule {
+	TAILQ_ENTRY(reflect_rule) entry;
+	char			sname[MAXHOSTNAMELEN];	/* as _http._tcp, or any */
+	enum reflect_rule_htype htype;			/* match host ? */
+	int			accept;			/* deny if !accept */
+	union {
+		struct ether_addr mac; /* mac address if HTYPE_MAC */
+		struct in_addr ip4;	 /* ipv4 if HTYPE_IP4 */
+	} u;
+};
+
 struct mdnsd_conf {
 	LIST_HEAD(, iface)	iface_list; /* Our interface list */
 	int			mdns_sock;  /* MDNS socket bound to udp 5353 */
@@ -313,6 +333,8 @@ struct mdnsd_conf {
 	char			myname[MAXHOSTNAMELEN]; /* Hostname */
 	struct pge	       *pge_primary;/* Primary pge addresses */
 	int			no_workstation;	/* Don't publish workstation */
+	struct reflect_rules	reflect_rules;
+	/* TAILQ_HEAD(, reflect_rule) reflect_rules; /\* What should we reflect *\/ */
 };
 
 /* kiface.c */
@@ -331,21 +353,27 @@ int	imsg_compose_event(struct imsgev *, u_int16_t, u_int32_t, pid_t,
     int, void *, u_int16_t);
 
 /* packet.c */
-void	  packet_init(void);
-void	  recv_packet(int, short, void *);
-int	  send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
-void	  pkt_process(int, short, void *);
-int	  pkt_sendto(struct pkt *, struct iface *, struct sockaddr_in *);
-int	  pkt_send(struct pkt *, struct iface *);
-void	  pkt_init(struct pkt *);
-void	  pkt_cleanup(struct pkt *);
-void	  pkt_add_question(struct pkt *, struct question *);
-void	  pkt_add_anrr(struct pkt *, struct rr *);
-void	  pkt_add_nsrr(struct pkt *, struct rr *);
-void	  pkt_add_arrr(struct pkt *, struct rr *);
-int	  rr_rdata_cmp(struct rr *, struct rr *);
-u_int32_t rr_ttl_left(struct rr *);
-void	  pktcomp_reset(int, u_int8_t *, u_int16_t);
+void		 packet_init(void);
+void		 recv_packet(int, short, void *);
+int		 send_packet(struct iface *, void *, size_t, struct sockaddr_in *);
+void		 pkt_process(int, short, void *);
+struct pkt	*pkt_reflect_filter(struct pkt *);
+void		 pkt_reflect(struct pkt *);
+int		 pkt_sendto(struct pkt *, struct iface *, struct sockaddr_in *);
+int		 pkt_send(struct pkt *, struct iface *);
+void		 pkt_init(struct pkt *);
+struct pkt	*pkt_dup(struct pkt *);
+void		 pkt_cleanup(struct pkt *);
+void		 pkt_free(struct pkt *);
+void		 pkt_add_question(struct pkt *, struct question *);
+void		 pkt_add_anrr(struct pkt *, struct rr *);
+void		 pkt_remove_anrr(struct pkt *, struct rr *);
+void		 pkt_add_nsrr(struct pkt *, struct rr *);
+void		 pkt_add_arrr(struct pkt *, struct rr *);
+void		 pkt_remove_arrr(struct pkt *, struct rr *);
+int		 rr_rdata_cmp(struct rr *, struct rr *);
+u_int32_t	 rr_ttl_left(struct rr *);
+void		 pktcomp_reset(int, u_int8_t *, u_int16_t);
 int	  rr_set(struct rr *, char [MAXHOSTNAMELEN], u_int16_t, u_int16_t,
     u_int32_t, u_int, void *, size_t);
 

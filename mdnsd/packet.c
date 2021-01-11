@@ -207,8 +207,7 @@ recv_packet(int fd, short event, void *bula)
 	 * Parse header, we'll use the HEADER structure in nameser.h
 	 */
 	if (pkt_parse_header(&pbuf, &len, pkt) == -1) {
-		pkt_cleanup(pkt);
-		free(pkt);
+		pkt_free(pkt);
 		return;
 	}
 
@@ -224,8 +223,7 @@ recv_packet(int fd, short event, void *bula)
 		    pkt->ipsrc.sin_addr)) == NULL) {
 			log_warn("recv_packet: "
 			    "cannot find a matching interface (1)");
-			pkt_cleanup(pkt);
-			free(pkt);
+			pkt_free(pkt);
 			return;
 		}
 	}
@@ -233,8 +231,7 @@ recv_packet(int fd, short event, void *bula)
 		if ((iface = if_find_index(dst->sdl_index)) == NULL) {
 			log_warn("recv_packet: "
 			    "cannot find a matching interface (2)");
-			pkt_cleanup(pkt);
-			free(pkt);
+			pkt_free(pkt);
 			return;
 		}
 	/* Save the received interface */
@@ -248,8 +245,7 @@ recv_packet(int fd, short event, void *bula)
 	if (pkt->h.qr == MDNS_QUERY)
 		for (i = 0; i < pkt->h.qdcount; i++)
 			if (pkt_parse_question(&pbuf, &len, pkt) == -1) {
-				pkt_cleanup(pkt);
-				free(pkt);
+				pkt_free(pkt);
 				return;
 			}
 	/* Parse RR sections */
@@ -259,8 +255,7 @@ recv_packet(int fd, short event, void *bula)
 		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
 			log_warnx("Can't parse AN RR");
 			free(rr);
-			pkt_cleanup(pkt);
-			free(pkt);
+			pkt_free(pkt);
 			return;
 		}
 		LIST_INSERT_HEAD(&pkt->anlist, rr, pentry);
@@ -271,8 +266,7 @@ recv_packet(int fd, short event, void *bula)
 		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
 			log_warnx("Can't parse NS RR");
 			free(rr);
-			pkt_cleanup(pkt);
-			free(pkt);
+			pkt_free(pkt);
 			return;
 		}
 		LIST_INSERT_HEAD(&pkt->nslist, rr, pentry);
@@ -283,8 +277,7 @@ recv_packet(int fd, short event, void *bula)
 		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
 			log_warnx("Can't parse AR RR");
 			free(rr);
-			pkt_cleanup(pkt);
-			free(pkt);
+			pkt_free(pkt);
 			return;
 		}
 
@@ -297,8 +290,7 @@ recv_packet(int fd, short event, void *bula)
 		log_warnx("Couldn't read all packet, %u bytes left", len);
 		log_warnx("ancount %d, nscount %d, arcount %d",
 		    pkt->h.ancount, pkt->h.nscount, pkt->h.arcount);
-		pkt_cleanup(pkt);
-		free(pkt);
+		pkt_free(pkt);
 		return;
 	}
 
@@ -335,8 +327,7 @@ recv_packet(int fd, short event, void *bula)
 				pkt->h.ancount--;
 				pkt_add_anrr(match, rr);
 			}
-			pkt_cleanup(pkt);
-			free(pkt);
+			pkt_free(pkt);
 			pkt = match;
 		}
 		else
@@ -366,6 +357,9 @@ recv_packet(int fd, short event, void *bula)
 		evtimer_add(&pkt->timer, &tv);
 		return;
 	}
+
+	if (!TAILQ_EMPTY(&conf->reflect_rules))
+		pkt_reflect(pkt);
 
 	/* Use 0 as event as our processing wasn't deferred */
 	pkt_process(-1, 0, pkt);
@@ -439,9 +433,120 @@ pkt_process(int unused, short event, void *v_pkt)
 	if (!LIST_EMPTY(&pkt->arlist))
 		log_warnx("Unprocessed rr in Additional Section");
 bad:
-	pkt_cleanup(pkt);
-	free(pkt);
+	pkt_free(pkt);
+}
 
+static int
+check_match(struct rrset *rrs, struct reflect_rule *r, struct in_addr ipsrc)
+{
+	char *s;
+	int sname_match, src_match;
+
+	if (rrs->type != T_PTR)
+		return (0);
+
+	/* Match sname */
+	if (!strcmp(r->sname, "any"))
+		sname_match = 1;
+	else {
+		if (strlen(r->sname) > strlen(rrs->dname))
+			s = strstr(r->sname, rrs->dname);
+		else
+			s = strstr(rrs->dname, r->sname);
+		if (s == NULL)
+			sname_match = 0;
+		else
+			sname_match = strlen(s) == strlen(r->sname);
+	}
+
+	if (sname_match)
+		log_debug("sname_match");
+	else
+		log_debug("sname no match r:%s rrs:%s\n", r->sname, rrs->dname);
+
+	/* Match src */
+	switch (r->htype) {
+	case REFLECT_HTYPE_ANY:
+		src_match = 1;
+		break;
+	case REFLECT_HTYPE_IP4:
+		src_match = r->u.ip4.s_addr = ipsrc.s_addr;
+		break;
+	case REFLECT_HTYPE_MAC:
+		src_match = 0;	/* TODO */
+		break;
+	default:
+		fatalx("unexpected htyte");
+	}
+
+	return (sname_match && src_match);
+}
+
+struct pkt *
+pkt_reflect_filter(struct pkt *opkt)
+{
+	struct pkt *pkt;
+	struct reflect_rule *r;
+	struct rr *rr, *rraux;
+
+	if (opkt->h.qr != MDNS_RESPONSE)
+		return (NULL);
+
+	pkt = pkt_dup(opkt);
+	pkt->iface = NULL;
+
+	/* Process AN section */
+	LIST_FOREACH_SAFE(rr, &pkt->anlist, pentry, rraux) {
+		TAILQ_FOREACH(r, &conf->reflect_rules, entry) {
+			if (check_match(&rr->rrs, r,
+			    pkt->ipsrc.sin_addr))
+				break;
+		}
+		if (r == NULL || r->accept)
+			continue;
+		pkt_remove_anrr(pkt, rr);
+	}
+
+	/* Process AR section */
+	LIST_FOREACH_SAFE(rr, &pkt->arlist, pentry, rraux) {
+		TAILQ_FOREACH(r, &conf->reflect_rules, entry) {
+			if (check_match(&rr->rrs, r,
+			    pkt->ipsrc.sin_addr))
+				break;
+		}
+		if (r == NULL || r->accept)
+			continue;
+		pkt_remove_arrr(pkt, rr);
+	}
+
+	pkt_free(pkt);
+
+	return (NULL);
+}
+
+void
+pkt_reflect(struct pkt *opkt)
+{
+	struct iface *recv_iface, *iface;
+	struct pkt *pkt;
+
+	recv_iface = opkt->iface;
+
+	LIST_FOREACH(iface, &conf->iface_list, entry) {
+		if (iface == recv_iface)
+			continue;
+		if (iface->state != IF_STA_ACTIVE)
+			continue;
+		pkt = pkt_reflect_filter(opkt);
+
+		if (pkt) {
+			if (pkt_send(pkt, iface))
+				log_warnx("Can't reflect packet from %s to %s",
+				    recv_iface->name, iface->name);
+			pkt_free(pkt);
+			pkt = NULL;
+		}
+	}
 }
 
 int
@@ -455,6 +560,12 @@ pkt_sendto(struct pkt *pkt, struct iface *iface, struct sockaddr_in *pdst)
 	u_int8_t		*pbuf;
 	ssize_t			 n, left;
 	int 			 inaddrany;
+
+	if (iface->state != IF_STA_ACTIVE) {
+		log_warnx("pkt_sendto: sendto to inactive interface %s",
+		    iface->name);
+		return (-1);
+	}
 
 	inet_aton(ALL_MDNS_DEVICES, &all_mdns.sin_addr);
 	all_mdns.sin_port   = htons(MDNS_PORT);
@@ -649,6 +760,57 @@ pkt_init(struct pkt *pkt)
 	LIST_INIT(&pkt->arlist);
 }
 
+struct pkt *
+pkt_dup(struct pkt *src)
+{
+	struct pkt *dst;
+	struct question *qst, *qst2;
+	struct rr *rr, *rr2;
+
+	dst = malloc(sizeof(*dst));
+	if (dst == NULL)
+		return (NULL);
+
+	memcpy(dst, src, sizeof(*dst));
+	/* Clear things we shouldn't inherit */
+	bzero(&dst->entry, sizeof(dst->entry));
+	LIST_INIT(&dst->qlist);
+	LIST_INIT(&dst->anlist);
+	LIST_INIT(&dst->nslist);
+	LIST_INIT(&dst->arlist);
+	bzero(&dst->timer, sizeof(dst->timer));
+
+	LIST_FOREACH(qst, &src->qlist, entry) {
+		qst2 = question_dup(qst);
+		if (qst2 == NULL)
+			goto fail;
+		LIST_INSERT_HEAD(&dst->qlist, qst2, entry);
+	}
+	LIST_FOREACH(rr, &src->anlist, pentry) {
+		rr2 = rr_dup(rr);
+		if (rr2 == NULL)
+			goto fail;
+		LIST_INSERT_HEAD(&dst->anlist, rr2, pentry);
+	}
+	LIST_FOREACH(rr, &src->nslist, pentry) {
+		rr2 = rr_dup(rr);
+		if (rr2 == NULL)
+			goto fail;
+		LIST_INSERT_HEAD(&dst->nslist, rr2, pentry);
+	}
+	LIST_FOREACH(rr, &src->arlist, pentry) {
+		rr2 = rr_dup(rr);
+		if (rr2 == NULL)
+			goto fail;
+		LIST_INSERT_HEAD(&dst->arlist, rr2, pentry);
+	}
+
+	return (dst);
+fail:
+	pkt_free(dst);
+	return (NULL);
+}
+
 void
 pkt_cleanup(struct pkt *pkt)
 {
@@ -673,6 +835,13 @@ pkt_cleanup(struct pkt *pkt)
 	}
 }
 
+void
+pkt_free(struct pkt *pkt)
+{
+	pkt_cleanup(pkt);
+	free(pkt);
+}
+
 /* packet building */
 void
 pkt_add_question(struct pkt *pkt, struct question *qst)
@@ -689,6 +858,13 @@ pkt_add_anrr(struct pkt *pkt, struct rr *rr)
 }
 
 void
+pkt_remove_anrr(struct pkt *pkt, struct rr *rr)
+{
+	LIST_REMOVE(rr, pentry);
+	pkt->h.ancount--;
+}
+
+void
 pkt_add_nsrr(struct pkt *pkt, struct rr *rr)
 {
 	LIST_INSERT_HEAD(&pkt->nslist, rr, pentry);
@@ -700,6 +876,13 @@ pkt_add_arrr(struct pkt *pkt, struct rr *rr)
 {
 	LIST_INSERT_HEAD(&pkt->arlist, rr, pentry);
 	pkt->h.arcount++;
+}
+
+void
+pkt_remove_arrr(struct pkt *pkt, struct rr *rr)
+{
+	LIST_REMOVE(rr, pentry);
+	pkt->h.arcount--;
 }
 
 int

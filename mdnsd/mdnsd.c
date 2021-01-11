@@ -18,7 +18,12 @@
 #include <sys/socket.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
+
+#include <net/if.h>
+
 #include <netinet/in.h>
+#include <netinet/if_ether.h>
+
 #include <arpa/inet.h>
 
 #include <err.h>
@@ -36,14 +41,15 @@
 #include "log.h"
 #include "control.h"
 
-__dead void	usage(void);
-__dead void	display_version(void);
-void		mdnsd_sig_handler(int, short, void *);
-void		conf_init_ifaces(int, char *[]);
-void		mdnsd_shutdown(void);
-int		mdns_sock(void);
-void		fetchmyname(char [MAXHOSTNAMELEN]);
-void		fetchhinfo(struct hinfo *);
+__dead void		 usage(void);
+__dead void		 display_version(void);
+void			 mdnsd_sig_handler(int, short, void *);
+void			 conf_init_ifaces(int, char *[]);
+void			 mdnsd_shutdown(void);
+int			 mdns_sock(void);
+void			 fetchmyname(char [MAXHOSTNAMELEN]);
+void			 fetchhinfo(struct hinfo *);
+struct reflect_rule	*parse_reflect_rule(char *);
 
 struct mdnsd_conf	*conf = NULL;
 extern char		*malloc_options;
@@ -53,7 +59,7 @@ usage(void)
 {
 	extern char	*__progname;
 
-	fprintf(stderr, "usage: %s [-dw] ifname [ifnames...]\n",
+	fprintf(stderr, "usage: %s [-drw] ifname [ifnames...]\n",
 	    __progname);
 	fprintf(stderr, "usage: %s -v\n", __progname);
 	exit(1);
@@ -211,6 +217,77 @@ fetchhinfo(struct hinfo *hi)
 	    utsname.release);
 }
 
+/*
+ * accept@any:any (should make no sense)
+ * deny@52:54:00:0e:a3:0e:any
+ * accept@any:_http._tcp
+ * deny@192.168.1.1:_http._tcp
+ * accept@192.168.1.1:any
+ */
+struct reflect_rule *
+parse_reflect_rule(char *s)
+{
+	char *p, *host, *sname, *last = NULL;
+	struct in_addr ip4;
+	struct ether_addr *mac;
+	struct reflect_rule *rule;
+	int htype, accept;
+
+	/* Get the policy */
+	p = strchr(p, '@');
+	if (p == NULL)
+		return (NULL);
+	*p++ = 0;
+	/* Save where host begins */
+	host = p;
+	if (!strcmp(s, "accept"))
+		accept = 1;
+	else if (!strcmp(s, "deny"))
+		accept = 0;
+	else
+		return (NULL);
+
+	/* Find the last : */
+	while ((p = strchr(p, ':')) != NULL)
+		last = p++;
+
+	/* Break it; */
+	*last++ = 0;
+	sname = last;
+	last = NULL;
+
+	/* Mac, ip4 or any ? */
+	if (inet_aton(host, &ip4) == 1)
+		htype = REFLECT_HTYPE_IP4;
+	else if ((mac = (ether_aton(host))) != NULL)
+		htype = REFLECT_HTYPE_MAC;
+	else if (!strcmp(host, "any"))
+		htype = REFLECT_HTYPE_ANY;
+	else
+		return (NULL);
+
+	if ((rule = calloc(1, sizeof(*rule))) == NULL)
+		fatal("calloc");
+	if (snprintf(rule->sname, sizeof(rule->sname), "%s.local", sname)
+	    >= MAXHOSTNAMELEN)
+		return (NULL);
+	switch (htype) {
+	case REFLECT_HTYPE_ANY:
+		/* nada */
+		break;
+	case REFLECT_HTYPE_MAC:
+		memcpy(&rule->u.mac, mac, sizeof(rule->u.mac));
+		break;
+	case REFLECT_HTYPE_IP4:
+		rule->u.ip4.s_addr = ip4.s_addr;
+		break;
+	default:
+		fatal("invalid htype");
+	}
+
+	return (rule);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -219,18 +296,34 @@ main(int argc, char *argv[])
 	struct passwd	*pw;
 	struct iface	*iface;
 	struct event	 ev_sigint, ev_sigterm, ev_sighup;
+	struct reflect_rule *rule;
+	struct reflect_rules reflect_rules;
 
 	debug = no_workstation = 0;
-	/*
-	 * XXX Carefull not to call anything that would malloc prior to setting
-	 * malloc_options, malloc will disregard malloc_options after the first
-	 * call.
-	 */
-	while ((ch = getopt(argc, argv, "dvw")) != -1) {
+	TAILQ_INIT(&reflect_rules);
+
+	/* Make sure we set malloc_options before any possible malloc */
+	while ((ch = getopt(argc, argv, "dvwr:")) != -1) {
 		switch (ch) {
 		case 'd':
 			debug = 1;
-			malloc_options = "AFGJPX";
+			malloc_options = "CFGJ";
+			break;
+		default:
+			break;
+		}
+	}
+
+	optreset = 1;
+
+	while ((ch = getopt(argc, argv, "dvwr:")) != -1) {
+		switch (ch) {
+		case 'd':	/* Already handled */
+			break;
+		case 'r':
+			if ((rule = parse_reflect_rule(optarg)) == NULL)
+				usage();
+			TAILQ_INSERT_TAIL(&reflect_rules, rule, entry);
 			break;
 		case 'v':
 			display_version();
@@ -309,6 +402,7 @@ main(int argc, char *argv[])
 	fetchhinfo(&conf->hi);
 	LIST_INIT(&conf->iface_list);
 	conf->no_workstation = no_workstation;
+	conf->reflect_rules = reflect_rules;
 
 	/* init RR cache */
 	cache_init();
