@@ -1056,7 +1056,6 @@ pge_initprimary(void)
 	/* Must add T_A, T_PTR(rev) and T_HINFO */
 	/* T_A record, NOTE: must be first to match PGE_RR_PRIM */
 	inaddrany.s_addr = INADDR_ANY;
-	bzero(&rr, sizeof(rr));
 	rr_set(&rr, conf->myname, T_A, C_IN, TTL_HNAME,
 	    RR_FLAG_CACHEFLUSH,
 	    &inaddrany, sizeof(inaddrany));
@@ -1064,7 +1063,6 @@ pge_initprimary(void)
 		goto bad;
 	/* T_PTR record reverse address, one for every address */
 	LIST_FOREACH(iface, &conf->iface_list, entry) {
-		bzero(&rr, sizeof(rr));
 		reversstr(revaddr, &iface->addr);
 		rr_set(&rr, revaddr, T_PTR, C_IN, TTL_HNAME,
 		    RR_FLAG_CACHEFLUSH,
@@ -1073,7 +1071,6 @@ pge_initprimary(void)
 			goto bad;
 	}
 	/* T_HINFO record */
-	bzero(&rr, sizeof(rr));
 	rr_set(&rr, conf->myname, T_HINFO, C_IN, TTL_HNAME,
 	    RR_FLAG_CACHEFLUSH,
 	    &conf->hi, sizeof(conf->hi));
