@@ -315,15 +315,14 @@ recv_packet(int fd, short event, void *bula)
 	if (pkt->h.qr == MDNS_QUERY &&
 	    pkt->h.qdcount == 0 && pkt->h.arcount == 0 &&
 	    pkt->h.nscount == 0 && pkt->h.ancount > 0) {
-		struct pkt *dpkt, *match = NULL;
+		struct pkt *match = NULL;
 
-		TAILQ_FOREACH(dpkt, &deferred_queue, entry) {
+		TAILQ_FOREACH(match, &deferred_queue, entry) {
 			/* XXX: Should we compare source port as well ? */
-			if (dpkt->ipsrc.sin_addr.s_addr !=
+			if (match->ipsrc.sin_addr.s_addr !=
 			    pkt->ipsrc.sin_addr.s_addr)
 				continue;
 			/* Found a match */
-			match = dpkt;
 			break;
 		}
 		if (match != NULL) {
