@@ -3,3 +3,4 @@ mdnsd/mdnsd
 *.o
 *.manlint
 cscope.*
+test
