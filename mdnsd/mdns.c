@@ -600,6 +600,7 @@ question_dup(struct question *qst)
 	if ((qdup = malloc(sizeof(*qdup))) == NULL)
 		fatal("malloc");
 	memcpy(qdup, qst, sizeof(*qdup));
+	/* TODO zero links */
 
 	return (qdup);
 }

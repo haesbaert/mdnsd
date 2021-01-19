@@ -773,6 +773,7 @@ rr_dup(struct rr *rr)
 	if ((rdup = malloc(sizeof(*rdup))) == NULL)
 		fatal("malloc");
 	memcpy(rdup, rr, sizeof(*rdup));
+	/* TODO zero links */
 
 	return (rdup);
 }
