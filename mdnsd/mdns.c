@@ -169,6 +169,7 @@ cache_process(struct rr *rr)
 				log_warnx("cache_process: conflict for %s",
 				    rrs_str(&rr->rrs));
 				conflict_resolve_by_rr(rr_aux);
+				free(rr);
 				return (-1);
 			}
 		}
