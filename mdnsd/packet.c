@@ -253,7 +253,7 @@ recv_packet(int fd, short event, void *bula)
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
-			log_warnx("Can't parse AN RR");
+			log_warnx("Can't parse AN RR from %s", inet_ntoa(pkt->ipsrc.sin_addr));
 			free(rr);
 			pkt_free(pkt);
 			return;
@@ -264,7 +264,7 @@ recv_packet(int fd, short event, void *bula)
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
-			log_warnx("Can't parse NS RR");
+			log_warnx("Can't parse NS RR from %s", inet_ntoa(pkt->ipsrc.sin_addr));
 			free(rr);
 			pkt_free(pkt);
 			return;
@@ -275,7 +275,7 @@ recv_packet(int fd, short event, void *bula)
 		if ((rr = calloc(1, sizeof(*rr))) == NULL)
 			fatal("calloc");
 		if (pkt_parse_rr(&pbuf, &len, rr) == -1) {
-			log_warnx("Can't parse AR RR");
+			log_warnx("Can't parse AR RR from %s", inet_ntoa(pkt->ipsrc.sin_addr));
 			free(rr);
 			pkt_free(pkt);
 			return;
