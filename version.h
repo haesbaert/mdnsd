@@ -18,7 +18,7 @@
 #define _MDNS_VERSION_H
 
 #ifndef MDNS_VERSION
-#define MDNS_VERSION "0.7 (2017-03-10)"
+#define MDNS_VERSION "0.9 (2025-12-01)"
 #endif	/* MDNS_VERSION */
 
 #endif	/* _MDNS_VERSION_H */
