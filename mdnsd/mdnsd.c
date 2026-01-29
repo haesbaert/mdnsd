@@ -51,6 +51,8 @@ void			 fetchmyname(char [MAXHOSTNAMELEN]);
 void			 fetchhinfo(struct hinfo *);
 struct reflect_rule	*parse_reflect_rule(char *);
 
+ctl_conns_t	ctl_conns;
+
 struct mdnsd_conf	*conf = NULL;
 extern char		*malloc_options;
 
@@ -454,12 +456,12 @@ void
 imsg_event_add(struct imsgev *iev)
 {
 	if (iev->handler == NULL) {
-		imsg_flush(&iev->ibuf);
+		imsgbuf_flush(&iev->ibuf);
 		return;
 	}
 
 	iev->events = EV_READ;
-	if (iev->ibuf.w.queued)
+	if (imsgbuf_queuelen(&iev->ibuf) > 0)
 		iev->events |= EV_WRITE;
 
 	event_del(&iev->ev);
