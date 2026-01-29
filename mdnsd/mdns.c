@@ -148,12 +148,12 @@ cache_process(struct rr *rr)
 				 * This may be a goodbye, defend our RR batman.
 				 */
 				if (rr->ttl <= rr_aux->ttl / 2) {
-					log_info("cache_process: defending %s",
+					log_debug("cache_process: defending %s",
 					    rrs_str(&rr->rrs));
 					rr_send_an(rr_aux);
 				} else {
 					/* TODO Cancel possible deletion */
-					log_info("cache_process: recover %s",
+					log_debug("cache_process: recover %s",
 					    rrs_str(&rr->rrs));
 					free(rr);
 					return (0);
@@ -178,14 +178,14 @@ cache_process(struct rr *rr)
 			if (rr_rdata_cmp(rr, rr_aux) == 0) {
 				/* A goodbye RR */
 				if (rr->ttl == 0) {
-					log_info("cache_process: goodbye %s",
+					log_debug("cache_process: goodbye %s",
 					    rrs_str(&rr->rrs));
 					cache_delete(rr_aux);
 					free(rr);
 					return (0);
 				}
 				/* Cache refresh */
-				log_info("cache_process: refresh %s",
+				log_debug("cache_process: refresh %s",
 				    rrs_str(&rr->rrs));
 				rr_aux->ttl = rr->ttl;
 				rr_aux->revision = 0;
