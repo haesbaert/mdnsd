@@ -307,7 +307,6 @@ main(int argc, char *argv[])
 		switch (ch) {
 		case 'd':
 			debug = 1;
-			malloc_options = "CFGJ";
 			break;
 		default:
 			break;
