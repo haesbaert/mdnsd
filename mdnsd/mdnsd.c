@@ -268,6 +268,7 @@ parse_reflect_rule(char *s)
 
 	if ((rule = calloc(1, sizeof(*rule))) == NULL)
 		fatal("calloc");
+	rule->accept = accept;
 	if (snprintf(rule->sname, sizeof(rule->sname), "%s.local", sname)
 	    >= MAXHOSTNAMELEN)
 		return (NULL);
