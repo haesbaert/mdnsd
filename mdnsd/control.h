@@ -31,8 +31,6 @@ struct control_state {
 	int		fd;
 };
 
-extern struct control_state control_state;
-
 enum blockmodes {
 	BM_NORMAL,
 	BM_NONBLOCK

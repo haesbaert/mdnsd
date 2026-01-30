@@ -51,7 +51,7 @@ void			 fetchmyname(char [MAXHOSTNAMELEN]);
 void			 fetchhinfo(struct hinfo *);
 struct reflect_rule	*parse_reflect_rule(char *);
 
-ctl_conns_t	ctl_conns;
+struct ctl_conns	ctl_conns;
 
 struct mdnsd_conf	*conf = NULL;
 extern char		*malloc_options;
