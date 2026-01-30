@@ -52,7 +52,6 @@ void			 fetchhinfo(struct hinfo *);
 struct reflect_rule	*parse_reflect_rule(char *);
 
 struct mdnsd_conf	*conf = NULL;
-extern char		*malloc_options;
 
 __dead void
 usage(void)
