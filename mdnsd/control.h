@@ -26,10 +26,10 @@
 
 #include "mdnsd.h"
 
-struct {
+struct control_state {
 	struct event	ev;
 	int		fd;
-} control_state;
+};
 
 enum blockmodes {
 	BM_NORMAL,

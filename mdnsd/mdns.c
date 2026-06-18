@@ -45,6 +45,9 @@ extern struct mdnsd_conf	*conf;
 struct question_tree		 question_tree;
 struct cache_tree		 cache_tree;
 
+struct pg_q pg_queue;
+struct pge_q pge_queue;
+
 /*
  * RR cache
  */

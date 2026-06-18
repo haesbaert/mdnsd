@@ -14,11 +14,7 @@ CFLAGS+= -Wmissing-declarations
 CFLAGS+= -Wshadow -Wpointer-arith -Wcast-qual
 CFLAGS+= -Wsign-compare
 
-.if exists(${.CURDIR}/../libmdns/${__objdir})
-LDADD+= -L${.CURDIR}/../libmdns/${__objdir} -lmdns
-.else
 LDADD+= -L${.CURDIR}/../libmdns -lmdns
-.endif
 LDADD+= -levent -lutil
 DPADD+= ${LIBEVENT} ${LIBUTIL}
 
