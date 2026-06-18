@@ -331,7 +331,7 @@ recv_packet(int fd, short event, void *bula)
 			pkt = match;
 		}
 		else
-			log_warnx("Got a continuation packet from %s:%s "
+			log_warnx("Got a continuation packet from %s:%u "
 			    "but no match", inet_ntoa(pkt->ipsrc.sin_addr),
 			    ntohs(pkt->ipsrc.sin_port));
 	}
